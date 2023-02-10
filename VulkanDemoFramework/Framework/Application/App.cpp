@@ -2,12 +2,10 @@
 
 namespace Framework
 {
-
-void App::run(const ApplicationConfiguration& configuration)
+void App::run(const ApplicationConfiguration& p_Configuration)
 {
-  create(configuration);
+  create(p_Configuration);
   mainLoop();
   destroy();
 }
-
 } // namespace Framework

@@ -4,9 +4,8 @@
 
 namespace Framework
 {
-
 struct ServiceManager;
-
+//---------------------------------------------------------------------------//
 struct ApplicationConfiguration
 {
 
@@ -34,28 +33,27 @@ struct ApplicationConfiguration
   }
 
 }; // struct ApplicationConfiguration
-
+//---------------------------------------------------------------------------//
 struct App
 {
   //
-  virtual void create(const ApplicationConfiguration& configuration) {}
+  virtual void create(const ApplicationConfiguration& p_Configuration) {}
   virtual void destroy() {}
   virtual bool mainLoop() { return false; }
 
   // Fixed update. Can be called more than once compared to rendering.
-  virtual void fixedUpdate(float delta) {}
+  virtual void fixedUpdate(float p_Delta) {}
   // Variable time update. Called only once per frame.
-  virtual void variableUpdate(float delta) {}
+  virtual void variableUpdate(float p_Delta) {}
   // Rendering with optional interpolation factor.
-  virtual void render(float interpolation) {}
+  virtual void render(float p_Interpolation) {}
   // Per frame begin/end.
   virtual void frameBegin() {}
   virtual void frameEnd() {}
 
-  void run(const ApplicationConfiguration& configuration);
+  void run(const ApplicationConfiguration& p_Configuration);
 
   ServiceManager* service_manager = nullptr;
 
 }; // struct Application
-
 } // namespace Framework

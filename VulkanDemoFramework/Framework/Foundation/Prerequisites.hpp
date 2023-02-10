@@ -1,15 +1,31 @@
 #pragma once
 
-#include <stdint.h>
-
 //---------------------------------------------------------------------------//
 // Compiler specific settings
 //---------------------------------------------------------------------------//
 
 #if defined(_MSC_VER)
+#  if !defined(_CRT_SECURE_NO_WARNINGS)
+#    define _CRT_SECURE_NO_WARNINGS
+#  endif
+
 //#pragma warning(disable : 4005)
 //#pragma warning(disable : 4100)
 #endif // _MSC_VER
+
+#if defined(_MSC_VER)
+#  if !defined(WIN32_LEAN_AND_MEAN)
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#endif
+
+//---------------------------------------------------------------------------//
+// General Includes
+//---------------------------------------------------------------------------//
+
+#include <stdint.h>
+#include <stdio.h>
 
 //---------------------------------------------------------------------------//
 // Various macros

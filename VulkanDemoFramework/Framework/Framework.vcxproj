@@ -114,7 +114,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\Framework\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\Framework\;$(SolutionDir)\Framework\..\Exernals\SDL2-2.0.18\include\</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,7 +129,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\Framework\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\Framework\;$(SolutionDir)\Framework\..\Exernals\SDL2-2.0.18\include\</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -139,11 +139,32 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\Exernals\imgui\imgui.cpp" />
+    <ClCompile Include="..\Exernals\imgui\imgui_demo.cpp" />
+    <ClCompile Include="..\Exernals\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\Exernals\imgui\imgui_impl_sdl.cpp" />
+    <ClCompile Include="..\Exernals\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\Exernals\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\Exernals\imgui\TextEditor.cpp" />
+    <ClCompile Include="..\Exernals\tlsf.c" />
     <ClCompile Include="Application\App.cpp" />
+    <ClCompile Include="Foundation\Memory.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Exernals\imgui\imconfig.h" />
+    <ClInclude Include="..\Exernals\imgui\imgui.h" />
+    <ClInclude Include="..\Exernals\imgui\imgui_impl_sdl.h" />
+    <ClInclude Include="..\Exernals\imgui\imgui_internal.h" />
+    <ClInclude Include="..\Exernals\imgui\imgui_memory_editor.h" />
+    <ClInclude Include="..\Exernals\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\Exernals\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\Exernals\imgui\imstb_truetype.h" />
+    <ClInclude Include="..\Exernals\imgui\stb_image.h" />
+    <ClInclude Include="..\Exernals\imgui\TextEditor.h" />
     <ClInclude Include="Application\App.hpp" />
+    <ClInclude Include="Foundation\Memory.hpp" />
     <ClInclude Include="Foundation\Prerequisites.hpp" />
+    <ClInclude Include="Foundation\Service.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

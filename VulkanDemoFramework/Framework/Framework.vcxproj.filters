@@ -7,10 +7,43 @@
     <Filter Include="Application">
       <UniqueIdentifier>{2162c861-e259-47f7-9e7a-b53077ad4ab3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Externals">
+      <UniqueIdentifier>{7545fd49-e487-4e71-a923-ed964d7b9a8d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Externals\ImGui">
+      <UniqueIdentifier>{178d9589-c08f-473b-a0a3-a8c5c1657f5d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Application\App.cpp">
       <Filter>Application</Filter>
+    </ClCompile>
+    <ClCompile Include="Foundation\Memory.cpp">
+      <Filter>Foundation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\imgui\imgui.cpp">
+      <Filter>Externals\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\imgui\imgui_demo.cpp">
+      <Filter>Externals\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\imgui\imgui_draw.cpp">
+      <Filter>Externals\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\imgui\imgui_impl_sdl.cpp">
+      <Filter>Externals\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\imgui\imgui_tables.cpp">
+      <Filter>Externals\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\imgui\imgui_widgets.cpp">
+      <Filter>Externals\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\imgui\TextEditor.cpp">
+      <Filter>Externals\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Exernals\tlsf.c">
+      <Filter>Externals</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -19,6 +52,42 @@
     </ClInclude>
     <ClInclude Include="Foundation\Prerequisites.hpp">
       <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Foundation\Service.hpp">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Foundation\Memory.hpp">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imconfig.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imgui.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imgui_impl_sdl.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imgui_internal.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imgui_memory_editor.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imstb_rectpack.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imstb_textedit.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\imstb_truetype.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\stb_image.h">
+      <Filter>Externals\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Exernals\imgui\TextEditor.h">
+      <Filter>Externals\ImGui</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
