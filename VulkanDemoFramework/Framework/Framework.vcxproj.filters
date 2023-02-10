@@ -17,5 +17,8 @@
     <ClInclude Include="Application\App.hpp">
       <Filter>Application</Filter>
     </ClInclude>
+    <ClInclude Include="Foundation\Prerequisites.hpp">
+      <Filter>Foundation</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

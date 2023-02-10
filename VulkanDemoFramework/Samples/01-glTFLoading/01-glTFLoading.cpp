@@ -1,7 +1,3 @@
-#include<Application/App.hpp>
+#include <Application/App.hpp>
 
-int main() {
-  test();
-  return(0);
-}
-
+int main() { return (0); }
