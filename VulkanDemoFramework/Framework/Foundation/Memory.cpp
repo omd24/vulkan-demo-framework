@@ -1,13 +1,13 @@
 #include "Memory.hpp"
 #include <assert.h>
 
-#include "../Exernals/tlsf.h"
+#include <Externals/tlsf.h>
 
 #include <stdlib.h>
 #include <memory.h>
 
 #if defined FRAMEWORK_IMGUI
-#  include "../Exernals/imgui/imgui.h"
+#  include <Externals/imgui/imgui.h>
 #endif // FRAMEWORK_IMGUI
 
 #define HEAP_ALLOCATOR_STATS

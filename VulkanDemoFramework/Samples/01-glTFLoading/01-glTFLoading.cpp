@@ -1,3 +1,3 @@
-#include <Application/App.hpp>
+#include <Application/Window.hpp>
 
 int main() { return (0); }

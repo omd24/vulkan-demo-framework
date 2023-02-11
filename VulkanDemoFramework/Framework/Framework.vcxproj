@@ -18,6 +18,38 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Externals\imgui\imgui.cpp" />
+    <ClCompile Include="..\Externals\imgui\imgui_demo.cpp" />
+    <ClCompile Include="..\Externals\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\Externals\imgui\imgui_impl_sdl.cpp" />
+    <ClCompile Include="..\Externals\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\Externals\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\Externals\imgui\TextEditor.cpp" />
+    <ClCompile Include="..\Externals\tlsf.c" />
+    <ClCompile Include="Application\App.cpp" />
+    <ClCompile Include="Application\Window.cpp" />
+    <ClCompile Include="Foundation\Memory.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Externals\imgui\imconfig.h" />
+    <ClInclude Include="..\Externals\imgui\imgui.h" />
+    <ClInclude Include="..\Externals\imgui\imgui_impl_sdl.h" />
+    <ClInclude Include="..\Externals\imgui\imgui_internal.h" />
+    <ClInclude Include="..\Externals\imgui\imgui_memory_editor.h" />
+    <ClInclude Include="..\Externals\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\Externals\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\Externals\imgui\imstb_truetype.h" />
+    <ClInclude Include="..\Externals\imgui\stb_image.h" />
+    <ClInclude Include="..\Externals\imgui\TextEditor.h" />
+    <ClInclude Include="Application\App.hpp" />
+    <ClInclude Include="Application\Window.hpp" />
+    <ClInclude Include="Foundation\Array.hpp" />
+    <ClInclude Include="Foundation\Memory.hpp" />
+    <ClInclude Include="Foundation\Numerics.hpp" />
+    <ClInclude Include="Foundation\Prerequisites.hpp" />
+    <ClInclude Include="Foundation\Service.hpp" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
@@ -114,7 +146,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\Framework\;$(SolutionDir)\Framework\..\Exernals\SDL2-2.0.18\include\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Externals\SDL2-2.0.18\include;$(SolutionDir)Framework;$(SolutionDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,7 +161,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\Framework\;$(SolutionDir)\Framework\..\Exernals\SDL2-2.0.18\include\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Externals\SDL2-2.0.18\include;$(SolutionDir)Framework;$(SolutionDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -138,34 +170,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="..\Exernals\imgui\imgui.cpp" />
-    <ClCompile Include="..\Exernals\imgui\imgui_demo.cpp" />
-    <ClCompile Include="..\Exernals\imgui\imgui_draw.cpp" />
-    <ClCompile Include="..\Exernals\imgui\imgui_impl_sdl.cpp" />
-    <ClCompile Include="..\Exernals\imgui\imgui_tables.cpp" />
-    <ClCompile Include="..\Exernals\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\Exernals\imgui\TextEditor.cpp" />
-    <ClCompile Include="..\Exernals\tlsf.c" />
-    <ClCompile Include="Application\App.cpp" />
-    <ClCompile Include="Foundation\Memory.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\Exernals\imgui\imconfig.h" />
-    <ClInclude Include="..\Exernals\imgui\imgui.h" />
-    <ClInclude Include="..\Exernals\imgui\imgui_impl_sdl.h" />
-    <ClInclude Include="..\Exernals\imgui\imgui_internal.h" />
-    <ClInclude Include="..\Exernals\imgui\imgui_memory_editor.h" />
-    <ClInclude Include="..\Exernals\imgui\imstb_rectpack.h" />
-    <ClInclude Include="..\Exernals\imgui\imstb_textedit.h" />
-    <ClInclude Include="..\Exernals\imgui\imstb_truetype.h" />
-    <ClInclude Include="..\Exernals\imgui\stb_image.h" />
-    <ClInclude Include="..\Exernals\imgui\TextEditor.h" />
-    <ClInclude Include="Application\App.hpp" />
-    <ClInclude Include="Foundation\Memory.hpp" />
-    <ClInclude Include="Foundation\Prerequisites.hpp" />
-    <ClInclude Include="Foundation\Service.hpp" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
