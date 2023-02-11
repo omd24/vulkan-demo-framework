@@ -48,6 +48,9 @@
     <ClCompile Include="..\Externals\tlsf.c">
       <Filter>Externals</Filter>
     </ClCompile>
+    <ClCompile Include="Foundation\Bit.cpp">
+      <Filter>Foundation</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Foundation\Array.hpp">
@@ -100,6 +103,12 @@
     </ClInclude>
     <ClInclude Include="Application\Window.hpp">
       <Filter>Application</Filter>
+    </ClInclude>
+    <ClInclude Include="Foundation\HashMap.hpp">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Foundation\Bit.hpp">
+      <Filter>Foundation</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
