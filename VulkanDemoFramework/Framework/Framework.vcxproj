@@ -33,6 +33,7 @@
     <ClCompile Include="Foundation\File.cpp" />
     <ClCompile Include="Foundation\Gltf.cpp" />
     <ClCompile Include="Foundation\Memory.cpp" />
+    <ClCompile Include="Foundation\ResourceManager.cpp" />
     <ClCompile Include="Foundation\String.cpp" />
     <ClCompile Include="Foundation\Time.cpp" />
   </ItemGroup>
@@ -57,6 +58,7 @@
     <ClInclude Include="Foundation\Memory.hpp" />
     <ClInclude Include="Foundation\Numerics.hpp" />
     <ClInclude Include="Foundation\Prerequisites.hpp" />
+    <ClInclude Include="Foundation\ResourceManager.hpp" />
     <ClInclude Include="Foundation\Service.hpp" />
     <ClInclude Include="Foundation\String.hpp" />
     <ClInclude Include="Foundation\Time.hpp" />
