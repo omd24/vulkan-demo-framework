@@ -313,7 +313,7 @@ inline void FlatHashMap<K, V>::init(Allocator* allocator_, uint64_t initial_capa
 
 template <typename K, typename V> inline void FlatHashMap<K, V>::shutdown()
 {
-  rfree(m_ControlBytes, m_Allocator);
+  FRAMEWORK_FREE(m_ControlBytes, m_Allocator);
 }
 
 template <typename K, typename V> FlatHashMapIterator FlatHashMap<K, V>::find(const K& key)
@@ -325,8 +325,8 @@ template <typename K, typename V> FlatHashMapIterator FlatHashMap<K, V>::find(co
   while (true)
   {
     const GroupSse2Impl group{m_ControlBytes + sequence.getOffset()};
-    const int8_t hash2 = hash2(hash);
-    for (int i : group.match(hash2))
+    const int8_t h2 = hash2(hash);
+    for (int i : group.match(h2))
     {
       const KeyValue& key_value = *(m_Slots + sequence.getOffset(i));
       if (key_value.key == key)
@@ -440,7 +440,7 @@ template <typename K, typename V> FindInfo FlatHashMap<K, V>::findFirstNonFull(u
 
     if (mask)
     {
-      return {sequence.getOffset(mask.LowestBitSet()), sequence.getIndex()};
+      return {sequence.getOffset(mask.lowestBitSet()), sequence.getIndex()};
     }
 
     sequence.next();
@@ -545,7 +545,7 @@ template <typename K, typename V> uint64_t FlatHashMap<K, V>::calculateSize(uint
 template <typename K, typename V> void FlatHashMap<K, V>::initializeSlots()
 {
 
-  char* new_memory = (char*)ralloca(calculateSize(m_Capacity), m_Allocator);
+  char* new_memory = (char*)FRAMEWORK_ALLOCA(calculateSize(m_Capacity), m_Allocator);
 
   m_ControlBytes = reinterpret_cast<int8_t*>(new_memory);
   m_Slots = reinterpret_cast<KeyValue*>(new_memory + m_Capacity + GroupSse2Impl::kWidth);

@@ -30,7 +30,9 @@
     <ClCompile Include="Application\App.cpp" />
     <ClCompile Include="Application\Window.cpp" />
     <ClCompile Include="Foundation\Bit.cpp" />
+    <ClCompile Include="Foundation\File.cpp" />
     <ClCompile Include="Foundation\Memory.cpp" />
+    <ClCompile Include="Foundation\String.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Externals\imgui\imconfig.h" />
@@ -47,11 +49,13 @@
     <ClInclude Include="Application\Window.hpp" />
     <ClInclude Include="Foundation\Array.hpp" />
     <ClInclude Include="Foundation\Bit.hpp" />
+    <ClInclude Include="Foundation\File.hpp" />
     <ClInclude Include="Foundation\HashMap.hpp" />
     <ClInclude Include="Foundation\Memory.hpp" />
     <ClInclude Include="Foundation\Numerics.hpp" />
     <ClInclude Include="Foundation\Prerequisites.hpp" />
     <ClInclude Include="Foundation\Service.hpp" />
+    <ClInclude Include="Foundation\String.hpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
