@@ -31,6 +31,7 @@
     <ClCompile Include="Application\Window.cpp" />
     <ClCompile Include="Foundation\Bit.cpp" />
     <ClCompile Include="Foundation\File.cpp" />
+    <ClCompile Include="Foundation\Gltf.cpp" />
     <ClCompile Include="Foundation\Memory.cpp" />
     <ClCompile Include="Foundation\String.cpp" />
   </ItemGroup>
@@ -50,6 +51,7 @@
     <ClInclude Include="Foundation\Array.hpp" />
     <ClInclude Include="Foundation\Bit.hpp" />
     <ClInclude Include="Foundation\File.hpp" />
+    <ClInclude Include="Foundation\Gltf.hpp" />
     <ClInclude Include="Foundation\HashMap.hpp" />
     <ClInclude Include="Foundation\Memory.hpp" />
     <ClInclude Include="Foundation\Numerics.hpp" />
