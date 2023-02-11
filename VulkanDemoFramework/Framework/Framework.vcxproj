@@ -34,6 +34,7 @@
     <ClCompile Include="Foundation\Gltf.cpp" />
     <ClCompile Include="Foundation\Memory.cpp" />
     <ClCompile Include="Foundation\String.cpp" />
+    <ClCompile Include="Foundation\Time.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Externals\imgui\imconfig.h" />
@@ -58,6 +59,7 @@
     <ClInclude Include="Foundation\Prerequisites.hpp" />
     <ClInclude Include="Foundation\Service.hpp" />
     <ClInclude Include="Foundation\String.hpp" />
+    <ClInclude Include="Foundation\Time.hpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

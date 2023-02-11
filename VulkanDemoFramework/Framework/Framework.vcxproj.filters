@@ -60,6 +60,9 @@
     <ClCompile Include="Foundation\Gltf.cpp">
       <Filter>Foundation</Filter>
     </ClCompile>
+    <ClCompile Include="Foundation\Time.cpp">
+      <Filter>Foundation</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Foundation\Array.hpp">
@@ -126,6 +129,9 @@
       <Filter>Foundation</Filter>
     </ClInclude>
     <ClInclude Include="Foundation\Gltf.hpp">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Foundation\Time.hpp">
       <Filter>Foundation</Filter>
     </ClInclude>
   </ItemGroup>
