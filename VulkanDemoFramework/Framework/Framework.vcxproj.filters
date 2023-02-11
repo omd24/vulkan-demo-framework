@@ -66,6 +66,12 @@
     <ClCompile Include="Foundation\ResourceManager.cpp">
       <Filter>Foundation</Filter>
     </ClCompile>
+    <ClCompile Include="Application\Keys.cpp">
+      <Filter>Application</Filter>
+    </ClCompile>
+    <ClCompile Include="Application\Input.cpp">
+      <Filter>Application</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Foundation\Array.hpp">
@@ -139,6 +145,12 @@
     </ClInclude>
     <ClInclude Include="Foundation\ResourceManager.hpp">
       <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Application\Keys.hpp">
+      <Filter>Application</Filter>
+    </ClInclude>
+    <ClInclude Include="Application\Input.hpp">
+      <Filter>Application</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

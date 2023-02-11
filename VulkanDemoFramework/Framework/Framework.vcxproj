@@ -28,6 +28,8 @@
     <ClCompile Include="..\Externals\imgui\TextEditor.cpp" />
     <ClCompile Include="..\Externals\tlsf.c" />
     <ClCompile Include="Application\App.cpp" />
+    <ClCompile Include="Application\Input.cpp" />
+    <ClCompile Include="Application\Keys.cpp" />
     <ClCompile Include="Application\Window.cpp" />
     <ClCompile Include="Foundation\Bit.cpp" />
     <ClCompile Include="Foundation\File.cpp" />
@@ -49,6 +51,8 @@
     <ClInclude Include="..\Externals\imgui\stb_image.h" />
     <ClInclude Include="..\Externals\imgui\TextEditor.h" />
     <ClInclude Include="Application\App.hpp" />
+    <ClInclude Include="Application\Input.hpp" />
+    <ClInclude Include="Application\Keys.hpp" />
     <ClInclude Include="Application\Window.hpp" />
     <ClInclude Include="Foundation\Array.hpp" />
     <ClInclude Include="Foundation\Bit.hpp" />
