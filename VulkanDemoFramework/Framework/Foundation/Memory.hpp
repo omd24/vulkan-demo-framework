@@ -153,7 +153,6 @@ struct MemoryServiceConfiguration
 //---------------------------------------------------------------------------//
 struct MemoryService : public Service
 {
-
   FRAMEWORK_DECLARE_SERVICE(MemoryService);
 
   void init(void* p_Configuration);

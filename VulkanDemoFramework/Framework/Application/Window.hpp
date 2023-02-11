@@ -8,14 +8,12 @@ namespace Framework
 
 struct WindowConfiguration
 {
-
   uint32_t m_Width;
   uint32_t m_Height;
 
   const char* m_Name;
 
   Allocator* m_Allocator;
-
 }; // struct WindowConfiguration
 
 typedef void (*OSMessagesCallback)(void* p_OSEvent, void* p_UserData);
