@@ -150,6 +150,9 @@
       <Project>{c8bb62d1-4281-4cab-a8b3-955303d3b685}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Graphics\GpuEnum.hpp" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

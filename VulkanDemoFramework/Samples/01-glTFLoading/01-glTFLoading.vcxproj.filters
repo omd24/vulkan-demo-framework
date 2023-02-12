@@ -8,4 +8,9 @@
   <ItemGroup>
     <ClCompile Include="01-glTFLoading.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Graphics\GpuEnum.hpp">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+  </ItemGroup>
 </Project>

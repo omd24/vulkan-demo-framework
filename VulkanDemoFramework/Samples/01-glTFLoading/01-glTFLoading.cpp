@@ -18,6 +18,10 @@
 #include <stdlib.h> // for exit()
 
 //---------------------------------------------------------------------------//
+// Graphics includes:
+#include "Graphics/GpuEnum.hpp"
+
+//---------------------------------------------------------------------------//
 // Demo specific utils
 //---------------------------------------------------------------------------//
 float rx, ry;
@@ -39,6 +43,7 @@ struct UniformData
   vec4s light;
 };
 //---------------------------------------------------------------------------//
+/// Window message loop callback
 static void inputOSMessagesCallback(void* p_OSEvent, void* p_UserData)
 {
   Framework::InputService* input = (Framework::InputService*)p_UserData;
