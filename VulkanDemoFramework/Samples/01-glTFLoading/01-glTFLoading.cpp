@@ -22,8 +22,9 @@
 #include "Graphics/GpuEnum.hpp"
 
 //---------------------------------------------------------------------------//
-// Demo specific utils
+// Demo specific utils:
 //---------------------------------------------------------------------------//
+
 float rx, ry;
 struct MaterialData
 {

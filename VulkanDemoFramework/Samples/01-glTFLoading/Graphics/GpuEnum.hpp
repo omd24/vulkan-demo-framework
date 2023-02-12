@@ -7,7 +7,7 @@ namespace Graphics
 //----------------------------------------------------------------------------//
 namespace ColorWriteEnabled
 {
-enum Value
+enum Enum
 {
   kRed,
   kGreen,
@@ -24,16 +24,16 @@ enum Mask
   kAlphaMask = 1 << 3,
   kAllMask = kRedMask | kGreenMask | kBlueMask | kAlphaMask
 };
-static const char* kValueNames[] = {"Red", "Green", "Blue", "Alpha", "All", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Red", "Green", "Blue", "Alpha", "All", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace ColorWriteEnabled
 //----------------------------------------------------------------------------//
 namespace CullMode
 {
-enum Value
+enum Enum
 {
   kNone,
   kFront,
@@ -49,16 +49,16 @@ enum Mask
   kCountMask = 1 << 3
 };
 
-static const char* kValueNames[] = {"None", "Front", "Back", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"None", "Front", "Back", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace CullMode
 //----------------------------------------------------------------------------//
 namespace DepthWriteMask
 {
-enum Value
+enum Enum
 {
   kZero,
   kAll,
@@ -72,16 +72,16 @@ enum Mask
   kCountMask = 1 << 2
 };
 
-static const char* kValueNames[] = {"Zero", "All", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Zero", "All", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace DepthWriteMask
 //----------------------------------------------------------------------------//
 namespace FillMode
 {
-enum Value
+enum Enum
 {
   kWireframe,
   kSolid,
@@ -97,16 +97,16 @@ enum Mask
   kCountMask = 1 << 3
 };
 
-static const char* kValueNames[] = {"Wireframe", "Solid", "Point", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Wireframe", "Solid", "Point", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace FillMode
 //----------------------------------------------------------------------------//
 namespace FrontClockwise
 {
-enum Value
+enum Enum
 {
   kTrue,
   kFalse,
@@ -120,16 +120,16 @@ enum Mask
   kCountMask = 1 << 2
 };
 
-static const char* kValueNames[] = {"True", "False", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"True", "False", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace FrontClockwise
 //----------------------------------------------------------------------------//
 namespace StencilOperation
 {
-enum Value
+enum Enum
 {
   kKeep,
   kZero,
@@ -155,17 +155,17 @@ enum Mask
   CountMask = 1 << 8
 };
 
-static const char* kValueNames[] = {
+static const char* kEnumNames[] = {
     "Keep", "Zero", "Replace", "IncrSat", "DecrSat", "Invert", "Incr", "Decr", "Count"};
-static const char* toString(Value p_Enum)
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace StencilOperation
 //----------------------------------------------------------------------------//
 namespace TopologyType
 {
-enum Value
+enum Enum
 {
   kUnknown,
   kPoint,
@@ -185,16 +185,16 @@ enum Mask
   kCountMask = 1 << 5
 };
 
-static const char* kValueNames[] = {"Unknown", "Point", "Line", "Triangle", "Patch", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Unknown", "Point", "Line", "Triangle", "Patch", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace TopologyType
 //----------------------------------------------------------------------------//
 namespace ResourceUsageType
 {
-enum Value
+enum Enum
 {
   kImmutable,
   kDynamic,
@@ -210,16 +210,16 @@ enum Mask
   kCountMask = 1 << 3
 };
 
-static const char* kValueNames[] = {"Immutable", "Dynamic", "Stream", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Immutable", "Dynamic", "Stream", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace ResourceUsageType
 //----------------------------------------------------------------------------//
 namespace IndexType
 {
-enum Value
+enum Enum
 {
   kUint16,
   kUint32,
@@ -233,16 +233,16 @@ enum Mask
   kCountMask = 1 << 2
 };
 
-static const char* kValueNames[] = {"Uint16", "Uint32", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Uint16", "Uint32", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace IndexType
 //----------------------------------------------------------------------------//
 namespace TextureType
 {
-enum Value
+enum Enum
 {
   kTexture1D,
   kTexture2D,
@@ -264,7 +264,7 @@ enum Mask
   kCountMask = 1 << 6
 };
 
-static const char* kValueNames[] = {
+static const char* kEnumNames[] = {
     "Texture1D",
     "Texture2D",
     "Texture3D",
@@ -273,15 +273,15 @@ static const char* kValueNames[] = {
     "Texture_Cube_Array",
     "Count"};
 
-static const char* toString(Value p_Enum)
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace TextureType
 //----------------------------------------------------------------------------//
 namespace VertexComponentFormat
 {
-enum Value
+enum Enum
 {
   kFloat,
   kFloat2,
@@ -302,7 +302,7 @@ enum Value
   kCount
 };
 
-static const char* kValueNames[] = {
+static const char* kEnumNames[] = {
     "Float",
     "Float2",
     "Float3",
@@ -321,15 +321,15 @@ static const char* kValueNames[] = {
     "Uint4",
     "Count"};
 
-static const char* toString(Value p_Enum)
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace VertexComponentFormat
 //----------------------------------------------------------------------------//
 namespace VertexInputRate
 {
-enum Value
+enum Enum
 {
   kPerVertex,
   kPerInstance,
@@ -343,16 +343,16 @@ enum Mask
   kCountMask = 1 << 2
 };
 
-static const char* kValueNames[] = {"PerVertex", "PerInstance", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"PerVertex", "PerInstance", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace VertexInputRate
 //----------------------------------------------------------------------------//
 namespace LogicOperation
 {
-enum Value
+enum Enum
 {
   kClear,
   kSet,
@@ -394,7 +394,7 @@ enum Mask
   kCountMask = 1 << 16
 };
 
-static const char* kValueNames[] = {
+static const char* kEnumNames[] = {
     "Clear",
     "Set",
     "Copy",
@@ -413,15 +413,15 @@ static const char* kValueNames[] = {
     "OrInverted",
     "Count"};
 
-static const char* toString(Value p_Enum)
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace LogicOperation
 //----------------------------------------------------------------------------//
 namespace QueueType
 {
-enum Value
+enum Enum
 {
   kGraphics,
   kCompute,
@@ -437,16 +437,16 @@ enum Mask
   kCountMask = 1 << 3
 };
 
-static const char* kValueNames[] = {"Graphics", "Compute", "CopyTransfer", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Graphics", "Compute", "CopyTransfer", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace QueueType
 //----------------------------------------------------------------------------//
 namespace CommandType
 {
-enum Value
+enum Enum
 {
   kBindPipeline,
   kBindResourceTable,
@@ -469,7 +469,7 @@ enum Value
   kCount
 };
 
-static const char* kValueNames[] = {
+static const char* kEnumNames[] = {
     "BindPipeline",
     "BindResourceTable",
     "BindVertexBuffer",
@@ -490,9 +490,9 @@ static const char* kValueNames[] = {
     "EndPass",
     "Count"};
 
-static const char* toString(Value p_Enum)
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace CommandType
 //---------------------------------------------------------------------------//
@@ -503,7 +503,7 @@ enum DeviceExtensions
 //---------------------------------------------------------------------------//
 namespace TextureFlags
 {
-enum Value
+enum Enum
 {
   kDefault,
   kRenderTarget,
@@ -518,16 +518,16 @@ enum Mask
   kComputeMask = 1 << 2
 };
 
-static const char* kValueNames[] = {"Default", "RenderTarget", "Compute", "Count"};
-static const char* toString(Value p_Enum)
+static const char* kEnumNames[] = {"Default", "RenderTarget", "Compute", "Count"};
+static const char* toString(Enum p_Enum)
 {
-  return ((uint32_t)p_Enum < Value::kCount ? kValueNames[(int)p_Enum] : "unsupported");
+  return ((uint32_t)p_Enum < Enum::kCount ? kEnumNames[(int)p_Enum] : "unsupported");
 }
 } // namespace TextureFlags
 //---------------------------------------------------------------------------//
 namespace PipelineStage
 {
-enum Value
+enum Enum
 {
   kDrawIndirect = 0,
   kVertexInput = 1,
@@ -552,7 +552,7 @@ enum Mask
 //---------------------------------------------------------------------------//
 namespace RenderPassType
 {
-enum Value
+enum Enum
 {
   kGeometry,
   kSwapchain,
@@ -562,7 +562,7 @@ enum Value
 //---------------------------------------------------------------------------//
 namespace ResourceDeletionType
 {
-enum Value
+enum Enum
 {
   kBuffer,
   kTexture,
@@ -578,25 +578,25 @@ enum Value
 //---------------------------------------------------------------------------//
 namespace PresentMode
 {
-enum Value
+enum Enum
 {
   kImmediate,
   kVSync,
   kVSyncFast,
   kVSyncRelaxed,
   kCount
-}; // enum Value
+}; // enum Enum
 } // namespace PresentMode
 //---------------------------------------------------------------------------//
 namespace RenderPassOperation
 {
-enum Value
+enum Enum
 {
   kDontCare,
   kLoad,
   kClear,
   kCount
-}; // enum Value
+}; // enum Enum
 } // namespace RenderPassOperation
 //---------------------------------------------------------------------------//
 // Taken from the Forge
