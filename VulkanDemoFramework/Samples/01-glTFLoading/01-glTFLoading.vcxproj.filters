@@ -10,12 +10,18 @@
     <ClCompile Include="Graphics\GpuResources.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="Graphics\GpuDevice.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Graphics\GpuEnum.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
     <ClInclude Include="Graphics\GpuResources.hpp">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\GpuDevice.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
   </ItemGroup>

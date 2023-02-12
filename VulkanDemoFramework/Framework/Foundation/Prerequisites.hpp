@@ -30,6 +30,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <assert.h>
 
 //---------------------------------------------------------------------------//
 // Various macros
@@ -49,3 +50,17 @@
 
 // Unique names
 #define FRAMEWORK_UNIQUE_SUFFIX(PARAM) RAPTOR_CONCAT(PARAM, __LINE__)
+
+//---------------------------------------------------------------------------//
+// Helper functions:
+//---------------------------------------------------------------------------//
+template <typename T, size_t N> constexpr size_t arrayCount(T (&)[N]) { return N; }
+//---------------------------------------------------------------------------//
+template <typename T, uint32_t N> constexpr uint32_t arrayCount32(T (&)[N]) { return N; }
+//---------------------------------------------------------------------------//
+template <class T> constexpr const T& clamp(const T& v, const T& lo, const T& hi)
+{
+  assert(!(hi < lo));
+  return (v < lo) ? lo : (hi < v) ? hi : v;
+}
+//---------------------------------------------------------------------------//

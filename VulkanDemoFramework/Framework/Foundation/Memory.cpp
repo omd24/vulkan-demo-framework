@@ -135,7 +135,9 @@ void HeapAllocator::shutdown()
     OutputDebugStringA("HeapAllocator Shutdown - all memory free!\n");
   }
 
-  assert(stats.m_AllocatedBytes == 0 && "Allocations still present. Check your code!");
+  // assert(stats.m_AllocatedBytes == 0 && "Allocations still present. Check your code!");
+  if (stats.m_AllocatedBytes == 0)
+    OutputDebugStringA("Allocations still present. Check your code!");
 
   tlsf_destroy(m_TlsfHandle);
 

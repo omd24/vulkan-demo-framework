@@ -20,6 +20,8 @@
 //---------------------------------------------------------------------------//
 // Graphics includes:
 #include "Graphics/GpuEnum.hpp"
+#include "Graphics/GpuResources.hpp"
+#include "Graphics/GpuDevice.hpp"
 
 //---------------------------------------------------------------------------//
 // Demo specific utils:
@@ -82,6 +84,14 @@ int main(int argc, char** argv)
 
   window.registerOSMessagesCallback(inputOSMessagesCallback, &inputHandler);
 
+  // graphics
+  Graphics::DeviceCreation deviceCreation;
+  deviceCreation.setWindow(window.m_Width, window.m_Height, window.m_PlatformHandle)
+      .setAllocator(allocator)
+      .setTemporaryAllocator(&scratchAllocator);
+  Graphics::GpuDevice gpuDevice;
+  gpuDevice.init(deviceCreation);
+
   Framework::ResourceManager resourceMgr = {};
   resourceMgr.init(allocator, nullptr);
 
@@ -132,6 +142,8 @@ int main(int argc, char** argv)
 #pragma region Deini, shutdown and cleanup
 
   resourceMgr.shutdown();
+
+  // gpuDevice.shutdown(); // TODO: move this to renderer
 
   Framework::gltfFree(scene);
 
