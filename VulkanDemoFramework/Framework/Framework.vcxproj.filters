@@ -72,6 +72,9 @@
     <ClCompile Include="Application\Input.cpp">
       <Filter>Application</Filter>
     </ClCompile>
+    <ClCompile Include="Foundation\ResourcePool.cpp">
+      <Filter>Foundation</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Foundation\Array.hpp">
@@ -151,6 +154,9 @@
     </ClInclude>
     <ClInclude Include="Application\Input.hpp">
       <Filter>Application</Filter>
+    </ClInclude>
+    <ClInclude Include="Foundation\ResourcePool.hpp">
+      <Filter>Foundation</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
