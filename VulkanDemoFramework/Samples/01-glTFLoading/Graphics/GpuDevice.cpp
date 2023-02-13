@@ -5,9 +5,18 @@
 
 #include <assert.h>
 
+// VMA link prequisities:
+#define VMA_USE_STL_CONTAINERS 0
+#define VMA_USE_STL_VECTOR 0
+#define VMA_USE_STL_UNORDERED_MAP 0
+#define VMA_USE_STL_LIST 0
+
+#define VMA_IMPLEMENTATION
+#include "Externals/vk_mem_alloc.h"
+
 namespace Graphics
 {
-#define CHECKRES(result) assert(result == VK_SUCCESS, "Vulkan assert code %u", result)
+#define CHECKRES(result) assert(result == VK_SUCCESS && "Vulkan assert")
 //---------------------------------------------------------------------------//
 DeviceCreation& DeviceCreation::setWindow(uint32_t p_Width, uint32_t p_Height, void* p_Handle)
 {
@@ -59,14 +68,14 @@ static VkBool32 debugUtilsCallback(
     const VkDebugUtilsMessengerCallbackDataEXT* p_CallbackData,
     void* p_UserData)
 {
-  // char msg[256]{};
-  // sprintf(
-  //    msg,
-  //    " MessageID: %s %i\nMessage: %s\n\n",
-  //    p_CallbackData->pMessageIdName,
-  //    p_CallbackData->messageIdNumber,
-  //    p_CallbackData->pMessage);
-  OutputDebugStringA(p_CallbackData->pMessage);
+  char msg[1024]{};
+  sprintf(
+      msg,
+      " MessageID: %s %i\nMessage: %s\n\n",
+      p_CallbackData->pMessageIdName,
+      p_CallbackData->messageIdNumber,
+      p_CallbackData->pMessage);
+  OutputDebugStringA(msg);
   return VK_FALSE;
 }
 //---------------------------------------------------------------------------//
@@ -355,17 +364,87 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
 
     createSwapchain();
   }
+
+  // Create VMA allocator:
+  {
+    VmaAllocatorCreateInfo ci = {};
+    ci.physicalDevice = m_VulkanPhysicalDevice;
+    ci.device = m_VulkanDevice;
+    ci.instance = m_VulkanInstance;
+
+    VkResult result = vmaCreateAllocator(&ci, &m_VmaAllocator);
+    CHECKRES(result);
+  }
+
+  // Create descriptor pool
+  {
+    static const uint32_t kPoolSize = 128;
+    VkDescriptorPoolSize poolSizes[] = {
+        {VK_DESCRIPTOR_TYPE_SAMPLER, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, kPoolSize},
+        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, kPoolSize}};
+    VkDescriptorPoolCreateInfo ci = {};
+    ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    ci.maxSets = kPoolSize * arrayCount32(poolSizes);
+    ci.poolSizeCount = arrayCount32(poolSizes);
+    ci.pPoolSizes = poolSizes;
+    VkResult result = vkCreateDescriptorPool(
+        m_VulkanDevice, &ci, m_VulkanAllocCallbacks, &m_VulkanDescriptorPool);
+    CHECKRES(result);
+  }
+
+  // Init pools
+  m_Buffers.init(m_Allocator, 512, sizeof(Buffer));
+  m_Textures.init(m_Allocator, 512, sizeof(Texture));
+  m_RenderPasses.init(m_Allocator, 256, sizeof(RenderPass));
+  m_DescriptorSetLayouts.init(m_Allocator, 128, sizeof(DesciptorSetLayout));
+  m_Pipelines.init(m_Allocator, 128, sizeof(Pipeline));
+  m_Shaders.init(m_Allocator, 128, sizeof(ShaderState));
+  m_DescriptorSets.init(m_Allocator, 128, sizeof(DesciptorSet));
+  m_Samplers.init(m_Allocator, 32, sizeof(Sampler));
+
+  // Create synchronization objects
+
+  // Setup resource delection queue and descrptr set updates
+
+  // create sampler, depth images and textures and renderpass
+
+  // dynamic buffer handling
 }
 //---------------------------------------------------------------------------//
 void GpuDevice::shutdown()
 {
   vkDeviceWaitIdle(m_VulkanDevice);
+
+  destroySwapchain();
   vkDestroySurfaceKHR(m_VulkanInstance, m_VulkanWindowSurface, m_VulkanAllocCallbacks);
+
+  vmaDestroyAllocator(m_VmaAllocator);
+
+  m_Buffers.shutdown();
+  m_Textures.shutdown();
+  m_RenderPasses.shutdown();
+  m_DescriptorSetLayouts.shutdown();
+  m_Pipelines.shutdown();
+  m_Shaders.shutdown();
+  m_DescriptorSets.shutdown();
+  m_Samplers.shutdown();
 
   auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
       m_VulkanInstance, "vkDestroyDebugUtilsMessengerEXT");
   vkDestroyDebugUtilsMessengerEXT(
       m_VulkanInstance, m_VulkanDebugUtilsMessenger, m_VulkanAllocCallbacks);
+
+  vkDestroyDescriptorPool(m_VulkanDevice, m_VulkanDescriptorPool, m_VulkanAllocCallbacks);
 
   vkDestroyDevice(m_VulkanDevice, m_VulkanAllocCallbacks);
   vkDestroyInstance(m_VulkanInstance, m_VulkanAllocCallbacks);

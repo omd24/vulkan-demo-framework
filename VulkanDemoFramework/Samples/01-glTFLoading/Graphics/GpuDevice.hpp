@@ -81,10 +81,23 @@ struct GpuDevice : public Framework::Service
 
   uint32_t m_VulkanImageIndex;
 
+  VmaAllocator m_VmaAllocator;
+
   // Per-frame synchronization
   VkSemaphore m_VulkanRenderCompleteSempaphore[kMaxSwapchainImages];
   VkSemaphore m_VulkanImageAquiredSempaphore;
   VkFence m_VulkanCmdBufferExectuedFence[kMaxSwapchainImages];
+
+  // Resource pools
+  Framework::ResourcePool m_Buffers;
+  Framework::ResourcePool m_Textures;
+  Framework::ResourcePool m_Pipelines;
+  Framework::ResourcePool m_Samplers;
+  Framework::ResourcePool m_DescriptorSetLayouts;
+  Framework::ResourcePool m_DescriptorSets;
+  Framework::ResourcePool m_RenderPasses;
+  Framework::ResourcePool m_CommandBuffers;
+  Framework::ResourcePool m_Shaders;
 
   static const uint32_t kMaxFrames = 3;
   static constexpr const char* kName = "Gpu-Service";
