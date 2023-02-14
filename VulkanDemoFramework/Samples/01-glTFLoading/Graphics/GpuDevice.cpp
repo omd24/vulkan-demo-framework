@@ -1,4 +1,5 @@
 #include "GpuDevice.hpp"
+#include "CommandBuffer.hpp"
 
 #include "Externals/SDL2-2.0.18/include/SDL.h"        // SDL_Window
 #include "Externals/SDL2-2.0.18/include/SDL_vulkan.h" // SDL_Vulkan_CreateSurface
@@ -17,6 +18,92 @@
 namespace Graphics
 {
 #define CHECKRES(result) assert(result == VK_SUCCESS && "Vulkan assert")
+//---------------------------------------------------------------------------//
+struct CommandBufferRing
+{
+
+  void init(GpuDevice* p_Gpu)
+  {
+    m_Gpu = p_Gpu;
+
+    for (uint32_t i = 0; i < ms_MaxPools; i++)
+    {
+      VkCommandPoolCreateInfo cmdPoolCi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
+      cmdPoolCi.queueFamilyIndex = m_Gpu->m_VulkanQueueFamily;
+      cmdPoolCi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+      CHECKRES(vkCreateCommandPool(
+          m_Gpu->m_VulkanDevice, &cmdPoolCi, m_Gpu->m_VulkanAllocCallbacks, &m_VulkanCmdPools[i]));
+    }
+
+    for (uint32_t i = 0; i < ms_MaxBuffers; i++)
+    {
+      VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
+      const uint32_t poolIndex = poolFromIndex(i);
+      cmd.commandPool = m_VulkanCmdPools[poolIndex];
+      cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+      cmd.commandBufferCount = 1;
+      CHECKRES(vkAllocateCommandBuffers(
+          m_Gpu->m_VulkanDevice, &cmd, &m_CmdBuffers[i].m_VulkanCmdBuffer));
+
+      m_CmdBuffers[i].m_GpuDevice = m_Gpu;
+      m_CmdBuffers[i].m_Handle = i;
+      m_CmdBuffers[i].reset();
+    }
+  }
+  void shutdown()
+  {
+    for (uint32_t i = 0; i < kMaxSwapchainImages * ms_MaxThreads; i++)
+    {
+      vkDestroyCommandPool(
+          m_Gpu->m_VulkanDevice, m_VulkanCmdPools[i], m_Gpu->m_VulkanAllocCallbacks);
+    }
+  }
+
+  void reset_pools(uint32_t p_FrameIndex)
+  {
+    for (uint32_t i = 0; i < ms_MaxThreads; i++)
+    {
+      vkResetCommandPool(
+          m_Gpu->m_VulkanDevice, m_VulkanCmdPools[p_FrameIndex * ms_MaxThreads + i], 0);
+    }
+  }
+
+  CommandBuffer* getCmdBuffer(uint32_t p_FrameIndex, bool p_Begin)
+  {
+    // TODO: take in account threads
+    CommandBuffer* cmdBuffer = &m_CmdBuffers[p_FrameIndex * ms_BufferPerPool];
+
+    if (p_Begin)
+    {
+      cmdBuffer->reset();
+
+      VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+      beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+      vkBeginCommandBuffer(cmdBuffer->m_VulkanCmdBuffer, &beginInfo);
+    }
+
+    return cmdBuffer;
+  }
+  CommandBuffer* getCmdBufferInstant(uint32_t p_FrameIndex, bool p_Begin)
+  {
+    CommandBuffer* cmdBuffer = &m_CmdBuffers[p_FrameIndex * ms_BufferPerPool + 1];
+    return cmdBuffer;
+  }
+
+  static uint16_t poolFromIndex(uint32_t p_Index) { return (uint16_t)p_Index / ms_BufferPerPool; }
+
+  static const uint16_t ms_MaxThreads = 1;
+  static const uint16_t ms_MaxPools = kMaxSwapchainImages * ms_MaxThreads;
+  static const uint16_t ms_BufferPerPool = 4;
+  static const uint16_t ms_MaxBuffers = ms_BufferPerPool * ms_MaxPools;
+
+  GpuDevice* m_Gpu;
+  VkCommandPool m_VulkanCmdPools[ms_MaxPools];
+  CommandBuffer m_CmdBuffers[ms_MaxBuffers];
+  uint8_t m_NextFreePerThreadFrame[ms_MaxPools];
+
+}; // struct CommandBufferRing
 //---------------------------------------------------------------------------//
 DeviceCreation& DeviceCreation::setWindow(uint32_t p_Width, uint32_t p_Height, void* p_Handle)
 {
@@ -104,6 +191,8 @@ static size_t kUboAlignment = 256;
 static size_t kSboAlignemnt = 256;
 
 static SDL_Window* g_SdlWindow;
+
+static CommandBufferRing g_CmdBufferRing;
 
 static VkPresentModeKHR toVkPresentMode(PresentMode::Enum p_Mode)
 {
@@ -413,6 +502,24 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   m_Samplers.init(m_Allocator, 32, sizeof(Sampler));
 
   // Create synchronization objects
+  VkSemaphoreCreateInfo semaphoreCi{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  vkCreateSemaphore(
+      m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanImageAquiredSempaphore);
+
+  for (size_t i = 0; i < kMaxSwapchainImages; i++)
+  {
+
+    vkCreateSemaphore(
+        m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanRenderCompleteSempaphore[i]);
+
+    VkFenceCreateInfo fenceCi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    fenceCi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    vkCreateFence(
+        m_VulkanDevice, &fenceCi, m_VulkanAllocCallbacks, &m_VulkanCmdBufferExectuedFence[i]);
+  }
+
+  // init the command buffer ring:
+  g_CmdBufferRing.init(this);
 
   // Setup resource delection queue and descrptr set updates
 
@@ -424,6 +531,16 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
 void GpuDevice::shutdown()
 {
   vkDeviceWaitIdle(m_VulkanDevice);
+
+  g_CmdBufferRing.shutdown();
+
+  for (size_t i = 0; i < kMaxSwapchainImages; i++)
+  {
+    vkDestroySemaphore(m_VulkanDevice, m_VulkanRenderCompleteSempaphore[i], m_VulkanAllocCallbacks);
+    vkDestroyFence(m_VulkanDevice, m_VulkanCmdBufferExectuedFence[i], m_VulkanAllocCallbacks);
+  }
+
+  vkDestroySemaphore(m_VulkanDevice, m_VulkanImageAquiredSempaphore, m_VulkanAllocCallbacks);
 
   destroySwapchain();
   vkDestroySurfaceKHR(m_VulkanInstance, m_VulkanWindowSurface, m_VulkanAllocCallbacks);

@@ -149,10 +149,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="01-glTFLoading.cpp" />
+    <ClCompile Include="Graphics\CommandBuffer.cpp" />
     <ClCompile Include="Graphics\GpuDevice.cpp" />
     <ClCompile Include="Graphics\GpuResources.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Graphics\CommandBuffer.hpp" />
     <ClInclude Include="Graphics\GpuDevice.hpp" />
     <ClInclude Include="Graphics\GpuEnum.hpp" />
     <ClInclude Include="Graphics\GpuResources.hpp" />
