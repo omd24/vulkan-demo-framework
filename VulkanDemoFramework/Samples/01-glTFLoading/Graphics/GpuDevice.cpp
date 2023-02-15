@@ -518,14 +518,49 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
         m_VulkanDevice, &fenceCi, m_VulkanAllocCallbacks, &m_VulkanCmdBufferExectuedFence[i]);
   }
 
-  // init the command buffer ring:
+  // Init the command buffer ring:
   g_CmdBufferRing.init(this);
 
-  // Setup resource delection queue and descrptr set updates
+  // Init frame counters
+  m_VulkanImageIndex = 0;
+  m_CurrentFrameIndex = 1;
+  m_PreviousFrameIndex = 0;
+  m_AbsoluteFrameIndex = 0;
 
-  // create sampler, depth images and textures and renderpass
+  // Init resource delection queue and descrptr set updates
+  m_ResourceDeletionQueue.init(m_Allocator, 16);
+  m_DescriptorSetUpdates.init(m_Allocator, 16);
 
-  // dynamic buffer handling
+  // create sampler, depth images and other fundamentals
+  SamplerCreation samplerCreation{};
+  samplerCreation
+      .setAddressModeUVW(
+          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+      .setMinMagMip(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR)
+      .setName("Sampler Default");
+  m_DefaultSampler = createSampler(samplerCreation);
+
+  BufferCreation fullscreenVbCreation = {
+      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+      ResourceUsageType::kImmutable,
+      0,
+      nullptr,
+      "Fullscreen_vb"};
+  m_FullscreenVertexBuffer = createBuffer(fullscreenVbCreation);
+
+  ...
+      // TODOs:
+      TextureHandle m_DepthTexture;
+  BufferHandle m_FullscreenVertexBuffer;
+  RenderPassOutput m_SwapchainOutput;
+  SamplerHandle m_DefaultSampler;
+  RenderPassHandle m_SwapchainPass;
+
+  // Dummy resources
+  TextureHandle m_DummyTexture;
+  BufferHandle m_DummyConstantBuffer;
 }
 //---------------------------------------------------------------------------//
 void GpuDevice::shutdown()
@@ -541,6 +576,10 @@ void GpuDevice::shutdown()
   }
 
   vkDestroySemaphore(m_VulkanDevice, m_VulkanImageAquiredSempaphore, m_VulkanAllocCallbacks);
+
+  MapBufferParameters mapParams = {m_DynamicBuffer, 0, 0};
+  unmapBuffer(mapParams);
+  destroyBuffer(m_DynamicBuffer);
 
   destroySwapchain();
   vkDestroySurfaceKHR(m_VulkanInstance, m_VulkanWindowSurface, m_VulkanAllocCallbacks);
@@ -567,6 +606,142 @@ void GpuDevice::shutdown()
   vkDestroyInstance(m_VulkanInstance, m_VulkanAllocCallbacks);
 
   OutputDebugStringA("Gpu device shutdown\n");
+}
+//---------------------------------------------------------------------------//
+// Creation/Destruction of resources
+//---------------------------------------------------------------------------//
+BufferHandle GpuDevice::createBuffer(const BufferCreation& p_Creation)
+{
+  BufferHandle handle = {m_Buffers.obtainResource()};
+  if (handle.index == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  Buffer* buffer = (Buffer*)m_Buffers.accessResource(handle.index);
+
+  buffer->name = p_Creation.name;
+  buffer->size = p_Creation.size;
+  buffer->typeFlags = p_Creation.typeFlags;
+  buffer->usage = p_Creation.usage;
+  buffer->handle = handle;
+  buffer->globalOffset = 0;
+  buffer->parentBuffer = kInvalidBuffer;
+
+  // Cache and calculate if dynamic buffer can be used.
+  static const VkBufferUsageFlags kDynamicBufferMask = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+  const bool useGlobalBuffer = (p_Creation.typeFlags & kDynamicBufferMask) != 0;
+  if (p_Creation.usage == ResourceUsageType::kDynamic && useGlobalBuffer)
+  {
+    buffer->parentBuffer = m_DynamicBuffer;
+    return handle;
+  }
+
+  VkBufferCreateInfo bufferCi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  bufferCi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | p_Creation.typeFlags;
+  bufferCi.size = p_Creation.size > 0 ? p_Creation.size : 1; // 0 sized creations are not permitted.
+
+  VmaAllocationCreateInfo memoryCi{};
+  memoryCi.flags = VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT;
+  memoryCi.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+  VmaAllocationInfo allocationInfo{};
+  CHECKRES(vmaCreateBuffer(
+      m_VmaAllocator,
+      &bufferCi,
+      &memoryCi,
+      &buffer->vkBuffer,
+      &buffer->vmaAllocation,
+      &allocationInfo));
+
+  setResourceName(VK_OBJECT_TYPE_BUFFER, (uint64_t)buffer->vkBuffer, p_Creation.name);
+
+  buffer->vkDeviceMemory = allocationInfo.deviceMemory;
+
+  if (p_Creation.initialData)
+  {
+    void* data;
+    vmaMapMemory(m_VmaAllocator, buffer->vmaAllocation, &data);
+    memcpy(data, p_Creation.initialData, (size_t)p_Creation.size);
+    vmaUnmapMemory(m_VmaAllocator, buffer->vmaAllocation);
+  }
+
+  return handle;
+}
+//---------------------------------------------------------------------------//
+TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation) {}
+//---------------------------------------------------------------------------//
+PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation) {}
+//---------------------------------------------------------------------------//
+SamplerHandle GpuDevice::createSampler(const SamplerCreation& p_Creation) {}
+//---------------------------------------------------------------------------//
+DescriptorSetLayoutHandle
+GpuDevice::createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation)
+{
+}
+//---------------------------------------------------------------------------//
+DescriptorSetHandle GpuDevice::createDescriptorSet(const DescriptorSetCreation& p_Creation) {}
+//---------------------------------------------------------------------------//
+RenderPassHandle GpuDevice::createRenderPass(const RenderPassCreation& p_Creation) {}
+//---------------------------------------------------------------------------//
+ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Creation) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyBuffer(BufferHandle p_Buffer) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyTexture(TextureHandle p_Texture) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyPipeline(PipelineHandle p_Pipeline) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroySampler(SamplerHandle p_Sampler) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyDescriptorSet(DescriptorSetHandle p_Set) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyRenderPass(RenderPassHandle p_RenderPass) {}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader) {}
+//---------------------------------------------------------------------------//
+void* GpuDevice::mapBuffer(const MapBufferParameters& p_Parameters)
+{
+  if (p_Parameters.buffer.index == kInvalidIndex)
+    return nullptr;
+
+  Buffer* buffer = (Buffer*)m_Buffers.accessResource(p_Parameters.buffer.index);
+
+  if (buffer->parentBuffer.index == m_DynamicBuffer.index)
+  {
+
+    buffer->globalOffset = m_DynamicAllocatedSize;
+
+    return dynamicAllocate(p_Parameters.size == 0 ? buffer->size : p_Parameters.size);
+  }
+
+  void* data;
+  vmaMapMemory(m_VmaAllocator, buffer->vmaAllocation, &data);
+
+  return data;
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::unmapBuffer(const MapBufferParameters& p_Parameters)
+{
+  if (p_Parameters.buffer.index == kInvalidIndex)
+    return;
+
+  Buffer* buffer = (Buffer*)m_Buffers.accessResource(p_Parameters.buffer.index);
+  if (buffer->parentBuffer.index == m_DynamicBuffer.index)
+    return;
+
+  vmaUnmapMemory(m_VmaAllocator, buffer->vmaAllocation);
+}
+//---------------------------------------------------------------------------//
+void* GpuDevice::dynamicAllocate(uint32_t p_Size)
+{
+  void* MappedMemory = m_DynamicMappedMemory + m_DynamicAllocatedSize;
+  m_DynamicAllocatedSize += (uint32_t)Framework::memoryAlign(p_Size, kUboAlignment);
+  return MappedMemory;
 }
 //---------------------------------------------------------------------------//
 void GpuDevice::setPresentMode(PresentMode::Enum p_Mode)
@@ -700,6 +875,19 @@ void GpuDevice::destroySwapchain()
   }
 
   vkDestroySwapchainKHR(m_VulkanDevice, m_VulkanSwapchain, m_VulkanAllocCallbacks);
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name)
+{
+  if (!m_DebugUtilsExtensionPresent)
+  {
+    return;
+  }
+  VkDebugUtilsObjectNameInfoEXT name_info = {VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT};
+  name_info.objectType = p_ObjType;
+  name_info.objectHandle = p_Handle;
+  name_info.pObjectName = p_Name;
+  pfnSetDebugUtilsObjectNameEXT(m_VulkanDevice, &name_info);
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics

@@ -40,9 +40,39 @@ struct GpuDevice : public Framework::Service
   void init(const DeviceCreation& p_Creation);
   void shutdown();
 
+  // Creation/Destruction of resources
+  BufferHandle createBuffer(const BufferCreation& p_Creation);
+  TextureHandle createTexture(const TextureCreation& p_Creation);
+  PipelineHandle createPipeline(const PipelineCreation& p_Creation);
+  SamplerHandle createSampler(const SamplerCreation& p_Creation);
+  DescriptorSetLayoutHandle
+  createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation);
+  DescriptorSetHandle createDescriptorSet(const DescriptorSetCreation& p_Creation);
+  RenderPassHandle createRenderPass(const RenderPassCreation& p_Creation);
+  ShaderStateHandle createShaderState(const ShaderStateCreation& p_Creation);
+
+  void destroyBuffer(BufferHandle p_Buffer);
+  void destroyTexture(TextureHandle p_Texture);
+  void destroyPipeline(PipelineHandle p_Pipeline);
+  void destroySampler(SamplerHandle p_Sampler);
+  void destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout);
+  void destroyDescriptorSet(DescriptorSetHandle p_Set);
+  void destroyRenderPass(RenderPassHandle p_RenderPass);
+  void destroyShaderState(ShaderStateHandle p_Shader);
+
+  // Map/Unmap
+  void* mapBuffer(const MapBufferParameters& p_Parameters);
+  void unmapBuffer(const MapBufferParameters& p_Parameters);
+
+  void* dynamicAllocate(uint32_t p_Size);
+
+  // Swapchain helpers
   void setPresentMode(PresentMode::Enum p_Mode);
   void createSwapchain();
   void destroySwapchain();
+
+  // Other utility
+  void setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name);
 
   // Common members
   Framework::StringBuffer m_StringBuffer;
@@ -80,6 +110,23 @@ struct GpuDevice : public Framework::Service
   VkDebugUtilsMessengerEXT m_VulkanDebugUtilsMessenger;
 
   uint32_t m_VulkanImageIndex;
+  uint32_t m_CurrentFrameIndex;
+  uint32_t m_PreviousFrameIndex;
+  uint32_t m_AbsoluteFrameIndex;
+
+  Framework::Array<ResourceUpdate> m_ResourceDeletionQueue;
+  Framework::Array<DescriptorSetUpdate> m_DescriptorSetUpdates;
+
+  // Fundamental resources
+  TextureHandle m_DepthTexture;
+  BufferHandle m_FullscreenVertexBuffer;
+  RenderPassOutput m_SwapchainOutput;
+  SamplerHandle m_DefaultSampler;
+  RenderPassHandle m_SwapchainPass;
+
+  // Dummy resources
+  TextureHandle m_DummyTexture;
+  BufferHandle m_DummyConstantBuffer;
 
   VmaAllocator m_VmaAllocator;
 
@@ -98,6 +145,13 @@ struct GpuDevice : public Framework::Service
   Framework::ResourcePool m_RenderPasses;
   Framework::ResourcePool m_CommandBuffers;
   Framework::ResourcePool m_Shaders;
+
+  // Dynamic buffer
+  uint32_t m_DynamicMaxPerFrameSize;
+  BufferHandle m_DynamicBuffer;
+  uint8_t* m_DynamicMappedMemory;
+  uint32_t m_DynamicAllocatedSize;
+  uint32_t m_DynamicPerFrameSize;
 
   static const uint32_t kMaxFrames = 3;
   static constexpr const char* kName = "Gpu-Service";
