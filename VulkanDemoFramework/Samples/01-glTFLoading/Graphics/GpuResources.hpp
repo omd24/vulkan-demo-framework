@@ -523,9 +523,9 @@ struct SamplerDescription
   VkFilter magFilter = VK_FILTER_NEAREST;
   VkSamplerMipmapMode mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
-  VkSamplerAddressMode addressMode_u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  VkSamplerAddressMode addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   VkSamplerAddressMode addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-  VkSamplerAddressMode addressMode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  VkSamplerAddressMode addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
 }; // struct SamplerDescription
 
@@ -632,9 +632,9 @@ struct Sampler
   VkFilter magFilter = VK_FILTER_NEAREST;
   VkSamplerMipmapMode mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
-  VkSamplerAddressMode addressMode_u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  VkSamplerAddressMode addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   VkSamplerAddressMode addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-  VkSamplerAddressMode addressMode_w = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  VkSamplerAddressMode addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
   const char* name = nullptr;
 
@@ -750,7 +750,7 @@ struct RenderPass
   uint16_t dispatchZ = 0;
 
   uint8_t resize = 0;
-  uint8_t numRender_targets = 0;
+  uint8_t numRenderTargets = 0;
 
   const char* name = nullptr;
 }; // struct RenderPassVulkan
@@ -790,33 +790,33 @@ static const char* toStageDefines(VkShaderStageFlagBits value)
 
 static VkImageType toVkImageType(TextureType::Enum type)
 {
-  static VkImageType sVk_target[TextureType::kCount] = {
+  static VkImageType kVkTarget[TextureType::kCount] = {
       VK_IMAGE_TYPE_1D,
       VK_IMAGE_TYPE_2D,
       VK_IMAGE_TYPE_3D,
       VK_IMAGE_TYPE_1D,
       VK_IMAGE_TYPE_2D,
       VK_IMAGE_TYPE_3D};
-  return sVk_target[type];
+  return kVkTarget[type];
 }
 
 static VkImageViewType toVkImageViewType(TextureType::Enum type)
 {
-  static VkImageViewType sVkData[] = {
+  static VkImageViewType kVkData[] = {
       VK_IMAGE_VIEW_TYPE_1D,
       VK_IMAGE_VIEW_TYPE_2D,
       VK_IMAGE_VIEW_TYPE_3D,
       VK_IMAGE_VIEW_TYPE_1D_ARRAY,
       VK_IMAGE_VIEW_TYPE_2D_ARRAY,
       VK_IMAGE_VIEW_TYPE_CUBE_ARRAY};
-  return sVkData[type];
+  return kVkData[type];
 }
 
 static VkFormat toVkVertexFormat(VertexComponentFormat::Enum value)
 {
   // Float, Float2, Float3, Float4, Mat4, Byte, Byte4N, UByte, UByte4N, Short2, Short2N, Short4,
   // Short4N, Uint, Uint2, Uint4, Count
-  static VkFormat sVkVertexFormats[VertexComponentFormat::kCount] = {
+  static VkFormat kVkVertexFormats[VertexComponentFormat::kCount] = {
       VK_FORMAT_R32_SFLOAT,
       VK_FORMAT_R32G32_SFLOAT,
       VK_FORMAT_R32G32B32_SFLOAT,
@@ -834,12 +834,12 @@ static VkFormat toVkVertexFormat(VertexComponentFormat::Enum value)
       VK_FORMAT_R32G32_UINT,
       VK_FORMAT_R32G32B32A32_UINT};
 
-  return sVkVertexFormats[value];
+  return kVkVertexFormats[value];
 }
 
 static VkPipelineStageFlags toVkPipelineStage(PipelineStage::Enum value)
 {
-  static VkPipelineStageFlags sVkValues[] = {
+  static VkPipelineStageFlags kVkValues[] = {
       VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
       VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
       VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
@@ -847,7 +847,7 @@ static VkPipelineStageFlags toVkPipelineStage(PipelineStage::Enum value)
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
       VK_PIPELINE_STAGE_TRANSFER_BIT};
-  return sVkValues[value];
+  return kVkValues[value];
 }
 
 static VkAccessFlags utilToVkAccessFlags(ResourceState state)

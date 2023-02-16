@@ -4,6 +4,8 @@
 #include "Externals/SDL2-2.0.18/include/SDL.h"        // SDL_Window
 #include "Externals/SDL2-2.0.18/include/SDL_vulkan.h" // SDL_Vulkan_CreateSurface
 
+#include "Foundation/HashMap.hpp"
+
 #include <assert.h>
 
 // VMA link prequisities:
@@ -60,7 +62,7 @@ struct CommandBufferRing
     }
   }
 
-  void reset_pools(uint32_t p_FrameIndex)
+  void resetPools(uint32_t p_FrameIndex)
   {
     for (uint32_t i = 0; i < ms_MaxThreads; i++)
     {
@@ -135,9 +137,7 @@ DeviceCreation& DeviceCreation::setTemporaryAllocator(Framework::StackAllocator*
 static const char* kRequestedLayers[] = {
     "VK_LAYER_KHRONOS_validation",
     //"VK_LAYER_LUNARG_core_validation",
-    //"VK_LAYER_LUNARG_image",
     //"VK_LAYER_LUNARG_parameter_validation",
-    //"VK_LAYER_LUNARG_object_tracker"
 };
 static const char* kRequestedExtensions[] = {
     VK_KHR_SURFACE_EXTENSION_NAME,
@@ -192,9 +192,10 @@ static size_t kSboAlignemnt = 256;
 
 static SDL_Window* g_SdlWindow;
 
+static Framework::FlatHashMap<uint64_t, VkRenderPass> g_RenderPassCache;
 static CommandBufferRing g_CmdBufferRing;
 
-static VkPresentModeKHR toVkPresentMode(PresentMode::Enum p_Mode)
+static VkPresentModeKHR _toVkPresentMode(PresentMode::Enum p_Mode)
 {
   switch (p_Mode)
   {
@@ -209,7 +210,397 @@ static VkPresentModeKHR toVkPresentMode(PresentMode::Enum p_Mode)
     return VK_PRESENT_MODE_FIFO_KHR;
   }
 }
+//---------------------------------------------------------------------------//
+// Local functions:
+//---------------------------------------------------------------------------//
+static void _transitionImageLayout(
+    VkCommandBuffer p_CommandBuffer,
+    VkImage p_Image,
+    VkImageLayout p_OldLayout,
+    VkImageLayout p_NewLayout,
+    bool p_IsDepth)
+{
 
+  VkImageMemoryBarrier barrier = {};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.oldLayout = p_OldLayout;
+  barrier.newLayout = p_NewLayout;
+
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+  barrier.image = p_Image;
+  barrier.subresourceRange.aspectMask =
+      p_IsDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+
+  VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+  VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+  if (p_OldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+      p_NewLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+  {
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+  }
+  else if (
+      p_OldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+      p_NewLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+  {
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  }
+  else
+  {
+    // assert( false, "Unsupported layout transition!\n" );
+  }
+
+  vkCmdPipelineBarrier(
+      p_CommandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+//---------------------------------------------------------------------------//
+static void _vulkanCreateFramebuffer(
+    GpuDevice& p_GpuDevice,
+    RenderPass* p_RenderPass,
+    const TextureHandle* p_OutputTextures,
+    uint32_t p_NumRenderTargets,
+    TextureHandle p_DepthStencilTexture)
+{
+  // Create framebuffer
+  VkFramebufferCreateInfo framebufferCi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+  framebufferCi.renderPass = p_RenderPass->vkRenderPass;
+  framebufferCi.width = p_RenderPass->width;
+  framebufferCi.height = p_RenderPass->height;
+  framebufferCi.layers = 1;
+
+  VkImageView framebufferAttachments[kMaxImageOutputs + 1]{};
+  uint32_t activeAttachments = 0;
+  for (; activeAttachments < p_NumRenderTargets; ++activeAttachments)
+  {
+    TextureHandle handle = p_OutputTextures[activeAttachments];
+    Texture* texture = (Texture*)p_GpuDevice.m_Textures.accessResource(handle.index);
+    framebufferAttachments[activeAttachments] = texture->vkImageView;
+  }
+
+  if (p_DepthStencilTexture.index != kInvalidIndex)
+  {
+    TextureHandle handle = p_DepthStencilTexture;
+    Texture* depthMap = (Texture*)p_GpuDevice.m_Textures.accessResource(handle.index);
+    framebufferAttachments[activeAttachments++] = depthMap->vkImageView;
+  }
+  framebufferCi.pAttachments = framebufferAttachments;
+  framebufferCi.attachmentCount = activeAttachments;
+
+  vkCreateFramebuffer(
+      p_GpuDevice.m_VulkanDevice, &framebufferCi, nullptr, &p_RenderPass->vkFrameBuffer);
+  p_GpuDevice.setResourceName(
+      VK_OBJECT_TYPE_FRAMEBUFFER, (uint64_t)p_RenderPass->vkFrameBuffer, p_RenderPass->name);
+}
+//---------------------------------------------------------------------------//
+
+static void _vulkanCreateSwapchainPass(
+    GpuDevice& p_GpuDevice, const RenderPassCreation& p_Creation, RenderPass* p_RenderPass)
+{
+  // Color attachment
+  VkAttachmentDescription colorAttachment = {};
+  colorAttachment.format = p_GpuDevice.m_VulkanSurfaceFormat.format;
+  colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+  colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+  VkAttachmentReference colorAttachmentRef = {};
+  colorAttachmentRef.attachment = 0;
+  colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+  // Depth attachment
+  VkAttachmentDescription depthAttachment{};
+
+  Texture* depthTextureVk =
+      (Texture*)p_GpuDevice.m_Textures.accessResource(p_GpuDevice.m_DepthTexture.index);
+  depthAttachment.format = depthTextureVk->vkFormat;
+  depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+  depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+  VkAttachmentReference depthAttachmentRef{};
+  depthAttachmentRef.attachment = 1;
+  depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+  VkSubpassDescription subpass{};
+  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+  subpass.colorAttachmentCount = 1;
+  subpass.pColorAttachments = &colorAttachmentRef;
+  subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+  VkAttachmentDescription attachments[] = {colorAttachment, depthAttachment};
+  VkRenderPassCreateInfo renderPassInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+  renderPassInfo.attachmentCount = 2;
+  renderPassInfo.pAttachments = attachments;
+  renderPassInfo.subpassCount = 1;
+  renderPassInfo.pSubpasses = &subpass;
+
+  CHECKRES(vkCreateRenderPass(
+      p_GpuDevice.m_VulkanDevice, &renderPassInfo, nullptr, &p_RenderPass->vkRenderPass));
+
+  p_GpuDevice.setResourceName(
+      VK_OBJECT_TYPE_RENDER_PASS, (uint64_t)p_RenderPass->vkRenderPass, p_Creation.name);
+
+  // Create framebuffer into the device.
+  VkFramebufferCreateInfo framebufferCi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+  framebufferCi.renderPass = p_RenderPass->vkRenderPass;
+  framebufferCi.attachmentCount = 2;
+  framebufferCi.width = p_GpuDevice.m_SwapchainWidth;
+  framebufferCi.height = p_GpuDevice.m_SwapchainHeight;
+  framebufferCi.layers = 1;
+
+  VkImageView framebufferAttachments[2];
+  framebufferAttachments[1] = depthTextureVk->vkImageView;
+
+  for (size_t i = 0; i < p_GpuDevice.m_VulkanSwapchainImageCount; i++)
+  {
+    framebufferAttachments[0] = p_GpuDevice.m_VulkanSwapchainImageViews[i];
+    framebufferCi.pAttachments = framebufferAttachments;
+
+    vkCreateFramebuffer(
+        p_GpuDevice.m_VulkanDevice,
+        &framebufferCi,
+        nullptr,
+        &p_GpuDevice.m_VulkanSwapchainFramebuffers[i]);
+    p_GpuDevice.setResourceName(
+        VK_OBJECT_TYPE_FRAMEBUFFER,
+        (uint64_t)p_GpuDevice.m_VulkanSwapchainFramebuffers[i],
+        p_Creation.name);
+  }
+
+  p_RenderPass->width = p_GpuDevice.m_SwapchainWidth;
+  p_RenderPass->height = p_GpuDevice.m_SwapchainHeight;
+
+  // Manually transition the texture
+  VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  CommandBuffer* cmd = p_GpuDevice.getInstantCommandBuffer();
+  vkBeginCommandBuffer(cmd->m_VulkanCmdBuffer, &beginInfo);
+
+  VkBufferImageCopy region = {};
+  region.bufferOffset = 0;
+  region.bufferRowLength = 0;
+  region.bufferImageHeight = 0;
+
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+
+  region.imageOffset = {0, 0, 0};
+  region.imageExtent = {p_GpuDevice.m_SwapchainWidth, p_GpuDevice.m_SwapchainHeight, 1};
+
+  // Transition
+  for (size_t i = 0; i < p_GpuDevice.m_VulkanSwapchainImageCount; i++)
+  {
+    _transitionImageLayout(
+        cmd->m_VulkanCmdBuffer,
+        p_GpuDevice.m_VulkanSwapchainImages[i],
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        false);
+  }
+  _transitionImageLayout(
+      cmd->m_VulkanCmdBuffer,
+      depthTextureVk->vkImage,
+      VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      true);
+
+  vkEndCommandBuffer(cmd->m_VulkanCmdBuffer);
+
+  // Submit command buffer
+  VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  submitInfo.commandBufferCount = 1;
+  submitInfo.pCommandBuffers = &cmd->m_VulkanCmdBuffer;
+
+  vkQueueSubmit(p_GpuDevice.m_VulkanQueue, 1, &submitInfo, VK_NULL_HANDLE);
+  vkQueueWaitIdle(p_GpuDevice.m_VulkanQueue);
+}
+//---------------------------------------------------------------------------//
+static RenderPassOutput
+_fillRenderPassOutput(GpuDevice& p_GpuDevice, const RenderPassCreation& p_Creation)
+{
+  RenderPassOutput output;
+  output.reset();
+
+  for (uint32_t i = 0; i < p_Creation.numRenderTargets; ++i)
+  {
+    TextureHandle handle = p_Creation.outputTextures[i];
+    Texture* textureVk = (Texture*)p_GpuDevice.m_Textures.accessResource(handle.index);
+    output.color(textureVk->vkFormat);
+  }
+  if (p_Creation.depthStencilTexture.index != kInvalidIndex)
+  {
+    TextureHandle handle = p_Creation.depthStencilTexture;
+    Texture* textureVk = (Texture*)p_GpuDevice.m_Textures.accessResource(handle.index);
+    output.depth(textureVk->vkFormat);
+  }
+
+  output.colorOperation = p_Creation.colorOperation;
+  output.depthOperation = p_Creation.depthOperation;
+  output.stencilOperation = p_Creation.stencilOperation;
+
+  return output;
+}
+//---------------------------------------------------------------------------//
+static VkRenderPass _vulkanCreateRenderPass(
+    GpuDevice& p_GpuDevice, const RenderPassOutput& p_Output, const char* p_Name)
+{
+  VkAttachmentDescription colorAttachments[8] = {};
+  VkAttachmentReference colorAttachmentsRef[8] = {};
+
+  VkAttachmentLoadOp colorOp, depthOp, stencilOp;
+  VkImageLayout colorInitial, depthInitial;
+
+  switch (p_Output.colorOperation)
+  {
+  case RenderPassOperation::kLoad:
+    colorOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorInitial = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    break;
+  case RenderPassOperation::kClear:
+    colorOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorInitial = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    break;
+  default:
+    colorOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorInitial = VK_IMAGE_LAYOUT_UNDEFINED;
+    break;
+  }
+
+  switch (p_Output.depthOperation)
+  {
+  case RenderPassOperation::kLoad:
+    depthOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depthInitial = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    break;
+  case RenderPassOperation::kClear:
+    depthOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthInitial = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    break;
+  default:
+    depthOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthInitial = VK_IMAGE_LAYOUT_UNDEFINED;
+    break;
+  }
+
+  switch (p_Output.stencilOperation)
+  {
+  case RenderPassOperation::kLoad:
+    stencilOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    break;
+  case RenderPassOperation::kClear:
+    stencilOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    break;
+  default:
+    stencilOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    break;
+  }
+
+  // Color attachments
+  uint32_t c = 0;
+  for (; c < p_Output.numColorFormats; ++c)
+  {
+    VkAttachmentDescription& colorAttachment = colorAttachments[c];
+    colorAttachment.format = p_Output.colorFormats[c];
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = colorOp;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = stencilOp;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = colorInitial;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference& colorAttachmentRef = colorAttachmentsRef[c];
+    colorAttachmentRef.attachment = c;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  }
+
+  // Depth attachment
+  VkAttachmentDescription depthAttachment{};
+  VkAttachmentReference depthAttachmentRef{};
+
+  if (p_Output.depthStencilFormat != VK_FORMAT_UNDEFINED)
+  {
+
+    depthAttachment.format = p_Output.depthStencilFormat;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = depthOp;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.stencilLoadOp = stencilOp;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = depthInitial;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    depthAttachmentRef.attachment = c;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  }
+
+  // Create subpass (just a simple subpass)
+  VkSubpassDescription subpass = {};
+  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+  // Calculate active attachments for the subpass
+  VkAttachmentDescription attachments[kMaxImageOutputs + 1]{};
+  uint32_t activeAttachments = 0;
+  for (; activeAttachments < p_Output.numColorFormats; ++activeAttachments)
+  {
+    attachments[activeAttachments] = colorAttachments[activeAttachments];
+    ++activeAttachments;
+  }
+  subpass.colorAttachmentCount = activeAttachments ? activeAttachments - 1 : 0;
+  subpass.pColorAttachments = colorAttachmentsRef;
+
+  subpass.pDepthStencilAttachment = nullptr;
+
+  uint32_t depthStencilCount = 0;
+  if (p_Output.depthStencilFormat != VK_FORMAT_UNDEFINED)
+  {
+    attachments[subpass.colorAttachmentCount] = depthAttachment;
+
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+    depthStencilCount = 1;
+  }
+
+  VkRenderPassCreateInfo renderPassCi = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+
+  renderPassCi.attachmentCount =
+      (activeAttachments ? activeAttachments - 1 : 0) + depthStencilCount;
+  renderPassCi.pAttachments = attachments;
+  renderPassCi.subpassCount = 1;
+  renderPassCi.pSubpasses = &subpass;
+
+  VkRenderPass ret;
+  CHECKRES(vkCreateRenderPass(p_GpuDevice.m_VulkanDevice, &renderPassCi, nullptr, &ret));
+
+  p_GpuDevice.setResourceName(VK_OBJECT_TYPE_RENDER_PASS, (uint64_t)ret, p_Name);
+
+  return ret;
+}
 //---------------------------------------------------------------------------//
 // Device implementation:
 //---------------------------------------------------------------------------//
@@ -550,8 +941,8 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       "Fullscreen_vb"};
   m_FullscreenVertexBuffer = createBuffer(fullscreenVbCreation);
 
-  ...
-      // TODOs:
+  ... // TODOs: Also destroy these gpu resources
+
       TextureHandle m_DepthTexture;
   BufferHandle m_FullscreenVertexBuffer;
   RenderPassOutput m_SwapchainOutput;
@@ -675,34 +1066,160 @@ TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation) {}
 //---------------------------------------------------------------------------//
 PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation) {}
 //---------------------------------------------------------------------------//
-SamplerHandle GpuDevice::createSampler(const SamplerCreation& p_Creation) {}
-//---------------------------------------------------------------------------//
-DescriptorSetLayoutHandle
-GpuDevice::createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation)
+SamplerHandle GpuDevice::createSampler(const SamplerCreation& p_Creation)
 {
+  SamplerHandle handle = {m_Samplers.obtainResource()};
+  if (handle.index == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  Sampler* sampler = (Sampler*)m_Samplers.accessResource(handle.index);
+
+  sampler->addressModeU = p_Creation.addressModeU;
+  sampler->addressModeV = p_Creation.addressModeV;
+  sampler->addressModeW = p_Creation.addressModeW;
+  sampler->minFilter = p_Creation.minFilter;
+  sampler->magFilter = p_Creation.magFilter;
+  sampler->mipFilter = p_Creation.mipFilter;
+  sampler->name = p_Creation.name;
+
+  VkSamplerCreateInfo ci{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  ci.addressModeU = p_Creation.addressModeU;
+  ci.addressModeV = p_Creation.addressModeV;
+  ci.addressModeW = p_Creation.addressModeW;
+  ci.minFilter = p_Creation.minFilter;
+  ci.magFilter = p_Creation.magFilter;
+  ci.mipmapMode = p_Creation.mipFilter;
+  ci.anisotropyEnable = 0;
+  ci.compareEnable = 0;
+  ci.unnormalizedCoordinates = 0;
+  ci.borderColor = VkBorderColor::VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+
+  vkCreateSampler(m_VulkanDevice, &ci, m_VulkanAllocCallbacks, &sampler->vkSampler);
+
+  setResourceName(VK_OBJECT_TYPE_SAMPLER, (uint64_t)sampler->vkSampler, p_Creation.name);
+
+  return handle;
 }
 //---------------------------------------------------------------------------//
-DescriptorSetHandle GpuDevice::createDescriptorSet(const DescriptorSetCreation& p_Creation) {}
+DescriptorSetLayoutHandle
+GpuDevice::createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation){.}
 //---------------------------------------------------------------------------//
-RenderPassHandle GpuDevice::createRenderPass(const RenderPassCreation& p_Creation) {}
+DescriptorSetHandle GpuDevice::createDescriptorSet(const DescriptorSetCreation& p_Creation){.}
 //---------------------------------------------------------------------------//
-ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Creation) {}
+RenderPassHandle GpuDevice::createRenderPass(const RenderPassCreation& p_Creation)
+{
+  RenderPassHandle handle = {m_RenderPasses.obtainResource()};
+  if (handle.index == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  RenderPass* renderPass = (RenderPass*)m_RenderPasses.accessResource(handle.index);
+  renderPass->type = p_Creation.type;
+  // Init the rest of the struct.
+  renderPass->numRenderTargets = (uint8_t)p_Creation.numRenderTargets;
+  renderPass->dispatchX = 0;
+  renderPass->dispatchY = 0;
+  renderPass->dispatchZ = 0;
+  renderPass->name = p_Creation.name;
+  renderPass->vkFrameBuffer = nullptr;
+  renderPass->vkRenderPass = nullptr;
+  renderPass->scaleX = p_Creation.scaleX;
+  renderPass->scaleY = p_Creation.scaleY;
+  renderPass->resize = p_Creation.resize;
+
+  // Cache texture handles
+  uint32_t c = 0;
+  for (; c < p_Creation.numRenderTargets; ++c)
+  {
+    TextureHandle texHandle = p_Creation.outputTextures[c];
+    Texture* textureVk = (Texture*)m_Textures.accessResource(texHandle.index);
+    ;
+
+    renderPass->width = textureVk->width;
+    renderPass->height = textureVk->height;
+
+    // Cache texture handles
+    renderPass->outputTextures[c] = p_Creation.outputTextures[c];
+  }
+
+  renderPass->outputDepth = p_Creation.depthStencilTexture;
+
+  switch (p_Creation.type)
+  {
+  case RenderPassType::kSwapchain: {
+    _vulkanCreateSwapchainPass(*this, p_Creation, renderPass);
+
+    break;
+  }
+
+  case RenderPassType::kCompute: {
+    break;
+  }
+
+  case RenderPassType::kGeometry: {
+    renderPass->output = _fillRenderPassOutput(*this, p_Creation);
+    renderPass->vkRenderPass = getVulkanRenderPass(renderPass->output, p_Creation.name);
+
+    _vulkanCreateFramebuffer(
+        *this,
+        renderPass,
+        p_Creation.outputTextures,
+        p_Creation.numRenderTargets,
+        p_Creation.depthStencilTexture);
+
+    break;
+  }
+  }
+
+  return handle;
+}
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyBuffer(BufferHandle p_Buffer) {}
+ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Creation) { . }
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyTexture(TextureHandle p_Texture) {}
+void GpuDevice::destroyBuffer(BufferHandle p_Buffer)
+{
+  if (p_Buffer.index < m_Buffers.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kBuffer, p_Buffer.index, m_CurrentFrameIndex});
+  }
+  else
+  {
+    char msg[256]{};
+    sprintf(msg, "Graphics error: trying to free invalid Buffer %u\n", p_Buffer.index);
+    OutputDebugStringA(msg);
+  }
+}
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyPipeline(PipelineHandle p_Pipeline) {}
+void GpuDevice::destroyTexture(TextureHandle p_Texture) { . }
 //---------------------------------------------------------------------------//
-void GpuDevice::destroySampler(SamplerHandle p_Sampler) {}
+void GpuDevice::destroyPipeline(PipelineHandle p_Pipeline) { . }
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout) {}
+void GpuDevice::destroySampler(SamplerHandle p_Sampler)
+{
+  if (p_Sampler.index < m_Samplers.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kSampler, p_Sampler.index, m_CurrentFrameIndex});
+  }
+  else
+  {
+    char msg[256]{};
+    sprintf(msg, "Graphics error: trying to free invalid Sampler %u\n", p_Sampler.index);
+    OutputDebugStringA(msg);
+  }
+}
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyDescriptorSet(DescriptorSetHandle p_Set) {}
+void GpuDevice::destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout) { . }
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyRenderPass(RenderPassHandle p_RenderPass) {}
+void GpuDevice::destroyDescriptorSet(DescriptorSetHandle p_Set) { . }
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader) {}
+void GpuDevice::destroyRenderPass(RenderPassHandle p_RenderPass) { . }
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader) { . }
 //---------------------------------------------------------------------------//
 void* GpuDevice::mapBuffer(const MapBufferParameters& p_Parameters)
 {
@@ -759,7 +1276,7 @@ void GpuDevice::setPresentMode(PresentMode::Enum p_Mode)
       m_VulkanPhysicalDevice, m_VulkanWindowSurface, &supportedCount, supportedModeAllocated);
 
   bool modeFound = false;
-  VkPresentModeKHR requestedMode = toVkPresentMode(p_Mode);
+  VkPresentModeKHR requestedMode = _toVkPresentMode(p_Mode);
   for (uint32_t j = 0; j < supportedCount; j++)
   {
     if (requestedMode == supportedModeAllocated[j])
@@ -883,11 +1400,33 @@ void GpuDevice::setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const
   {
     return;
   }
-  VkDebugUtilsObjectNameInfoEXT name_info = {VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT};
-  name_info.objectType = p_ObjType;
-  name_info.objectHandle = p_Handle;
-  name_info.pObjectName = p_Name;
-  pfnSetDebugUtilsObjectNameEXT(m_VulkanDevice, &name_info);
+  VkDebugUtilsObjectNameInfoEXT nameInfo = {VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT};
+  nameInfo.objectType = p_ObjType;
+  nameInfo.objectHandle = p_Handle;
+  nameInfo.pObjectName = p_Name;
+  pfnSetDebugUtilsObjectNameEXT(m_VulkanDevice, &nameInfo);
+}
+//---------------------------------------------------------------------------//
+CommandBuffer* GpuDevice::getInstantCommandBuffer()
+{
+  CommandBuffer* cmd = g_CmdBufferRing.getCmdBufferInstant(m_CurrentFrameIndex, false);
+  return cmd;
+}
+//---------------------------------------------------------------------------//
+VkRenderPass GpuDevice::getVulkanRenderPass(const RenderPassOutput& p_Output, const char* p_Name)
+{
+  // Hash the memory output and find a compatible VkRenderPass.
+  // In current form RenderPassOutput should track everything needed, including load operations.
+  uint64_t hashedMemory = Framework::hashBytes((void*)&p_Output, sizeof(RenderPassOutput));
+  VkRenderPass vulkanRenderPass = g_RenderPassCache.get(hashedMemory);
+  if (vulkanRenderPass)
+  {
+    return vulkanRenderPass;
+  }
+  vulkanRenderPass = _vulkanCreateRenderPass(*this, p_Output, p_Name);
+  g_RenderPassCache.insert(hashedMemory, vulkanRenderPass);
+
+  return vulkanRenderPass;
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics

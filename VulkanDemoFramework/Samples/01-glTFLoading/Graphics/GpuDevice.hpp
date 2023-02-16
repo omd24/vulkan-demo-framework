@@ -73,6 +73,8 @@ struct GpuDevice : public Framework::Service
 
   // Other utility
   void setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name);
+  CommandBuffer* getInstantCommandBuffer();
+  VkRenderPass getVulkanRenderPass(const RenderPassOutput& p_Output, const char* p_Name);
 
   // Common members
   Framework::StringBuffer m_StringBuffer;

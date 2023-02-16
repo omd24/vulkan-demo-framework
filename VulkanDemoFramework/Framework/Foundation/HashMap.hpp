@@ -136,7 +136,7 @@ template <typename K, typename V> struct FlatHashMap
 
 }; // struct FlatHashMap
 
-// Implementation /////////////////////////////////////////////////////
+// Implementation
 //
 template <typename T> inline uint64_t hashCalculate(const T& value, size_t seed = 0)
 {
@@ -281,7 +281,7 @@ static void convertDeletedToEmptyAndFullToDeleted(int8_t* ctrl, size_t capacity)
   ctrl[capacity] = kControlBitmaskSentinel;
 }
 
-// FlatHashMap ////////////////////////////////////////////////////////
+// FlatHashMap
 template <typename K, typename V> void FlatHashMap<K, V>::resetCtrl()
 {
   memset(m_ControlBytes, kControlBitmaskEmpty, m_Capacity + GroupSse2Impl::kWidth);
@@ -692,7 +692,7 @@ template <typename K, typename V> inline void FlatHashMap<K, V>::reserve(uint64_
   }
 }
 
-// Capacity ///////////////////////////////////////////////////////////
+// Capacity
 bool capacityIsValid(size_t n) { return ((n + 1) & n) == 0 && n > 0; }
 
 inline uint64_t lzcnt_soft(uint64_t n)
@@ -720,7 +720,7 @@ uint64_t capacityGrowthToLowerBound(uint64_t growth)
   return growth + static_cast<uint64_t>((static_cast<int64_t>(growth) - 1) / 7);
 }
 
-// Grouping: implementation ///////////////////////////////////////////
+// Grouping: implementation
 inline int8_t* groupInitEmpty()
 {
   alignas(16) static constexpr int8_t empty_group[] = {
