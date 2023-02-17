@@ -35,6 +35,7 @@
     <ClCompile Include="Foundation\File.cpp" />
     <ClCompile Include="Foundation\Gltf.cpp" />
     <ClCompile Include="Foundation\Memory.cpp" />
+    <ClCompile Include="Foundation\Process.cpp" />
     <ClCompile Include="Foundation\ResourceManager.cpp" />
     <ClCompile Include="Foundation\ResourcePool.cpp" />
     <ClCompile Include="Foundation\String.cpp" />
@@ -63,6 +64,7 @@
     <ClInclude Include="Foundation\Memory.hpp" />
     <ClInclude Include="Foundation\Numerics.hpp" />
     <ClInclude Include="Foundation\Prerequisites.hpp" />
+    <ClInclude Include="Foundation\Process.hpp" />
     <ClInclude Include="Foundation\ResourceManager.hpp" />
     <ClInclude Include="Foundation\ResourcePool.hpp" />
     <ClInclude Include="Foundation\Service.hpp" />

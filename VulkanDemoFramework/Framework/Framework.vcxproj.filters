@@ -75,6 +75,9 @@
     <ClCompile Include="Foundation\ResourcePool.cpp">
       <Filter>Foundation</Filter>
     </ClCompile>
+    <ClCompile Include="Foundation\Process.cpp">
+      <Filter>Foundation</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Foundation\Array.hpp">
@@ -156,6 +159,9 @@
       <Filter>Application</Filter>
     </ClInclude>
     <ClInclude Include="Foundation\ResourcePool.hpp">
+      <Filter>Foundation</Filter>
+    </ClInclude>
+    <ClInclude Include="Foundation\Process.hpp">
       <Filter>Foundation</Filter>
     </ClInclude>
   </ItemGroup>

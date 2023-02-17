@@ -717,7 +717,7 @@ struct Pipeline
   ShaderStateHandle shaderState;
 
   const DesciptorSetLayout* descriptorSetLayout[kMaxDescriptorSetLayouts];
-  DescriptorSetLayoutHandle descriptorSetLayout_handle[kMaxDescriptorSetLayouts];
+  DescriptorSetLayoutHandle descriptorSetLayoutHandle[kMaxDescriptorSetLayouts];
   uint32_t numActiveLayouts = 0;
 
   DepthStencilCreation depthStencil;

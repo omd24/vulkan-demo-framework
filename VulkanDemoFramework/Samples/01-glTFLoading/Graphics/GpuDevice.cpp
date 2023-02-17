@@ -5,6 +5,9 @@
 #include "Externals/SDL2-2.0.18/include/SDL_vulkan.h" // SDL_Vulkan_CreateSurface
 
 #include "Foundation/HashMap.hpp"
+#include "Foundation/String.hpp"
+#include "Foundation/File.hpp"
+#include "Foundation/Process.hpp"
 
 #include <assert.h>
 
@@ -602,6 +605,248 @@ static VkRenderPass _vulkanCreateRenderPass(
   return ret;
 }
 //---------------------------------------------------------------------------//
+static void _vulkanCreateTexture(
+    GpuDevice& p_GpuDevice,
+    const TextureCreation& p_Creation,
+    TextureHandle p_Handle,
+    Texture* p_Texture)
+{
+
+  p_Texture->width = p_Creation.width;
+  p_Texture->height = p_Creation.height;
+  p_Texture->depth = p_Creation.depth;
+  p_Texture->mipmaps = p_Creation.mipmaps;
+  p_Texture->type = p_Creation.type;
+  p_Texture->name = p_Creation.name;
+  p_Texture->vkFormat = p_Creation.format;
+  p_Texture->sampler = nullptr;
+  p_Texture->flags = p_Creation.flags;
+
+  p_Texture->handle = p_Handle;
+
+  // Create the image
+  VkImageCreateInfo imageInfo = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  imageInfo.format = p_Texture->vkFormat;
+  imageInfo.flags = 0;
+  imageInfo.imageType = toVkImageType(p_Creation.type);
+  imageInfo.extent.width = p_Creation.width;
+  imageInfo.extent.height = p_Creation.height;
+  imageInfo.extent.depth = p_Creation.depth;
+  imageInfo.mipLevels = p_Creation.mipmaps;
+  imageInfo.arrayLayers = 1;
+  imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+  imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+
+  const bool isRenderTarget =
+      (p_Creation.flags & TextureFlags::kRenderTargetMask) == TextureFlags::kRenderTargetMask;
+  const bool isComputeUsed =
+      (p_Creation.flags & TextureFlags::kComputeMask) == TextureFlags::kComputeMask;
+
+  // Default to always readable from shader.
+  imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+
+  imageInfo.usage |= isComputeUsed ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
+
+  if (TextureFormat::hasDepthOrStencil(p_Creation.format))
+  {
+    // Depth/Stencil textures are normally textures you render into.
+    imageInfo.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  }
+  else
+  {
+    imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // TODO
+    imageInfo.usage |= isRenderTarget ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0;
+  }
+
+  imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+  VmaAllocationCreateInfo memoryCi{};
+  memoryCi.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+  CHECKRES(vmaCreateImage(
+      p_GpuDevice.m_VmaAllocator,
+      &imageInfo,
+      &memoryCi,
+      &p_Texture->vkImage,
+      &p_Texture->vmaAllocation,
+      nullptr));
+
+  p_GpuDevice.setResourceName(VK_OBJECT_TYPE_IMAGE, (uint64_t)p_Texture->vkImage, p_Creation.name);
+
+  // Create the image view
+  VkImageViewCreateInfo info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+  info.image = p_Texture->vkImage;
+  info.viewType = toVkImageViewType(p_Creation.type);
+  info.format = imageInfo.format;
+
+  if (TextureFormat::hasDepthOrStencil(p_Creation.format))
+  {
+    info.subresourceRange.aspectMask =
+        TextureFormat::hasDepth(p_Creation.format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0;
+  }
+  else
+  {
+    info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  }
+
+  info.subresourceRange.levelCount = 1;
+  info.subresourceRange.layerCount = 1;
+  CHECKRES(vkCreateImageView(
+      p_GpuDevice.m_VulkanDevice,
+      &info,
+      p_GpuDevice.m_VulkanAllocCallbacks,
+      &p_Texture->vkImageView));
+
+  p_GpuDevice.setResourceName(
+      VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t)p_Texture->vkImageView, p_Creation.name);
+
+  p_Texture->vkImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+}
+//---------------------------------------------------------------------------//
+static void _vulkanFillWriteDescriptorSets(
+    GpuDevice& p_GpuDevice,
+    const DesciptorSetLayout* p_DescriptorSetLayout,
+    VkDescriptorSet p_VkDescriptorSet,
+    VkWriteDescriptorSet* p_DescriptorWrite,
+    VkDescriptorBufferInfo* p_BufferInfo,
+    VkDescriptorImageInfo* p_ImageInfo,
+    VkSampler p_VkDefaultSampler,
+    uint32_t& p_NumResources,
+    const ResourceHandle* p_Resources,
+    const SamplerHandle* p_Samplers,
+    const uint16_t* p_Bindings)
+{
+  uint32_t usedResources = 0;
+  for (uint32_t r = 0; r < p_NumResources; r++)
+  {
+    // Binding array contains the index into the resource layout binding to retrieve
+    // the correct binding informations.
+    uint32_t layoutBindingIndex = p_Bindings[r];
+
+    const DescriptorBinding& binding = p_DescriptorSetLayout->bindings[layoutBindingIndex];
+
+    uint32_t i = usedResources;
+    ++usedResources;
+
+    p_DescriptorWrite[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    p_DescriptorWrite[i].dstSet = p_VkDescriptorSet;
+    // Use binding array to get final binding point.
+    const uint32_t bindingPoint = binding.start;
+    p_DescriptorWrite[i].dstBinding = bindingPoint;
+    p_DescriptorWrite[i].dstArrayElement = 0;
+    p_DescriptorWrite[i].descriptorCount = 1;
+
+    switch (binding.type)
+    {
+    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: {
+      p_DescriptorWrite[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+      TextureHandle textureHandle = {p_Resources[r]};
+      Texture* texture = (Texture*)p_GpuDevice.m_Textures.accessResource(textureHandle.index);
+
+      // Find proper sampler.
+      p_ImageInfo[i].sampler = p_VkDefaultSampler;
+      if (texture->sampler)
+      {
+        p_ImageInfo[i].sampler = texture->sampler->vkSampler;
+      }
+      if (p_Samplers[r].index != kInvalidIndex)
+      {
+        Sampler* sampler = (Sampler*)p_GpuDevice.m_Samplers.accessResource(p_Samplers[r].index);
+        p_ImageInfo[i].sampler = sampler->vkSampler;
+      }
+
+      p_ImageInfo[i].imageLayout = TextureFormat::hasDepthOrStencil(texture->vkFormat)
+                                       ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+                                       : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      p_ImageInfo[i].imageView = texture->vkImageView;
+
+      p_DescriptorWrite[i].pImageInfo = &p_ImageInfo[i];
+
+      break;
+    }
+
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
+      p_DescriptorWrite[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+
+      TextureHandle textureHandle = {p_Resources[r]};
+      Texture* texture = (Texture*)p_GpuDevice.m_Textures.accessResource(textureHandle.index);
+
+      p_ImageInfo[i].sampler = nullptr;
+      p_ImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+      p_ImageInfo[i].imageView = texture->vkImageView;
+
+      p_DescriptorWrite[i].pImageInfo = &p_ImageInfo[i];
+
+      break;
+    }
+
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+      BufferHandle bufferHandle = {p_Resources[r]};
+      Buffer* buffer = (Buffer*)p_GpuDevice.m_Buffers.accessResource(bufferHandle.index);
+
+      p_DescriptorWrite[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      p_DescriptorWrite[i].descriptorType = buffer->usage == ResourceUsageType::kDynamic
+                                                ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+                                                : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+      // Bind parent buffer if present, used for dynamic resources.
+      if (buffer->parentBuffer.index != kInvalidIndex)
+      {
+        Buffer* parentBuffer =
+            (Buffer*)p_GpuDevice.m_Buffers.accessResource(buffer->parentBuffer.index);
+        p_BufferInfo[i].buffer = parentBuffer->vkBuffer;
+      }
+      else
+      {
+        p_BufferInfo[i].buffer = buffer->vkBuffer;
+      }
+
+      p_BufferInfo[i].offset = 0;
+      p_BufferInfo[i].range = buffer->size;
+
+      p_DescriptorWrite[i].pBufferInfo = &p_BufferInfo[i];
+
+      break;
+    }
+
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: {
+      BufferHandle bufferHandle = {p_Resources[r]};
+      Buffer* buffer = (Buffer*)p_GpuDevice.m_Buffers.accessResource(bufferHandle.index);
+
+      p_DescriptorWrite[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      // Bind parent buffer if present, used for dynamic resources.
+      if (buffer->parentBuffer.index != kInvalidIndex)
+      {
+        Buffer* parentBuffer =
+            (Buffer*)p_GpuDevice.m_Buffers.accessResource(buffer->parentBuffer.index);
+
+        p_BufferInfo[i].buffer = parentBuffer->vkBuffer;
+      }
+      else
+      {
+        p_BufferInfo[i].buffer = buffer->vkBuffer;
+      }
+
+      p_BufferInfo[i].offset = 0;
+      p_BufferInfo[i].range = buffer->size;
+
+      p_DescriptorWrite[i].pBufferInfo = &p_BufferInfo[i];
+
+      break;
+    }
+
+    default: {
+      assert(false && "Resource type not supported in descriptor set creation!");
+      break;
+    }
+    }
+  }
+
+  p_NumResources = usedResources;
+}
+//---------------------------------------------------------------------------//
 // Device implementation:
 //---------------------------------------------------------------------------//
 
@@ -941,17 +1186,65 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       "Fullscreen_vb"};
   m_FullscreenVertexBuffer = createBuffer(fullscreenVbCreation);
 
-  ... // TODOs: Also destroy these gpu resources
+  // Create depth image
+  TextureCreation depthTextureCreation = {
+      nullptr,
+      m_SwapchainWidth,
+      m_SwapchainHeight,
+      1,
+      1,
+      0,
+      VK_FORMAT_D32_SFLOAT,
+      TextureType::kTexture2D,
+      "DepthImage_Texture"};
+  m_DepthTexture = createTexture(depthTextureCreation);
 
-      TextureHandle m_DepthTexture;
-  BufferHandle m_FullscreenVertexBuffer;
-  RenderPassOutput m_SwapchainOutput;
-  SamplerHandle m_DefaultSampler;
-  RenderPassHandle m_SwapchainPass;
+  // Cache depth texture format
+  m_SwapchainOutput.depth(VK_FORMAT_D32_SFLOAT);
 
-  // Dummy resources
-  TextureHandle m_DummyTexture;
-  BufferHandle m_DummyConstantBuffer;
+  RenderPassCreation swapchainPassCreation = {};
+  swapchainPassCreation.setType(RenderPassType::kSwapchain).setName("Swapchain");
+  swapchainPassCreation.setOperations(
+      RenderPassOperation::kClear, RenderPassOperation::kClear, RenderPassOperation::kClear);
+  m_SwapchainPass = createRenderPass(swapchainPassCreation);
+
+  // Init Dummy resources
+  TextureCreation dummyTextureCreation = {
+      nullptr, 1, 1, 1, 1, 0, VK_FORMAT_R8_UINT, TextureType::kTexture2D};
+  m_DummyTexture = createTexture(dummyTextureCreation);
+
+  BufferCreation dummyConstantBufferCreation = {
+      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+      ResourceUsageType::kImmutable,
+      16,
+      nullptr,
+      "Dummy Constant Buffer"};
+  m_DummyConstantBuffer = createBuffer(dummyConstantBufferCreation);
+
+  // Get binaries path
+  char* vulkanEnv = m_StringBuffer.reserve(512);
+  ExpandEnvironmentStringsA("%VULKAN_SDK%", vulkanEnv, 512);
+  char* compilerPath = m_StringBuffer.appendUseFormatted("%s\\Bin\\", vulkanEnv);
+
+  strcpy(m_VulkanBinariesPath, compilerPath);
+  m_StringBuffer.clear();
+
+  // Dynamic buffer handling
+  m_DynamicPerFrameSize = 1024 * 1024 * 10;
+  BufferCreation bc;
+  bc.set(
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        ResourceUsageType::kImmutable,
+        m_DynamicPerFrameSize * kMaxFrames)
+      .setName("Dynamic Persistent Buffer");
+  m_DynamicBuffer = createBuffer(bc);
+
+  MapBufferParameters mapParams = {m_DynamicBuffer, 0, 0};
+  m_DynamicMappedMemory = (uint8_t*)mapBuffer(mapParams);
+
+  // Init render pass cache
+  g_RenderPassCache.init(m_Allocator, 16);
 }
 //---------------------------------------------------------------------------//
 void GpuDevice::shutdown()
@@ -970,8 +1263,141 @@ void GpuDevice::shutdown()
 
   MapBufferParameters mapParams = {m_DynamicBuffer, 0, 0};
   unmapBuffer(mapParams);
-  destroyBuffer(m_DynamicBuffer);
 
+  destroyTexture(m_DepthTexture);
+  destroyBuffer(m_FullscreenVertexBuffer);
+  destroyBuffer(m_DynamicBuffer);
+  destroyRenderPass(m_SwapchainPass);
+  destroyTexture(m_DummyTexture);
+  destroyBuffer(m_DummyConstantBuffer);
+  destroySampler(m_DefaultSampler);
+
+  // Destroy all pending resources.
+  for (uint32_t i = 0; i < m_ResourceDeletionQueue.m_Size; i++)
+  {
+    ResourceUpdate& resourceDeletion = m_ResourceDeletionQueue[i];
+
+    // Skip just freed resources.
+    if (resourceDeletion.currentFrame == -1)
+      continue;
+
+    switch (resourceDeletion.type)
+    {
+
+    case ResourceDeletionType::kBuffer: {
+      Buffer* buffer = (Buffer*)m_Buffers.accessResource(resourceDeletion.handle);
+      if (buffer && buffer->parentBuffer.index == kInvalidBuffer.index)
+      {
+        vmaDestroyBuffer(m_VmaAllocator, buffer->vkBuffer, buffer->vmaAllocation);
+      }
+      m_Buffers.releaseResource(resourceDeletion.handle);
+      break;
+    }
+
+    case ResourceDeletionType::kPipeline: {
+      Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(resourceDeletion.handle);
+      if (pipeline)
+      {
+        vkDestroyPipeline(m_VulkanDevice, pipeline->vkPipeline, m_VulkanAllocCallbacks);
+
+        vkDestroyPipelineLayout(m_VulkanDevice, pipeline->vkPipelineLayout, m_VulkanAllocCallbacks);
+      }
+      m_Pipelines.releaseResource(resourceDeletion.handle);
+      break;
+    }
+
+    case ResourceDeletionType::kRenderPass: {
+      RenderPass* renderPass = (RenderPass*)m_RenderPasses.accessResource(resourceDeletion.handle);
+      if (renderPass)
+      {
+        if (renderPass->numRenderTargets)
+          vkDestroyFramebuffer(m_VulkanDevice, renderPass->vkFrameBuffer, m_VulkanAllocCallbacks);
+      }
+      m_RenderPasses.releaseResource(resourceDeletion.handle);
+      break;
+    }
+
+    case ResourceDeletionType::kDescriptorSet: {
+      DesciptorSet* descriptorSet =
+          (DesciptorSet*)m_DescriptorSets.accessResource(resourceDeletion.handle);
+      if (descriptorSet)
+      {
+        // Contains the allocation for all the resources, binding and samplers arrays.
+        FRAMEWORK_FREE(descriptorSet->resources, m_Allocator);
+      }
+      m_DescriptorSets.releaseResource(resourceDeletion.handle);
+      break;
+    }
+
+    case ResourceDeletionType::kDescriptorSetLayout: {
+      DesciptorSetLayout* descriptorSetLayout =
+          (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(resourceDeletion.handle);
+      if (descriptorSetLayout)
+      {
+        vkDestroyDescriptorSetLayout(
+            m_VulkanDevice, descriptorSetLayout->vkDescriptorSetLayout, m_VulkanAllocCallbacks);
+
+        // This contains also vkBinding allocation.
+        FRAMEWORK_FREE(descriptorSetLayout->bindings, m_Allocator);
+      }
+      m_DescriptorSetLayouts.releaseResource(resourceDeletion.handle);
+      break;
+    }
+
+    case ResourceDeletionType::kSampler: {
+      Sampler* sampler = (Sampler*)m_Samplers.accessResource(resourceDeletion.handle);
+      if (sampler)
+      {
+        vkDestroySampler(m_VulkanDevice, sampler->vkSampler, m_VulkanAllocCallbacks);
+      }
+      m_Samplers.releaseResource(resourceDeletion.handle);
+      break;
+    }
+
+    case ResourceDeletionType::kShaderState: {
+      ShaderState* shaderState = (ShaderState*)m_Shaders.accessResource(resourceDeletion.handle);
+      if (shaderState)
+      {
+        for (size_t i = 0; i < shaderState->activeShaders; i++)
+        {
+          vkDestroyShaderModule(
+              m_VulkanDevice, shaderState->shaderStageInfo[i].module, m_VulkanAllocCallbacks);
+        }
+      }
+      m_Shaders.releaseResource(resourceDeletion.handle);
+      break;
+    }
+
+    case ResourceDeletionType::kTexture: {
+      Texture* texture = (Texture*)m_Textures.accessResource(resourceDeletion.handle);
+      if (texture)
+      {
+        vkDestroyImageView(m_VulkanDevice, texture->vkImageView, m_VulkanAllocCallbacks);
+        vmaDestroyImage(m_VmaAllocator, texture->vkImage, texture->vmaAllocation);
+      }
+      m_Textures.releaseResource(resourceDeletion.handle);
+      break;
+    }
+    }
+  }
+
+  // Destroy render passes from the cache.
+  Framework::FlatHashMapIterator it = g_RenderPassCache.iteratorBegin();
+  while (it.isValid())
+  {
+    VkRenderPass renderPass = g_RenderPassCache.get(it);
+    vkDestroyRenderPass(m_VulkanDevice, renderPass, m_VulkanAllocCallbacks);
+    g_RenderPassCache.iteratorAdvance(it);
+  }
+  g_RenderPassCache.shutdown();
+
+  // Destroy swapchain render pass, not present in the cache.
+  {
+    RenderPass* swapchainPass = (RenderPass*)m_RenderPasses.accessResource(m_SwapchainPass.index);
+    vkDestroyRenderPass(m_VulkanDevice, swapchainPass->vkRenderPass, m_VulkanAllocCallbacks);
+  }
+
+  // Destroy swapchain
   destroySwapchain();
   vkDestroySurfaceKHR(m_VulkanInstance, m_VulkanWindowSurface, m_VulkanAllocCallbacks);
 
@@ -1062,9 +1488,392 @@ BufferHandle GpuDevice::createBuffer(const BufferCreation& p_Creation)
   return handle;
 }
 //---------------------------------------------------------------------------//
-TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation) {}
+TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation)
+{
+  uint32_t resourceIndex = m_Textures.obtainResource();
+  TextureHandle handle = {resourceIndex};
+  if (resourceIndex == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  Texture* texture = (Texture*)m_Textures.accessResource(handle.index);
+
+  _vulkanCreateTexture(*this, p_Creation, handle, texture);
+
+  // Copy buffer-data if present
+  if (p_Creation.initialData)
+  {
+    // Create stating buffer
+    VkBufferCreateInfo bufferCi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufferCi.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    uint32_t imageSize = p_Creation.width * p_Creation.height * 4;
+    bufferCi.size = imageSize;
+
+    VmaAllocationCreateInfo memoryCi{};
+    memoryCi.flags = VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT;
+    memoryCi.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+    VmaAllocationInfo allocationInfo{};
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+    CHECKRES(vmaCreateBuffer(
+        m_VmaAllocator, &bufferCi, &memoryCi, &stagingBuffer, &stagingAllocation, &allocationInfo));
+
+    // Copy buffer-data
+    void* destinationData;
+    vmaMapMemory(m_VmaAllocator, stagingAllocation, &destinationData);
+    memcpy(destinationData, p_Creation.initialData, static_cast<size_t>(imageSize));
+    vmaUnmapMemory(m_VmaAllocator, stagingAllocation);
+
+    // Execute command buffer
+    VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    CommandBuffer* cmdBuffer = getInstantCommandBuffer();
+    vkBeginCommandBuffer(cmdBuffer->m_VulkanCmdBuffer, &beginInfo);
+
+    VkBufferImageCopy region = {};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {p_Creation.width, p_Creation.height, p_Creation.depth};
+
+    // Transition
+    _transitionImageLayout(
+        cmdBuffer->m_VulkanCmdBuffer,
+        texture->vkImage,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        false);
+    // Copy
+    vkCmdCopyBufferToImage(
+        cmdBuffer->m_VulkanCmdBuffer,
+        stagingBuffer,
+        texture->vkImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &region);
+    // Transition
+    _transitionImageLayout(
+        cmdBuffer->m_VulkanCmdBuffer,
+        texture->vkImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        false);
+
+    vkEndCommandBuffer(cmdBuffer->m_VulkanCmdBuffer);
+
+    // Submit command buffer
+    VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffer->m_VulkanCmdBuffer;
+
+    vkQueueSubmit(m_VulkanQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_VulkanQueue);
+
+    vmaDestroyBuffer(m_VmaAllocator, stagingBuffer, stagingAllocation);
+
+    // TODO: free command buffer
+    vkResetCommandBuffer(
+        cmdBuffer->m_VulkanCmdBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+
+    texture->vkImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  }
+
+  return handle;
+}
 //---------------------------------------------------------------------------//
-PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation) {}
+PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
+{
+  PipelineHandle handle = {m_Pipelines.obtainResource()};
+  if (handle.index == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  ShaderStateHandle shaderState = createShaderState(p_Creation.shaders);
+  if (shaderState.index == kInvalidIndex)
+  {
+    // Shader did not compile.
+    m_Pipelines.releaseResource(handle.index);
+    handle.index = kInvalidIndex;
+
+    return handle;
+  }
+
+  // Now that shaders have compiled we can create the pipeline.
+  Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(handle.index);
+  ShaderState* shaderStateData = (ShaderState*)m_Shaders.accessResource(shaderState.index);
+
+  pipeline->shaderState = shaderState;
+
+  VkDescriptorSetLayout vkLayouts[kMaxDescriptorSetLayouts];
+
+  // Create VkPipelineLayout
+  for (uint32_t l = 0; l < p_Creation.numActiveLayouts; ++l)
+  {
+    pipeline->descriptorSetLayout[l] = (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(
+        p_Creation.descriptorSetLayouts[l].index);
+    pipeline->descriptorSetLayoutHandle[l] = p_Creation.descriptorSetLayouts[l];
+
+    vkLayouts[l] = pipeline->descriptorSetLayout[l]->vkDescriptorSetLayout;
+  }
+
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipelineLayoutInfo.pSetLayouts = vkLayouts;
+  pipelineLayoutInfo.setLayoutCount = p_Creation.numActiveLayouts;
+
+  VkPipelineLayout pipelineLayout;
+  CHECKRES(vkCreatePipelineLayout(
+      m_VulkanDevice, &pipelineLayoutInfo, m_VulkanAllocCallbacks, &pipelineLayout));
+  // Cache pipeline layout
+  pipeline->vkPipelineLayout = pipelineLayout;
+  pipeline->numActiveLayouts = p_Creation.numActiveLayouts;
+
+  // Create full pipeline
+  if (shaderStateData->graphicsPipeline)
+  {
+    VkGraphicsPipelineCreateInfo pipelineCi = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+
+    //// Shader stage
+    pipelineCi.pStages = shaderStateData->shaderStageInfo;
+    pipelineCi.stageCount = shaderStateData->activeShaders;
+    //// PipelineLayout
+    pipelineCi.layout = pipelineLayout;
+
+    //// Vertex input
+    VkPipelineVertexInputStateCreateInfo vertexInputCi = {
+        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+
+    // Vertex attributes.
+    VkVertexInputAttributeDescription vertexAttributes[8];
+    if (p_Creation.vertexInput.numVertexAttributes)
+    {
+
+      for (uint32_t i = 0; i < p_Creation.vertexInput.numVertexAttributes; ++i)
+      {
+        const VertexAttribute& vertexAttribute = p_Creation.vertexInput.vertexAttributes[i];
+        vertexAttributes[i] = {
+            vertexAttribute.location,
+            vertexAttribute.binding,
+            toVkVertexFormat(vertexAttribute.format),
+            vertexAttribute.offset};
+      }
+
+      vertexInputCi.vertexAttributeDescriptionCount = p_Creation.vertexInput.numVertexAttributes;
+      vertexInputCi.pVertexAttributeDescriptions = vertexAttributes;
+    }
+    else
+    {
+      vertexInputCi.vertexAttributeDescriptionCount = 0;
+      vertexInputCi.pVertexAttributeDescriptions = nullptr;
+    }
+    // Vertex bindings
+    VkVertexInputBindingDescription vertexBindings[8];
+    if (p_Creation.vertexInput.numVertexStreams)
+    {
+      vertexInputCi.vertexBindingDescriptionCount = p_Creation.vertexInput.numVertexStreams;
+
+      for (uint32_t i = 0; i < p_Creation.vertexInput.numVertexStreams; ++i)
+      {
+        const VertexStream& vertexStream = p_Creation.vertexInput.vertexStreams[i];
+        VkVertexInputRate vertexRate = vertexStream.inputRate == VertexInputRate::kPerVertex
+                                           ? VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX
+                                           : VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE;
+        vertexBindings[i] = {vertexStream.binding, vertexStream.stride, vertexRate};
+      }
+      vertexInputCi.pVertexBindingDescriptions = vertexBindings;
+    }
+    else
+    {
+      vertexInputCi.vertexBindingDescriptionCount = 0;
+      vertexInputCi.pVertexBindingDescriptions = nullptr;
+    }
+
+    pipelineCi.pVertexInputState = &vertexInputCi;
+
+    //// Input Assembly
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    pipelineCi.pInputAssemblyState = &inputAssembly;
+
+    //// Color Blending
+    VkPipelineColorBlendAttachmentState colorBlendAttachment[8];
+
+    if (p_Creation.blendState.activeStates)
+    {
+      for (size_t i = 0; i < p_Creation.blendState.activeStates; i++)
+      {
+        const BlendState& blendState = p_Creation.blendState.blendStates[i];
+
+        colorBlendAttachment[i].colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment[i].blendEnable = blendState.blendEnabled ? VK_TRUE : VK_FALSE;
+        colorBlendAttachment[i].srcColorBlendFactor = blendState.sourceColor;
+        colorBlendAttachment[i].dstColorBlendFactor = blendState.destinationColor;
+        colorBlendAttachment[i].colorBlendOp = blendState.colorOperation;
+
+        if (blendState.separateBlend)
+        {
+          colorBlendAttachment[i].srcAlphaBlendFactor = blendState.sourceAlpha;
+          colorBlendAttachment[i].dstAlphaBlendFactor = blendState.destinationAlpha;
+          colorBlendAttachment[i].alphaBlendOp = blendState.alphaOperation;
+        }
+        else
+        {
+          colorBlendAttachment[i].srcAlphaBlendFactor = blendState.sourceColor;
+          colorBlendAttachment[i].dstAlphaBlendFactor = blendState.destinationColor;
+          colorBlendAttachment[i].alphaBlendOp = blendState.colorOperation;
+        }
+      }
+    }
+    else
+    {
+      // Default non blended state
+      colorBlendAttachment[0] = {};
+      colorBlendAttachment[0].blendEnable = VK_FALSE;
+      colorBlendAttachment[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    }
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{
+        VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOp = VK_LOGIC_OP_COPY; // Optional
+    colorBlending.attachmentCount = p_Creation.blendState.activeStates
+                                        ? p_Creation.blendState.activeStates
+                                        : 1; // Always have 1 blend defined.
+    colorBlending.pAttachments = colorBlendAttachment;
+    colorBlending.blendConstants[0] = 0.0f; // Optional
+    colorBlending.blendConstants[1] = 0.0f; // Optional
+    colorBlending.blendConstants[2] = 0.0f; // Optional
+    colorBlending.blendConstants[3] = 0.0f; // Optional
+
+    pipelineCi.pColorBlendState = &colorBlending;
+
+    //// Depth Stencil
+    VkPipelineDepthStencilStateCreateInfo depthStencil{
+        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+
+    depthStencil.depthWriteEnable = p_Creation.depthStencil.depthWriteEnable ? VK_TRUE : VK_FALSE;
+    depthStencil.stencilTestEnable = p_Creation.depthStencil.stencilEnable ? VK_TRUE : VK_FALSE;
+    depthStencil.depthTestEnable = p_Creation.depthStencil.depthEnable ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = p_Creation.depthStencil.depthComparison;
+    if (p_Creation.depthStencil.stencilEnable)
+    {
+      assert(false && "Stencil not supported yet!");
+    }
+
+    pipelineCi.pDepthStencilState = &depthStencil;
+
+    //// Multisample
+    VkPipelineMultisampleStateCreateInfo multisampling = {};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.minSampleShading = 1.0f;          // Optional
+    multisampling.pSampleMask = nullptr;            // Optional
+    multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
+    multisampling.alphaToOneEnable = VK_FALSE;      // Optional
+
+    pipelineCi.pMultisampleState = &multisampling;
+
+    //// Rasterizer
+    VkPipelineRasterizationStateCreateInfo rasterizer{
+        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = p_Creation.rasterization.cullMode;
+    rasterizer.frontFace = p_Creation.rasterization.front;
+    rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.depthBiasConstantFactor = 0.0f; // Optional
+    rasterizer.depthBiasClamp = 0.0f;          // Optional
+    rasterizer.depthBiasSlopeFactor = 0.0f;    // Optional
+
+    pipelineCi.pRasterizationState = &rasterizer;
+
+    //// Tessellation
+    pipelineCi.pTessellationState;
+
+    //// Viewport state
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)m_SwapchainWidth;
+    viewport.height = (float)m_SwapchainHeight;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = {m_SwapchainWidth, m_SwapchainHeight};
+
+    VkPipelineViewportStateCreateInfo viewportStateCi{
+        VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    viewportStateCi.viewportCount = 1;
+    viewportStateCi.pViewports = &viewport;
+    viewportStateCi.scissorCount = 1;
+    viewportStateCi.pScissors = &scissor;
+
+    pipelineCi.pViewportState = &viewportStateCi;
+
+    //// Render Pass
+    pipelineCi.renderPass = getVulkanRenderPass(p_Creation.renderPass, p_Creation.name);
+
+    //// Dynamic states
+    VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicStateCi{
+        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dynamicStateCi.dynamicStateCount = arrayCount32(dynamicStates);
+    dynamicStateCi.pDynamicStates = dynamicStates;
+
+    pipelineCi.pDynamicState = &dynamicStateCi;
+
+    vkCreateGraphicsPipelines(
+        m_VulkanDevice,
+        VK_NULL_HANDLE,
+        1,
+        &pipelineCi,
+        m_VulkanAllocCallbacks,
+        &pipeline->vkPipeline);
+
+    pipeline->vkBindPoint = VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_GRAPHICS;
+  }
+  else
+  {
+    VkComputePipelineCreateInfo pipelineCi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+
+    pipelineCi.stage = shaderStateData->shaderStageInfo[0];
+    pipelineCi.layout = pipelineLayout;
+
+    vkCreateComputePipelines(
+        m_VulkanDevice,
+        VK_NULL_HANDLE,
+        1,
+        &pipelineCi,
+        m_VulkanAllocCallbacks,
+        &pipeline->vkPipeline);
+
+    pipeline->vkBindPoint = VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_COMPUTE;
+  }
+
+  return handle;
+}
 //---------------------------------------------------------------------------//
 SamplerHandle GpuDevice::createSampler(const SamplerCreation& p_Creation)
 {
@@ -1104,9 +1913,130 @@ SamplerHandle GpuDevice::createSampler(const SamplerCreation& p_Creation)
 }
 //---------------------------------------------------------------------------//
 DescriptorSetLayoutHandle
-GpuDevice::createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation){.}
+GpuDevice::createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation)
+{
+  DescriptorSetLayoutHandle handle = {m_DescriptorSetLayouts.obtainResource()};
+  if (handle.index == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  DesciptorSetLayout* descriptorSetLayout =
+      (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(handle.index);
+
+  // Create flattened binding list
+  descriptorSetLayout->numBindings = (uint16_t)p_Creation.numBindings;
+  uint8_t* memory = FRAMEWORK_ALLOCAM(
+      (sizeof(VkDescriptorSetLayoutBinding) + sizeof(DescriptorBinding)) * p_Creation.numBindings,
+      m_Allocator);
+  descriptorSetLayout->bindings = (DescriptorBinding*)memory;
+  descriptorSetLayout->vkBinding =
+      (VkDescriptorSetLayoutBinding*)(memory + sizeof(DescriptorBinding) * p_Creation.numBindings);
+  descriptorSetLayout->handle = handle;
+  descriptorSetLayout->setIndex = uint16_t(p_Creation.setIndex);
+
+  uint32_t usedBindings = 0;
+  for (uint32_t r = 0; r < p_Creation.numBindings; ++r)
+  {
+    DescriptorBinding& binding = descriptorSetLayout->bindings[r];
+    const DescriptorSetLayoutCreation::Binding& inputBinding = p_Creation.bindings[r];
+    binding.start = inputBinding.start == UINT16_MAX ? (uint16_t)r : inputBinding.start;
+    binding.count = 1;
+    binding.type = inputBinding.type;
+    binding.name = inputBinding.name;
+
+    VkDescriptorSetLayoutBinding& vkBinding = descriptorSetLayout->vkBinding[usedBindings];
+    ++usedBindings;
+
+    vkBinding.binding = binding.start;
+    vkBinding.descriptorType = inputBinding.type;
+    vkBinding.descriptorType = vkBinding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                   ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+                                   : vkBinding.descriptorType;
+    vkBinding.descriptorCount = 1;
+    vkBinding.stageFlags = VK_SHADER_STAGE_ALL;
+    vkBinding.pImmutableSamplers = nullptr;
+  }
+
+  // Create the descriptor set layout
+  VkDescriptorSetLayoutCreateInfo layoutInfo = {
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  layoutInfo.bindingCount = usedBindings; // p_Creation.numBindings;
+  layoutInfo.pBindings = descriptorSetLayout->vkBinding;
+
+  vkCreateDescriptorSetLayout(
+      m_VulkanDevice,
+      &layoutInfo,
+      m_VulkanAllocCallbacks,
+      &descriptorSetLayout->vkDescriptorSetLayout);
+
+  return handle;
+}
 //---------------------------------------------------------------------------//
-DescriptorSetHandle GpuDevice::createDescriptorSet(const DescriptorSetCreation& p_Creation){.}
+DescriptorSetHandle GpuDevice::createDescriptorSet(const DescriptorSetCreation& p_Creation)
+{
+  DescriptorSetHandle handle = {m_DescriptorSets.obtainResource()};
+  if (handle.index == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  DesciptorSet* descriptorSet = (DesciptorSet*)m_DescriptorSets.accessResource(handle.index);
+  const DesciptorSetLayout* descriptorSetLayout =
+      (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(p_Creation.layout.index);
+
+  // Allocate descriptor set
+  VkDescriptorSetAllocateInfo allocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+  allocInfo.descriptorPool = m_VulkanDescriptorPool;
+  allocInfo.descriptorSetCount = 1;
+  allocInfo.pSetLayouts = &descriptorSetLayout->vkDescriptorSetLayout;
+
+  CHECKRES(vkAllocateDescriptorSets(m_VulkanDevice, &allocInfo, &descriptorSet->vkDescriptorSet));
+  // Cache data
+  uint8_t* memory = FRAMEWORK_ALLOCAM(
+      (sizeof(ResourceHandle) + sizeof(SamplerHandle) + sizeof(uint16_t)) * p_Creation.numResources,
+      m_Allocator);
+  descriptorSet->resources = (ResourceHandle*)memory;
+  descriptorSet->samplers =
+      (SamplerHandle*)(memory + sizeof(ResourceHandle) * p_Creation.numResources);
+  descriptorSet->bindings =
+      (uint16_t*)(memory + (sizeof(ResourceHandle) + sizeof(SamplerHandle)) * p_Creation.numResources);
+  descriptorSet->numResources = p_Creation.numResources;
+  descriptorSet->layout = descriptorSetLayout;
+
+  // Update descriptor set
+  VkWriteDescriptorSet descriptorWrite[8];
+  VkDescriptorBufferInfo bufferInfo[8];
+  VkDescriptorImageInfo imageInfo[8];
+
+  Sampler* defaultSampler = (Sampler*)m_Samplers.accessResource(m_DefaultSampler.index);
+
+  uint32_t numResources = p_Creation.numResources;
+  _vulkanFillWriteDescriptorSets(
+      *this,
+      descriptorSetLayout,
+      descriptorSet->vkDescriptorSet,
+      descriptorWrite,
+      bufferInfo,
+      imageInfo,
+      defaultSampler->vkSampler,
+      numResources,
+      p_Creation.resources,
+      p_Creation.samplers,
+      p_Creation.bindings);
+
+  // Cache resources
+  for (uint32_t r = 0; r < p_Creation.numResources; r++)
+  {
+    descriptorSet->resources[r] = p_Creation.resources[r];
+    descriptorSet->samplers[r] = p_Creation.samplers[r];
+    descriptorSet->bindings[r] = p_Creation.bindings[r];
+  }
+
+  vkUpdateDescriptorSets(m_VulkanDevice, numResources, descriptorWrite, 0, nullptr);
+
+  return handle;
+}
 //---------------------------------------------------------------------------//
 RenderPassHandle GpuDevice::createRenderPass(const RenderPassCreation& p_Creation)
 {
@@ -1177,7 +2107,106 @@ RenderPassHandle GpuDevice::createRenderPass(const RenderPassCreation& p_Creatio
   return handle;
 }
 //---------------------------------------------------------------------------//
-ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Creation) { . }
+ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Creation)
+{
+  ShaderStateHandle handle = {kInvalidIndex};
+
+  if (p_Creation.stagesCount == 0 || p_Creation.stages == nullptr)
+  {
+    char msg[256]{};
+    sprintf(msg, "Shader %s does not contain shader stages.\n", p_Creation.name);
+    OutputDebugStringA(msg);
+    return handle;
+  }
+
+  handle.index = m_Shaders.obtainResource();
+  if (handle.index == kInvalidIndex)
+  {
+    return handle;
+  }
+
+  // For each shader stage, compile them individually.
+  uint32_t compiledShaders = 0;
+
+  ShaderState* shaderState = (ShaderState*)m_Shaders.accessResource(handle.index);
+  shaderState->graphicsPipeline = true;
+  shaderState->activeShaders = 0;
+
+  size_t currentTemporaryMarker = m_TemporaryAllocator->getMarker();
+
+  for (compiledShaders = 0; compiledShaders < p_Creation.stagesCount; ++compiledShaders)
+  {
+    const ShaderStage& stage = p_Creation.stages[compiledShaders];
+
+    // Gives priority to compute: if any is present (and it should not be) then it is not a graphics
+    // pipeline.
+    if (stage.type == VK_SHADER_STAGE_COMPUTE_BIT)
+    {
+      shaderState->graphicsPipeline = false;
+    }
+
+    VkShaderModuleCreateInfo shaderCi = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+
+    if (p_Creation.spvInput)
+    {
+      shaderCi.codeSize = stage.codeSize;
+      shaderCi.pCode = reinterpret_cast<const uint32_t*>(stage.code);
+    }
+    else
+    {
+      shaderCi = compileShader(stage.code, stage.codeSize, stage.type, p_Creation.name);
+    }
+
+    // Compile shader module
+    VkPipelineShaderStageCreateInfo& shaderStageCi = shaderState->shaderStageInfo[compiledShaders];
+    memset(&shaderStageCi, 0, sizeof(VkPipelineShaderStageCreateInfo));
+    shaderStageCi.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStageCi.pName = "main";
+    shaderStageCi.stage = stage.type;
+
+    if (vkCreateShaderModule(
+            m_VulkanDevice,
+            &shaderCi,
+            nullptr,
+            &shaderState->shaderStageInfo[compiledShaders].module) != VK_SUCCESS)
+    {
+
+      break;
+    }
+
+    setResourceName(
+        VK_OBJECT_TYPE_SHADER_MODULE,
+        (uint64_t)shaderState->shaderStageInfo[compiledShaders].module,
+        p_Creation.name);
+  }
+
+  m_TemporaryAllocator->freeMarker(currentTemporaryMarker);
+
+  bool creationFailed = compiledShaders != p_Creation.stagesCount;
+  if (!creationFailed)
+  {
+    shaderState->activeShaders = compiledShaders;
+    shaderState->name = p_Creation.name;
+  }
+
+  if (creationFailed)
+  {
+    destroyShaderState(handle);
+    handle.index = kInvalidIndex;
+
+    // Dump shader code
+    OutputDebugStringA("Error in creation of shader. Dumping all shader informations.\n");
+    for (compiledShaders = 0; compiledShaders < p_Creation.stagesCount; ++compiledShaders)
+    {
+      const ShaderStage& stage = p_Creation.stages[compiledShaders];
+      char msg[512]{};
+      sprintf(msg, "%u:\n%s\n", stage.type, stage.code);
+      OutputDebugStringA(msg);
+    }
+  }
+
+  return handle;
+}
 //---------------------------------------------------------------------------//
 void GpuDevice::destroyBuffer(BufferHandle p_Buffer)
 {
@@ -1194,9 +2223,35 @@ void GpuDevice::destroyBuffer(BufferHandle p_Buffer)
   }
 }
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyTexture(TextureHandle p_Texture) { . }
+void GpuDevice::destroyTexture(TextureHandle p_Texture)
+{
+  if (p_Texture.index < m_Textures.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kTexture, p_Texture.index, m_CurrentFrameIndex});
+  }
+  else
+  {
+    OutputDebugStringA("Graphics error: trying to free invalid Texture\n");
+  }
+}
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyPipeline(PipelineHandle p_Pipeline) { . }
+void GpuDevice::destroyPipeline(PipelineHandle p_Pipeline)
+{
+  if (p_Pipeline.index < m_Pipelines.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kPipeline, p_Pipeline.index, m_CurrentFrameIndex});
+    // Shader state creation is handled internally when creating a pipeline, thus add this to track
+    // correctly.
+    Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(p_Pipeline.index);
+    destroyShaderState(pipeline->shaderState);
+  }
+  else
+  {
+    OutputDebugStringA("Graphics error: trying to free invalid Pipeline\n");
+  }
+}
 //---------------------------------------------------------------------------//
 void GpuDevice::destroySampler(SamplerHandle p_Sampler)
 {
@@ -1213,13 +2268,57 @@ void GpuDevice::destroySampler(SamplerHandle p_Sampler)
   }
 }
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout) { . }
+void GpuDevice::destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout)
+{
+  if (p_Layout.index < m_DescriptorSetLayouts.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kDescriptorSetLayout, p_Layout.index, m_CurrentFrameIndex});
+  }
+  else
+  {
+    OutputDebugStringA("Graphics error: trying to free invalid DescriptorSetLayout\n");
+  }
+}
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyDescriptorSet(DescriptorSetHandle p_Set) { . }
+void GpuDevice::destroyDescriptorSet(DescriptorSetHandle p_Set)
+{
+  if (p_Set.index < m_DescriptorSets.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kDescriptorSet, p_Set.index, m_CurrentFrameIndex});
+  }
+  else
+  {
+    OutputDebugStringA("Graphics error: trying to free invalid DescriptorSet\n");
+  }
+}
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyRenderPass(RenderPassHandle p_RenderPass) { . }
+void GpuDevice::destroyRenderPass(RenderPassHandle p_RenderPass)
+{
+  if (p_RenderPass.index < m_RenderPasses.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kRenderPass, p_RenderPass.index, m_CurrentFrameIndex});
+  }
+  else
+  {
+    OutputDebugStringA("Graphics error: trying to free invalid RenderPass\n");
+  }
+}
 //---------------------------------------------------------------------------//
-void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader) { . }
+void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader)
+{
+  if (p_Shader.index < m_Shaders.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceDeletionType::kShaderState, p_Shader.index, m_CurrentFrameIndex});
+  }
+  else
+  {
+    OutputDebugStringA("Graphics error: trying to free invalid Shader\n");
+  }
+}
 //---------------------------------------------------------------------------//
 void* GpuDevice::mapBuffer(const MapBufferParameters& p_Parameters)
 {
@@ -1357,7 +2456,7 @@ void GpuDevice::createSwapchain()
   VkResult result = vkCreateSwapchainKHR(m_VulkanDevice, &swapchainCi, 0, &m_VulkanSwapchain);
   CHECKRES(result);
 
-  //// Cache swapchain images
+  // Cache swapchain images
   vkGetSwapchainImagesKHR(m_VulkanDevice, m_VulkanSwapchain, &m_VulkanSwapchainImageCount, NULL);
   vkGetSwapchainImagesKHR(
       m_VulkanDevice, m_VulkanSwapchain, &m_VulkanSwapchainImageCount, m_VulkanSwapchainImages);
@@ -1427,6 +2526,88 @@ VkRenderPass GpuDevice::getVulkanRenderPass(const RenderPassOutput& p_Output, co
   g_RenderPassCache.insert(hashedMemory, vulkanRenderPass);
 
   return vulkanRenderPass;
+}
+//---------------------------------------------------------------------------//
+VkShaderModuleCreateInfo GpuDevice::compileShader(
+    const char* p_Code, uint32_t p_CodeSize, VkShaderStageFlagBits p_Stage, const char* p_Name)
+{
+  VkShaderModuleCreateInfo shaderCi = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+
+  // Compile from glsl to SpirV.
+  // TODO: detect if input is HLSL.
+  const char* tempFilename = "temp.shader";
+
+  // Write current shader to file.
+  FILE* tempShaderFile = fopen(tempFilename, "w");
+  fwrite(p_Code, p_CodeSize, 1, tempShaderFile);
+  fclose(tempShaderFile);
+
+  size_t currentMarker = m_TemporaryAllocator->getMarker();
+  Framework::StringBuffer tempStringBuffer;
+  tempStringBuffer.init(FRAMEWORK_KILO(1), m_TemporaryAllocator);
+
+  // Add uppercase define as STAGE_NAME
+  char* stageDefine = tempStringBuffer.appendUseFormatted("%s_%s", toStageDefines(p_Stage), p_Name);
+  size_t stageDefineLength = strlen(stageDefine);
+  for (uint32_t i = 0; i < stageDefineLength; ++i)
+  {
+    stageDefine[i] = toupper(stageDefine[i]);
+  }
+  // Compile to SPV
+  char* glslCompilerPath =
+      tempStringBuffer.appendUseFormatted("%sglslangValidator.exe", m_VulkanBinariesPath);
+  char* finalSpirvFilename = tempStringBuffer.appendUse("shader_final.spv");
+  // TODO: add optional debug information in shaders (option -g).
+  char* arguments = tempStringBuffer.appendUseFormatted(
+      "glslangValidator.exe %s -V --target-env vulkan1.2 -o %s -S %s --D %s --D %s",
+      tempFilename,
+      finalSpirvFilename,
+      toCompilerExtension(p_Stage),
+      stageDefine,
+      toStageDefines(p_Stage));
+
+  Framework::processExecute(".", glslCompilerPath, arguments, "");
+
+  bool optimize_shaders = false;
+
+  if (optimize_shaders)
+  {
+    // TODO: add optional optimization stage
+    //"spirv-opt -O input -o output
+    char* spirvOptimizerPath =
+        tempStringBuffer.appendUseFormatted("%sspirv-opt.exe", m_VulkanBinariesPath);
+    char* optimizedSpirvFilename = tempStringBuffer.appendUseFormatted("shader_opt.spv");
+    char* spirvOptArguments = tempStringBuffer.appendUseFormatted(
+        "spirv-opt.exe -O --preserve-bindings %s -o %s",
+        finalSpirvFilename,
+        optimizedSpirvFilename);
+
+    Framework::processExecute(".", spirvOptimizerPath, spirvOptArguments, "");
+
+    // Read back SPV file.
+    shaderCi.pCode = reinterpret_cast<const uint32_t*>(Framework::fileReadBinary(
+        optimizedSpirvFilename, m_TemporaryAllocator, &shaderCi.codeSize));
+
+    Framework::fileDelete(optimizedSpirvFilename);
+  }
+  else
+  {
+    // Read back SPV file.
+    shaderCi.pCode = reinterpret_cast<const uint32_t*>(
+        Framework::fileReadBinary(finalSpirvFilename, m_TemporaryAllocator, &shaderCi.codeSize));
+  }
+
+  // TODO: Handling compilation error
+  if (shaderCi.pCode == nullptr)
+  {
+    assert(false && "Failed to compile shader!");
+  }
+
+  // Temporary files cleanup
+  Framework::fileDelete(tempFilename);
+  Framework::fileDelete(finalSpirvFilename);
+
+  return shaderCi;
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics
