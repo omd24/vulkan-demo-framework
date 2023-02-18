@@ -90,11 +90,6 @@ struct CommandBufferRing
 
     return cmdBuffer;
   }
-  CommandBuffer* getCmdBufferInstant(uint32_t p_FrameIndex, bool p_Begin)
-  {
-    CommandBuffer* cmdBuffer = &m_CmdBuffers[p_FrameIndex * ms_BufferPerPool + 1];
-    return cmdBuffer;
-  }
 
   static uint16_t poolFromIndex(uint32_t p_Index) { return (uint16_t)p_Index / ms_BufferPerPool; }
 
@@ -399,7 +394,7 @@ static void _vulkanCreateSwapchainPass(
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  CommandBuffer* cmd = p_GpuDevice.getInstantCommandBuffer();
+  CommandBuffer* cmd = p_GpuDevice.getCommandBuffer(false);
   vkBeginCommandBuffer(cmd->m_VulkanCmdBuffer, &beginInfo);
 
   VkBufferImageCopy region = {};
@@ -847,6 +842,18 @@ static void _vulkanFillWriteDescriptorSets(
   p_NumResources = usedResources;
 }
 //---------------------------------------------------------------------------//
+template <class T> constexpr const T& _min(const T& a, const T& b)
+{
+  // TODO: move this somewhere else
+  return (a < b) ? a : b;
+}
+//---------------------------------------------------------------------------//
+template <class T> constexpr const T& _max(const T& a, const T& b)
+{
+  // TODO: move this somewhere else
+  return (a < b) ? b : a;
+}
+//---------------------------------------------------------------------------//
 // Device implementation:
 //---------------------------------------------------------------------------//
 
@@ -1140,13 +1147,13 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   // Create synchronization objects
   VkSemaphoreCreateInfo semaphoreCi{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
   vkCreateSemaphore(
-      m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanImageAquiredSempaphore);
+      m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanImageAcquiredSemaphore);
 
   for (size_t i = 0; i < kMaxSwapchainImages; i++)
   {
 
     vkCreateSemaphore(
-        m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanRenderCompleteSempaphore[i]);
+        m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanRenderCompleteSemaphore[i]);
 
     VkFenceCreateInfo fenceCi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     fenceCi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
@@ -1255,11 +1262,11 @@ void GpuDevice::shutdown()
 
   for (size_t i = 0; i < kMaxSwapchainImages; i++)
   {
-    vkDestroySemaphore(m_VulkanDevice, m_VulkanRenderCompleteSempaphore[i], m_VulkanAllocCallbacks);
+    vkDestroySemaphore(m_VulkanDevice, m_VulkanRenderCompleteSemaphore[i], m_VulkanAllocCallbacks);
     vkDestroyFence(m_VulkanDevice, m_VulkanCmdBufferExectuedFence[i], m_VulkanAllocCallbacks);
   }
 
-  vkDestroySemaphore(m_VulkanDevice, m_VulkanImageAquiredSempaphore, m_VulkanAllocCallbacks);
+  vkDestroySemaphore(m_VulkanDevice, m_VulkanImageAcquiredSemaphore, m_VulkanAllocCallbacks);
 
   MapBufferParameters mapParams = {m_DynamicBuffer, 0, 0};
   unmapBuffer(mapParams);
@@ -1281,104 +1288,8 @@ void GpuDevice::shutdown()
     if (resourceDeletion.currentFrame == -1)
       continue;
 
-    switch (resourceDeletion.type)
-    {
-
-    case ResourceDeletionType::kBuffer: {
-      Buffer* buffer = (Buffer*)m_Buffers.accessResource(resourceDeletion.handle);
-      if (buffer && buffer->parentBuffer.index == kInvalidBuffer.index)
-      {
-        vmaDestroyBuffer(m_VmaAllocator, buffer->vkBuffer, buffer->vmaAllocation);
-      }
-      m_Buffers.releaseResource(resourceDeletion.handle);
-      break;
-    }
-
-    case ResourceDeletionType::kPipeline: {
-      Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(resourceDeletion.handle);
-      if (pipeline)
-      {
-        vkDestroyPipeline(m_VulkanDevice, pipeline->vkPipeline, m_VulkanAllocCallbacks);
-
-        vkDestroyPipelineLayout(m_VulkanDevice, pipeline->vkPipelineLayout, m_VulkanAllocCallbacks);
-      }
-      m_Pipelines.releaseResource(resourceDeletion.handle);
-      break;
-    }
-
-    case ResourceDeletionType::kRenderPass: {
-      RenderPass* renderPass = (RenderPass*)m_RenderPasses.accessResource(resourceDeletion.handle);
-      if (renderPass)
-      {
-        if (renderPass->numRenderTargets)
-          vkDestroyFramebuffer(m_VulkanDevice, renderPass->vkFrameBuffer, m_VulkanAllocCallbacks);
-      }
-      m_RenderPasses.releaseResource(resourceDeletion.handle);
-      break;
-    }
-
-    case ResourceDeletionType::kDescriptorSet: {
-      DesciptorSet* descriptorSet =
-          (DesciptorSet*)m_DescriptorSets.accessResource(resourceDeletion.handle);
-      if (descriptorSet)
-      {
-        // Contains the allocation for all the resources, binding and samplers arrays.
-        FRAMEWORK_FREE(descriptorSet->resources, m_Allocator);
-      }
-      m_DescriptorSets.releaseResource(resourceDeletion.handle);
-      break;
-    }
-
-    case ResourceDeletionType::kDescriptorSetLayout: {
-      DesciptorSetLayout* descriptorSetLayout =
-          (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(resourceDeletion.handle);
-      if (descriptorSetLayout)
-      {
-        vkDestroyDescriptorSetLayout(
-            m_VulkanDevice, descriptorSetLayout->vkDescriptorSetLayout, m_VulkanAllocCallbacks);
-
-        // This contains also vkBinding allocation.
-        FRAMEWORK_FREE(descriptorSetLayout->bindings, m_Allocator);
-      }
-      m_DescriptorSetLayouts.releaseResource(resourceDeletion.handle);
-      break;
-    }
-
-    case ResourceDeletionType::kSampler: {
-      Sampler* sampler = (Sampler*)m_Samplers.accessResource(resourceDeletion.handle);
-      if (sampler)
-      {
-        vkDestroySampler(m_VulkanDevice, sampler->vkSampler, m_VulkanAllocCallbacks);
-      }
-      m_Samplers.releaseResource(resourceDeletion.handle);
-      break;
-    }
-
-    case ResourceDeletionType::kShaderState: {
-      ShaderState* shaderState = (ShaderState*)m_Shaders.accessResource(resourceDeletion.handle);
-      if (shaderState)
-      {
-        for (size_t i = 0; i < shaderState->activeShaders; i++)
-        {
-          vkDestroyShaderModule(
-              m_VulkanDevice, shaderState->shaderStageInfo[i].module, m_VulkanAllocCallbacks);
-        }
-      }
-      m_Shaders.releaseResource(resourceDeletion.handle);
-      break;
-    }
-
-    case ResourceDeletionType::kTexture: {
-      Texture* texture = (Texture*)m_Textures.accessResource(resourceDeletion.handle);
-      if (texture)
-      {
-        vkDestroyImageView(m_VulkanDevice, texture->vkImageView, m_VulkanAllocCallbacks);
-        vmaDestroyImage(m_VmaAllocator, texture->vkImage, texture->vmaAllocation);
-      }
-      m_Textures.releaseResource(resourceDeletion.handle);
-      break;
-    }
-    }
+    // Real resource destruction
+    releaseResource(resourceDeletion);
   }
 
   // Destroy render passes from the cache.
@@ -1423,6 +1334,185 @@ void GpuDevice::shutdown()
   vkDestroyInstance(m_VulkanInstance, m_VulkanAllocCallbacks);
 
   OutputDebugStringA("Gpu device shutdown\n");
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::newFrame()
+{
+  // Fence wait and reset
+  VkFence* renderCompleteFence = &m_VulkanCmdBufferExectuedFence[m_CurrentFrameIndex];
+
+  if (vkGetFenceStatus(m_VulkanDevice, *renderCompleteFence) != VK_SUCCESS)
+  {
+    vkWaitForFences(m_VulkanDevice, 1, renderCompleteFence, VK_TRUE, UINT64_MAX);
+  }
+  vkResetFences(m_VulkanDevice, 1, renderCompleteFence);
+
+  // Command pool reset
+  g_CmdBufferRing.resetPools(m_CurrentFrameIndex);
+  // Dynamic memory update
+  const uint32_t usedSize = m_DynamicAllocatedSize - (m_DynamicPerFrameSize * m_PreviousFrameIndex);
+  m_DynamicMaxPerFrameSize = _min(usedSize, m_DynamicMaxPerFrameSize);
+  m_DynamicAllocatedSize = m_DynamicPerFrameSize * m_CurrentFrameIndex;
+
+  // Descriptor Set Updates
+  if (m_DescriptorSetUpdates.m_Size > 0)
+  {
+    for (int i = m_DescriptorSetUpdates.m_Size - 1; i >= 0; i--)
+    {
+      DescriptorSetUpdate& update = m_DescriptorSetUpdates[i];
+
+#pragma region Update descriptor set
+      // Use a dummy descriptor set to delete the vulkan descriptor set handle
+      DescriptorSetHandle dummyDeleteDescriptorSetHandle = {m_DescriptorSets.obtainResource()};
+      DesciptorSet* dummyDeleteDescriptorSet =
+          (DesciptorSet*)m_DescriptorSets.accessResource(dummyDeleteDescriptorSetHandle.index);
+
+      DesciptorSet* descriptorSet =
+          (DesciptorSet*)m_DescriptorSets.accessResource(update.descriptorSet.index);
+      const DesciptorSetLayout* descriptorSetLayout = descriptorSet->layout;
+
+      dummyDeleteDescriptorSet->vkDescriptorSet = descriptorSet->vkDescriptorSet;
+      dummyDeleteDescriptorSet->bindings = nullptr;
+      dummyDeleteDescriptorSet->resources = nullptr;
+      dummyDeleteDescriptorSet->samplers = nullptr;
+      dummyDeleteDescriptorSet->numResources = 0;
+
+      destroyDescriptorSet(dummyDeleteDescriptorSetHandle);
+
+      // Allocate the new descriptor set and update its content.
+      VkWriteDescriptorSet descriptor_write[8];
+      VkDescriptorBufferInfo buffer_info[8];
+      VkDescriptorImageInfo image_info[8];
+
+      Sampler* defaultSampler = (Sampler*)m_Samplers.accessResource(m_DefaultSampler.index);
+
+      VkDescriptorSetAllocateInfo allocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+      allocInfo.descriptorPool = m_VulkanDescriptorPool;
+      allocInfo.descriptorSetCount = 1;
+      allocInfo.pSetLayouts = &descriptorSet->layout->vkDescriptorSetLayout;
+      vkAllocateDescriptorSets(m_VulkanDevice, &allocInfo, &descriptorSet->vkDescriptorSet);
+
+      uint32_t numResources = descriptorSetLayout->numBindings;
+      _vulkanFillWriteDescriptorSets(
+          *this,
+          descriptorSetLayout,
+          descriptorSet->vkDescriptorSet,
+          descriptor_write,
+          buffer_info,
+          image_info,
+          defaultSampler->vkSampler,
+          numResources,
+          descriptorSet->resources,
+          descriptorSet->samplers,
+          descriptorSet->bindings);
+
+      vkUpdateDescriptorSets(m_VulkanDevice, numResources, descriptor_write, 0, nullptr);
+#pragma endregion End Update descriptor set
+
+      update.frameIssued = UINT32_MAX;
+      m_DescriptorSetUpdates.deleteSwap(i);
+    }
+  }
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::present()
+{
+  VkResult result = vkAcquireNextImageKHR(
+      m_VulkanDevice,
+      m_VulkanSwapchain,
+      UINT64_MAX,
+      m_VulkanImageAcquiredSemaphore,
+      VK_NULL_HANDLE,
+      &m_VulkanImageIndex);
+  if (result == VK_ERROR_OUT_OF_DATE_KHR)
+  {
+    resizeSwapchain();
+
+    // Advance frame counters that are skipped during this frame.
+    frameCountersAdvance();
+
+    return;
+  }
+  VkFence* renderCompleteFence = &m_VulkanCmdBufferExectuedFence[m_CurrentFrameIndex];
+  VkSemaphore* renderCompleteSemaphore = &m_VulkanRenderCompleteSemaphore[m_CurrentFrameIndex];
+
+  // Copy all commands
+  VkCommandBuffer enqueuedCommandBuffers[4];
+  for (uint32_t c = 0; c < m_NumQueuedCommandBuffers; c++)
+  {
+    CommandBuffer* commandBuffer = m_QueuedCommandBuffers[c];
+
+    enqueuedCommandBuffers[c] = commandBuffer->m_VulkanCmdBuffer;
+    // NOTE: why it was needing current_pipeline to be setup ?
+    if (commandBuffer->m_IsRecording && commandBuffer->m_CurrentRenderPass &&
+        (commandBuffer->m_CurrentRenderPass->type != RenderPassType::kCompute))
+      vkCmdEndRenderPass(commandBuffer->m_VulkanCmdBuffer);
+
+    vkEndCommandBuffer(commandBuffer->m_VulkanCmdBuffer);
+  }
+
+  // Submit command buffers
+  VkSemaphore wait_semaphores[] = {m_VulkanImageAcquiredSemaphore};
+  VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+  VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  submit_info.waitSemaphoreCount = 1;
+  submit_info.pWaitSemaphores = wait_semaphores;
+  submit_info.pWaitDstStageMask = wait_stages;
+  submit_info.commandBufferCount = m_NumQueuedCommandBuffers;
+  submit_info.pCommandBuffers = enqueuedCommandBuffers;
+  submit_info.signalSemaphoreCount = 1;
+  submit_info.pSignalSemaphores = renderCompleteSemaphore;
+
+  vkQueueSubmit(m_VulkanQueue, 1, &submit_info, *renderCompleteFence);
+
+  VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+  presentInfo.waitSemaphoreCount = 1;
+  presentInfo.pWaitSemaphores = renderCompleteSemaphore;
+
+  VkSwapchainKHR swap_chains[] = {m_VulkanSwapchain};
+  presentInfo.swapchainCount = 1;
+  presentInfo.pSwapchains = swap_chains;
+  presentInfo.pImageIndices = &m_VulkanImageIndex;
+  presentInfo.pResults = nullptr; // Optional
+  result = vkQueuePresentKHR(m_VulkanQueue, &presentInfo);
+
+  m_NumQueuedCommandBuffers = 0;
+
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_Resized)
+  {
+    m_Resized = false;
+    resizeSwapchain();
+
+    // Advance frame counters that are skipped during this frame.
+    frameCountersAdvance();
+
+    return;
+  }
+
+  // This is called inside resizeSwapchain as well to correctly work.
+  frameCountersAdvance();
+
+  // Resource deletion using reverse iteration and swap with last element.
+  if (m_ResourceDeletionQueue.m_Size > 0)
+  {
+    for (int i = m_ResourceDeletionQueue.m_Size - 1; i >= 0; i--)
+    {
+      ResourceUpdate& resourceDeletion = m_ResourceDeletionQueue[i];
+
+      if (resourceDeletion.currentFrame == m_CurrentFrameIndex)
+      {
+        // Real release:
+        releaseResource(resourceDeletion);
+
+        // Mark resource as free
+        resourceDeletion.currentFrame = UINT32_MAX;
+
+        // Swap element
+        m_ResourceDeletionQueue.deleteSwap(i);
+      }
+    }
+  }
 }
 //---------------------------------------------------------------------------//
 // Creation/Destruction of resources
@@ -1531,7 +1621,7 @@ TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation)
     VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    CommandBuffer* cmdBuffer = getInstantCommandBuffer();
+    CommandBuffer* cmdBuffer = getCommandBuffer(false);
     vkBeginCommandBuffer(cmdBuffer->m_VulkanCmdBuffer, &beginInfo);
 
     VkBufferImageCopy region = {};
@@ -2319,6 +2409,108 @@ void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader)
     OutputDebugStringA("Graphics error: trying to free invalid Shader\n");
   }
 }
+void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
+{
+
+  switch (p_ResourceDeletion.type)
+  {
+
+  case ResourceDeletionType::kBuffer: {
+    Buffer* buffer = (Buffer*)m_Buffers.accessResource(p_ResourceDeletion.handle);
+    if (buffer && buffer->parentBuffer.index == kInvalidBuffer.index)
+    {
+      vmaDestroyBuffer(m_VmaAllocator, buffer->vkBuffer, buffer->vmaAllocation);
+    }
+    m_Buffers.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+
+  case ResourceDeletionType::kPipeline: {
+    Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(p_ResourceDeletion.handle);
+    if (pipeline)
+    {
+      vkDestroyPipeline(m_VulkanDevice, pipeline->vkPipeline, m_VulkanAllocCallbacks);
+
+      vkDestroyPipelineLayout(m_VulkanDevice, pipeline->vkPipelineLayout, m_VulkanAllocCallbacks);
+    }
+    m_Pipelines.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+
+  case ResourceDeletionType::kRenderPass: {
+    RenderPass* renderPass = (RenderPass*)m_RenderPasses.accessResource(p_ResourceDeletion.handle);
+    if (renderPass)
+    {
+      if (renderPass->numRenderTargets)
+        vkDestroyFramebuffer(m_VulkanDevice, renderPass->vkFrameBuffer, m_VulkanAllocCallbacks);
+    }
+    m_RenderPasses.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+
+  case ResourceDeletionType::kDescriptorSet: {
+    DesciptorSet* descriptorSet =
+        (DesciptorSet*)m_DescriptorSets.accessResource(p_ResourceDeletion.handle);
+    if (descriptorSet)
+    {
+      // Contains the allocation for all the resources, binding and samplers arrays.
+      FRAMEWORK_FREE(descriptorSet->resources, m_Allocator);
+    }
+    m_DescriptorSets.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+
+  case ResourceDeletionType::kDescriptorSetLayout: {
+    DesciptorSetLayout* descriptorSetLayout =
+        (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(p_ResourceDeletion.handle);
+    if (descriptorSetLayout)
+    {
+      vkDestroyDescriptorSetLayout(
+          m_VulkanDevice, descriptorSetLayout->vkDescriptorSetLayout, m_VulkanAllocCallbacks);
+
+      // This contains also vkBinding allocation.
+      FRAMEWORK_FREE(descriptorSetLayout->bindings, m_Allocator);
+    }
+    m_DescriptorSetLayouts.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+
+  case ResourceDeletionType::kSampler: {
+    Sampler* sampler = (Sampler*)m_Samplers.accessResource(p_ResourceDeletion.handle);
+    if (sampler)
+    {
+      vkDestroySampler(m_VulkanDevice, sampler->vkSampler, m_VulkanAllocCallbacks);
+    }
+    m_Samplers.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+
+  case ResourceDeletionType::kShaderState: {
+    ShaderState* shaderState = (ShaderState*)m_Shaders.accessResource(p_ResourceDeletion.handle);
+    if (shaderState)
+    {
+      for (size_t i = 0; i < shaderState->activeShaders; i++)
+      {
+        vkDestroyShaderModule(
+            m_VulkanDevice, shaderState->shaderStageInfo[i].module, m_VulkanAllocCallbacks);
+      }
+    }
+    m_Shaders.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+
+  case ResourceDeletionType::kTexture: {
+    Texture* texture = (Texture*)m_Textures.accessResource(p_ResourceDeletion.handle);
+    if (texture)
+    {
+      vkDestroyImageView(m_VulkanDevice, texture->vkImageView, m_VulkanAllocCallbacks);
+      vmaDestroyImage(m_VmaAllocator, texture->vkImage, texture->vmaAllocation);
+    }
+    m_Textures.releaseResource(p_ResourceDeletion.handle);
+    break;
+  }
+  }
+}
 //---------------------------------------------------------------------------//
 void* GpuDevice::mapBuffer(const MapBufferParameters& p_Parameters)
 {
@@ -2493,6 +2685,12 @@ void GpuDevice::destroySwapchain()
   vkDestroySwapchainKHR(m_VulkanDevice, m_VulkanSwapchain, m_VulkanAllocCallbacks);
 }
 //---------------------------------------------------------------------------//
+void GpuDevice::resizeSwapchain()
+{
+  // TODO:
+  assert(false && "Not implemented");
+}
+//---------------------------------------------------------------------------//
 void GpuDevice::setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name)
 {
   if (!m_DebugUtilsExtensionPresent)
@@ -2506,9 +2704,9 @@ void GpuDevice::setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const
   pfnSetDebugUtilsObjectNameEXT(m_VulkanDevice, &nameInfo);
 }
 //---------------------------------------------------------------------------//
-CommandBuffer* GpuDevice::getInstantCommandBuffer()
+CommandBuffer* GpuDevice::getCommandBuffer(bool p_Begin)
 {
-  CommandBuffer* cmd = g_CmdBufferRing.getCmdBufferInstant(m_CurrentFrameIndex, false);
+  CommandBuffer* cmd = g_CmdBufferRing.getCmdBuffer(m_CurrentFrameIndex, p_Begin);
   return cmd;
 }
 //---------------------------------------------------------------------------//
@@ -2608,6 +2806,12 @@ VkShaderModuleCreateInfo GpuDevice::compileShader(
   Framework::fileDelete(finalSpirvFilename);
 
   return shaderCi;
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::frameCountersAdvance()
+{
+  // TODO:
+  assert(false && "Not implemented");
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics

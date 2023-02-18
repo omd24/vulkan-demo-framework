@@ -10,6 +10,19 @@ struct CommandBuffer
   void terminate();
   void reset();
 
+  void bindPass(RenderPassHandle p_Passhandle);
+
+  void clear(float p_Red, float p_Green, float p_Blue, float p_Alpha)
+  {
+    m_Clears[0].color = {p_Red, p_Green, p_Blue, p_Alpha};
+  }
+
+  void clearDepthStencil(float p_Depth, uint8_t p_Value)
+  {
+    m_Clears[1].depthStencil.depth = p_Depth;
+    m_Clears[1].depthStencil.stencil = p_Value;
+  }
+
   VkCommandBuffer m_VulkanCmdBuffer;
   GpuDevice* m_GpuDevice;
   VkCopyDescriptorSet m_VulkanDescriptorSets[16];

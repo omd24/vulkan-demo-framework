@@ -22,6 +22,7 @@
 #include "Graphics/GpuEnum.hpp"
 #include "Graphics/GpuResources.hpp"
 #include "Graphics/GpuDevice.hpp"
+#include "Graphics/CommandBuffer.hpp"
 
 //---------------------------------------------------------------------------//
 // Demo specific utils:
@@ -97,8 +98,6 @@ int main(int argc, char** argv)
 
   // Graphics:
   // TODO #1
-  // 1. Gpu device creation
-  // 2. Gpu profiler
   // 3. Renderer class
   // 4. Imgui helper
 
@@ -123,23 +122,44 @@ int main(int argc, char** argv)
   // Load scene:
   Framework::glTF::glTF scene = Framework::gltfLoadFile(gltfFile);
 
-#pragma endregion
+#pragma endregion End Load glTF scene
 
-  // TODO #2
-  // 1. create textures
-  // 2. create buffers
-  // 3. prepare pipeline resources (VB, IB, etc)
-  // 4. shader code (glsl)
-  // 5. create pso
-  // 6. descriptor sets
-  // 7. uniforms
-  // 8. determine draw arguments
+  int64_t beginFrameTick = Framework::Time::getCurrentTime();
+  float modelScale = 0.008f;
 
-  // TODO #3
-  // 1. window loop
-  // 2. update logic
+#pragma region Window loop
+  while (!window.m_RequestedExit)
+  {
+    // New frame
+    if (!window.m_Minimized)
+    {
+      gpuDevice.newFrame();
+    }
 
-#pragma region Deini, shutdown and cleanup
+    // TODO! first set up imgui
+    // window.handleOSMessages();
+
+    if (window.m_Resized)
+    {
+      // gpuDevice.resize(window.m_Width, window.m_Height);
+      window.m_Resized = false;
+    }
+
+    const int64_t currentTick = Framework::Time::getCurrentTime();
+    float deltaTime = (float)Framework::Time::deltaSeconds(beginFrameTick, currentTick);
+    beginFrameTick = currentTick;
+
+    inputHandler.newFrame();
+    inputHandler.update(deltaTime);
+
+    if (!window.m_Minimized)
+    {
+      // TODO:
+      // Draw!
+    }
+  }
+#pragma endregion End Window loop
+#pragma region Deinit, shutdown and cleanup
 
   resourceMgr.shutdown();
 
@@ -152,7 +172,7 @@ int main(int argc, char** argv)
   window.shutdown();
 
   Framework::MemoryService::instance()->shutdown();
-#pragma endregion
+#pragma endregion End Deinit, shutdown and cleanup
 
   return (0);
 }

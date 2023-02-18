@@ -40,6 +40,9 @@ struct GpuDevice : public Framework::Service
   void init(const DeviceCreation& p_Creation);
   void shutdown();
 
+  void newFrame();
+  void present();
+
   // Creation/Destruction of resources
   BufferHandle createBuffer(const BufferCreation& p_Creation);
   TextureHandle createTexture(const TextureCreation& p_Creation);
@@ -60,6 +63,8 @@ struct GpuDevice : public Framework::Service
   void destroyRenderPass(RenderPassHandle p_RenderPass);
   void destroyShaderState(ShaderStateHandle p_Shader);
 
+  void releaseResource(ResourceUpdate& p_ResourceDeletion);
+
   // Map/Unmap
   void* mapBuffer(const MapBufferParameters& p_Parameters);
   void unmapBuffer(const MapBufferParameters& p_Parameters);
@@ -70,13 +75,21 @@ struct GpuDevice : public Framework::Service
   void setPresentMode(PresentMode::Enum p_Mode);
   void createSwapchain();
   void destroySwapchain();
+  void resizeSwapchain();
 
   // Other utility
   void setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name);
-  CommandBuffer* getInstantCommandBuffer();
+  CommandBuffer* getCommandBuffer(bool p_Begin);
   VkRenderPass getVulkanRenderPass(const RenderPassOutput& p_Output, const char* p_Name);
   VkShaderModuleCreateInfo compileShader(
       const char* p_Code, uint32_t p_CodeSize, VkShaderStageFlagBits p_Stage, const char* p_Name);
+  void frameCountersAdvance();
+  void resize(uint16_t p_Width, uint16_t p_Height)
+  {
+    m_SwapchainWidth = p_Width;
+    m_SwapchainHeight = p_Height;
+    m_Resized = true;
+  }
 
   // Common members
   Framework::StringBuffer m_StringBuffer;
@@ -99,7 +112,7 @@ struct GpuDevice : public Framework::Service
   VkFramebuffer m_VulkanSwapchainFramebuffers[kMaxSwapchainImages];
   uint16_t m_SwapchainWidth = 1;
   uint16_t m_SwapchainHeight = 1;
-
+  bool m_Resized = false;
   RenderPassOutput m_SwapchainOutput;
 
   // Windows specific
@@ -134,8 +147,8 @@ struct GpuDevice : public Framework::Service
   VmaAllocator m_VmaAllocator;
 
   // Per-frame synchronization
-  VkSemaphore m_VulkanRenderCompleteSempaphore[kMaxSwapchainImages];
-  VkSemaphore m_VulkanImageAquiredSempaphore;
+  VkSemaphore m_VulkanRenderCompleteSemaphore[kMaxSwapchainImages];
+  VkSemaphore m_VulkanImageAcquiredSemaphore;
   VkFence m_VulkanCmdBufferExectuedFence[kMaxSwapchainImages];
 
   // Resource pools
@@ -155,6 +168,9 @@ struct GpuDevice : public Framework::Service
   uint8_t* m_DynamicMappedMemory;
   uint32_t m_DynamicAllocatedSize;
   uint32_t m_DynamicPerFrameSize;
+
+  uint32_t m_NumQueuedCommandBuffers = 0;
+  CommandBuffer** m_QueuedCommandBuffers = nullptr;
 
   static const uint32_t kMaxFrames = 3;
   static constexpr const char* kName = "Gpu-Service";
