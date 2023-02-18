@@ -5,7 +5,7 @@
 
 #include "Externals/vk_mem_alloc.h"
 
-#include "GpuResources.hpp"
+#include "Graphics/GpuResources.hpp"
 
 #include "Foundation/Prerequisites.hpp"
 #include "Foundation/ResourcePool.hpp"
@@ -77,9 +77,17 @@ struct GpuDevice : public Framework::Service
   void destroySwapchain();
   void resizeSwapchain();
 
+  // Commands helpers
+  CommandBuffer* getCommandBuffer(bool p_Begin);
+  void queueCommandBuffer(CommandBuffer* p_CommandBuffer);
+
+  // Query resources
+  void querySampler(SamplerHandle p_Sampler, SamplerDescription& p_OutDescription);
+  void queryTexture(TextureHandle p_Texture, TextureDescription& p_OutDescription);
+  void queryBuffer(BufferHandle p_Buffer, BufferDescription& p_OutDescription);
+
   // Other utility
   void setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name);
-  CommandBuffer* getCommandBuffer(bool p_Begin);
   VkRenderPass getVulkanRenderPass(const RenderPassOutput& p_Output, const char* p_Name);
   VkShaderModuleCreateInfo compileShader(
       const char* p_Code, uint32_t p_CodeSize, VkShaderStageFlagBits p_Stage, const char* p_Name);

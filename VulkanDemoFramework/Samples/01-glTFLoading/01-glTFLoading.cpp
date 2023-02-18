@@ -23,6 +23,7 @@
 #include "Graphics/GpuResources.hpp"
 #include "Graphics/GpuDevice.hpp"
 #include "Graphics/CommandBuffer.hpp"
+#include "Graphics/Renderer.hpp"
 
 //---------------------------------------------------------------------------//
 // Demo specific utils:
@@ -96,9 +97,11 @@ int main(int argc, char** argv)
   Framework::ResourceManager resourceMgr = {};
   resourceMgr.init(allocator, nullptr);
 
-  // Graphics:
+  Graphics::RendererUtil::Renderer renderer;
+  renderer.init({&gpuDevice, allocator});
+  renderer.setLoaders(&resourceMgr);
+
   // TODO #1
-  // 3. Renderer class
   // 4. Imgui helper
 
   // Load glTF scene
@@ -121,6 +124,95 @@ int main(int argc, char** argv)
 
   // Load scene:
   Framework::glTF::glTF scene = Framework::gltfLoadFile(gltfFile);
+
+  // Create textures:
+  Framework::Array<Graphics::RendererUtil::TextureResource> images;
+  images.init(allocator, scene.imagesCount);
+  for (uint32_t imageIndex = 0; imageIndex < scene.imagesCount; ++imageIndex)
+  {
+    Framework::glTF::Image& image = scene.images[imageIndex];
+    Graphics::RendererUtil::TextureResource* tr =
+        renderer.createTexture(image.uri.m_Data, image.uri.m_Data);
+    assert(tr != nullptr);
+    images.push(*tr);
+  }
+
+  // Create samplers
+  Framework::StringBuffer resourceNameBuffer;
+  resourceNameBuffer.init(4096, allocator);
+
+  Framework::Array<Graphics::RendererUtil::SamplerResource> samplers;
+  samplers.init(allocator, scene.samplersCount);
+  for (uint32_t samplerIndex = 0; samplerIndex < scene.samplersCount; ++samplerIndex)
+  {
+    Framework::glTF::Sampler& sampler = scene.samplers[samplerIndex];
+
+    char* sampler_name = resourceNameBuffer.appendUseFormatted("sampler %u", samplerIndex);
+
+    Graphics::SamplerCreation creation;
+    creation.minFilter = sampler.minFilter == Framework::glTF::Sampler::Filter::LINEAR
+                             ? VK_FILTER_LINEAR
+                             : VK_FILTER_NEAREST;
+    creation.magFilter = sampler.magFilter == Framework::glTF::Sampler::Filter::LINEAR
+                             ? VK_FILTER_LINEAR
+                             : VK_FILTER_NEAREST;
+    creation.name = sampler_name;
+
+    Graphics::RendererUtil::SamplerResource* sr = renderer.createSampler(creation);
+    assert(sr != nullptr);
+    samplers.push(*sr);
+  }
+
+  // Create buffers:
+  Framework::Array<void*> buffersData;
+  buffersData.init(allocator, scene.buffersCount);
+
+  for (uint32_t bufferIndex = 0; bufferIndex < scene.buffersCount; ++bufferIndex)
+  {
+    Framework::glTF::Buffer& buffer = scene.buffers[bufferIndex];
+
+    Framework::FileReadResult buffer_data = Framework::fileReadBinary(buffer.uri.m_Data, allocator);
+    buffersData.push(buffer_data.data);
+  }
+
+  Framework::Array<Graphics::RendererUtil::BufferResource> buffers;
+  buffers.init(allocator, scene.bufferViewsCount);
+
+  for (uint32_t bufferIndex = 0; bufferIndex < scene.bufferViewsCount; ++bufferIndex)
+  {
+    Framework::glTF::BufferView& buffer = scene.bufferViews[bufferIndex];
+
+    int offset = buffer.byteOffset;
+    if (offset == Framework::glTF::INVALID_INT_VALUE)
+    {
+      offset = 0;
+    }
+
+    uint8_t* data = (uint8_t*)buffersData[buffer.buffer] + offset;
+
+    // NOTE(marco): the target attribute of a BufferView is not mandatory, so we prepare for both
+    // uses
+    VkBufferUsageFlags flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+
+    char* bufferName = buffer.name.m_Data;
+    if (bufferName == nullptr)
+    {
+      bufferName = resourceNameBuffer.appendUseFormatted("buffer %u", bufferIndex);
+    }
+
+    Graphics::RendererUtil::BufferResource* br = renderer.createBuffer(
+        flags, Graphics::ResourceUsageType::kImmutable, buffer.byteLength, data, bufferName);
+    assert(br != nullptr);
+
+    buffers.push(*br);
+  }
+
+  for (uint32_t bufferIndex = 0; bufferIndex < scene.buffersCount; ++bufferIndex)
+  {
+    void* buffer = buffersData[bufferIndex];
+    allocator->deallocate(buffer);
+  }
+  buffersData.shutdown();
 
 #pragma endregion End Load glTF scene
 
@@ -163,7 +255,7 @@ int main(int argc, char** argv)
 
   resourceMgr.shutdown();
 
-  // gpuDevice.shutdown(); // TODO: move this to renderer
+  renderer.shutdown();
 
   Framework::gltfFree(scene);
 

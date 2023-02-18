@@ -1,9 +1,10 @@
 #pragma once
 
-#include "GpuDevice.hpp"
+#include "Graphics/GpuDevice.hpp"
 
 namespace Graphics
 {
+//---------------------------------------------------------------------------//
 struct CommandBuffer
 {
   void init(QueueType::Enum p_Type, uint32_t p_BufferSize, uint32_t p_SubmitSize);
@@ -39,4 +40,5 @@ struct CommandBuffer
   QueueType::Enum m_Type = QueueType::kGraphics;
   uint32_t m_BufferSize = 0;
 };
+//---------------------------------------------------------------------------//
 } // namespace Graphics

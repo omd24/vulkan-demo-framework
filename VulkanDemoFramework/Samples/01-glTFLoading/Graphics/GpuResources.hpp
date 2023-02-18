@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Foundation/Prerequisites.hpp"
-#include "GpuEnum.hpp"
+#include "Graphics/GpuEnum.hpp"
 
 #include <vulkan/vulkan.h>
 #include "Externals/vk_mem_alloc.h"
@@ -481,33 +481,33 @@ struct ResourceBinding
 
 struct ShaderStateDescription
 {
-  void* native_handle = nullptr;
+  void* nativeHandle = nullptr;
   const char* name = nullptr;
 
 }; // struct ShaderStateDescription
 
 struct BufferDescription
 {
-  void* native_handle = nullptr;
+  void* nativeHandle = nullptr;
   const char* name = nullptr;
 
   VkBufferUsageFlags typeFlags = 0;
   ResourceUsageType::Enum usage = ResourceUsageType::kImmutable;
   uint32_t size = 0;
-  BufferHandle parent_handle;
+  BufferHandle parentHandle;
 
 }; // struct BufferDescription
 
 struct TextureDescription
 {
-  void* native_handle = nullptr;
+  void* nativeHandle = nullptr;
   const char* name = nullptr;
 
   uint16_t width = 1;
   uint16_t height = 1;
   uint16_t depth = 1;
   uint8_t mipmaps = 1;
-  uint8_t render_target = 0;
+  uint8_t renderTarget = 0;
   uint8_t computeAccess = 0;
 
   VkFormat format = VK_FORMAT_UNDEFINED;

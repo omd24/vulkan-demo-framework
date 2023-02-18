@@ -373,8 +373,8 @@ void FlatHashMap<K, V>::eraseMeta(const FlatHashMapIterator& iterator)
   // We count how many consecutive non empties we have to the right and to the
   // left of `it`. If the sum is >= kWidth then there is at least one probe
   // window that might have seen a full group.
-  const uint64_t trailing_zeros = empty_after.TrailingZeros();
-  const uint64_t leading_zeros = empty_before.LeadingZeros();
+  const uint64_t trailing_zeros = empty_after.trailingZeros();
+  const uint64_t leading_zeros = empty_before.leadingZeros();
   const uint64_t zeros = trailing_zeros + leading_zeros;
   // printf( "%x, %x", empty_after.TrailingZeros(), empty_before.LeadingZeros() );
   bool was_never_full = empty_before && empty_after;

@@ -58,7 +58,7 @@ template <typename T> inline void ResourcePoolTyped<T>::shutdown()
     for (uint32_t i = 0; i < m_FreeIndicesHead; ++i)
     {
       char msg[256]{};
-      sprintf(msg, "\tResource %u, %s\n", m_FreeIndices[i], get(m_FreeIndices[i])->name);
+      sprintf(msg, "\tResource %u, %s\n", m_FreeIndices[i], get(m_FreeIndices[i])->m_Name);
       OutputDebugStringA(msg);
     }
   }

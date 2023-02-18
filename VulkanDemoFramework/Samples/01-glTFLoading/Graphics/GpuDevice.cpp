@@ -1,5 +1,5 @@
 #include "GpuDevice.hpp"
-#include "CommandBuffer.hpp"
+#include "Graphics/CommandBuffer.hpp"
 
 #include "Externals/SDL2-2.0.18/include/SDL.h"        // SDL_Window
 #include "Externals/SDL2-2.0.18/include/SDL_vulkan.h" // SDL_Vulkan_CreateSurface
@@ -2710,6 +2710,11 @@ CommandBuffer* GpuDevice::getCommandBuffer(bool p_Begin)
   return cmd;
 }
 //---------------------------------------------------------------------------//
+void GpuDevice::queueCommandBuffer(CommandBuffer* p_CommandBuffer)
+{
+  m_QueuedCommandBuffers[m_NumQueuedCommandBuffers++] = p_CommandBuffer;
+}
+//---------------------------------------------------------------------------//
 VkRenderPass GpuDevice::getVulkanRenderPass(const RenderPassOutput& p_Output, const char* p_Name)
 {
   // Hash the memory output and find a compatible VkRenderPass.
@@ -2812,6 +2817,60 @@ void GpuDevice::frameCountersAdvance()
 {
   // TODO:
   assert(false && "Not implemented");
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::querySampler(SamplerHandle p_Sampler, SamplerDescription& p_OutDescription)
+{
+  if (p_Sampler.index != kInvalidIndex)
+  {
+    const Sampler* samplerData = (Sampler*)m_Samplers.accessResource(p_Sampler.index);
+
+    p_OutDescription.addressModeU = samplerData->addressModeU;
+    p_OutDescription.addressModeV = samplerData->addressModeV;
+    p_OutDescription.addressModeW = samplerData->addressModeW;
+
+    p_OutDescription.minFilter = samplerData->minFilter;
+    p_OutDescription.magFilter = samplerData->magFilter;
+    p_OutDescription.mipFilter = samplerData->mipFilter;
+
+    p_OutDescription.name = samplerData->name;
+  }
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::queryTexture(TextureHandle p_Texture, TextureDescription& p_OutDescription)
+{
+  if (p_Texture.index != kInvalidIndex)
+  {
+    const Texture* textureData = (Texture*)m_Textures.accessResource(p_Texture.index);
+
+    p_OutDescription.width = textureData->width;
+    p_OutDescription.height = textureData->height;
+    p_OutDescription.depth = textureData->depth;
+    p_OutDescription.format = textureData->vkFormat;
+    p_OutDescription.mipmaps = textureData->mipmaps;
+    p_OutDescription.type = textureData->type;
+    p_OutDescription.renderTarget =
+        (textureData->flags & TextureFlags::kRenderTargetMask) == TextureFlags::kRenderTargetMask;
+    p_OutDescription.computeAccess =
+        (textureData->flags & TextureFlags::kComputeMask) == TextureFlags::kComputeMask;
+    p_OutDescription.nativeHandle = (void*)&textureData->vkImage;
+    p_OutDescription.name = textureData->name;
+  }
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::queryBuffer(BufferHandle p_Buffer, BufferDescription& p_OutDescription)
+{
+  if (p_Buffer.index != kInvalidIndex)
+  {
+    const Buffer* bufferData = (Buffer*)m_Buffers.accessResource(p_Buffer.index);
+
+    p_OutDescription.name = bufferData->name;
+    p_OutDescription.size = bufferData->size;
+    p_OutDescription.typeFlags = bufferData->typeFlags;
+    p_OutDescription.usage = bufferData->usage;
+    p_OutDescription.parentHandle = bufferData->parentBuffer;
+    p_OutDescription.nativeHandle = (void*)&bufferData->vkBuffer;
+  }
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics
