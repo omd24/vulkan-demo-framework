@@ -26,16 +26,27 @@
 #include "Graphics/Renderer.hpp"
 #include "Graphics/ImguiHelper.hpp"
 
+// TODOs
+// 1. make imgui work
+// 2. separate shaders
+// 3. proper model loading
+// 4. fix output messages
+// 5. add resize logic
+// 6. fix validation errors
+// 7. find memory leak
+// 8. remove redundant code
+// 9. more cleanup
+
 //---------------------------------------------------------------------------//
 // Demo specific utils:
 //---------------------------------------------------------------------------//
-// Rotating cube test
-Graphics::BufferHandle cubeVb;
-Graphics::BufferHandle cubeIb;
-Graphics::PipelineHandle cubePso;
-Graphics::BufferHandle cubeCb;
-Graphics::DescriptorSetHandle cubeDs;
-Graphics::DescriptorSetLayoutHandle cubeDsl;
+// Demo objects
+Graphics::BufferHandle demoVb;
+Graphics::BufferHandle demoIb;
+Graphics::PipelineHandle demoPso;
+Graphics::BufferHandle demoCb;
+Graphics::DescriptorSetHandle demoDs;
+Graphics::DescriptorSetLayoutHandle demoDsl;
 
 float rx, ry;
 struct MaterialData
@@ -441,23 +452,23 @@ void main() {
 }
 )FOO";
 
-    pipelineCreation.shaders.setName("Cube")
+    pipelineCreation.shaders.setName("Demo")
         .addStage(vsCode, (uint32_t)strlen(vsCode), VK_SHADER_STAGE_VERTEX_BIT)
         .addStage(fsCode, (uint32_t)strlen(fsCode), VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // Descriptor set layout
-    Graphics::DescriptorSetLayoutCreation cubeDslCreation{};
-    cubeDslCreation.addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"});
-    cubeDslCreation.addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, 1, "diffuseTexture"});
-    cubeDslCreation.addBinding(
+    Graphics::DescriptorSetLayoutCreation demoDslCreation{};
+    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"});
+    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, 1, "diffuseTexture"});
+    demoDslCreation.addBinding(
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, 1, "occlusionRoughnessMetalnessTexture"});
-    cubeDslCreation.addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, 1, "normalTexture"});
-    cubeDslCreation.addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, 1, "MaterialConstant"});
+    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, 1, "normalTexture"});
+    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, 1, "MaterialConstant"});
     // Setting it into pipeline
-    cubeDsl = gpuDevice.createDescriptorSetLayout(cubeDslCreation);
-    pipelineCreation.addDescriptorSetLayout(cubeDsl);
+    demoDsl = gpuDevice.createDescriptorSetLayout(demoDslCreation);
+    pipelineCreation.addDescriptorSetLayout(demoDsl);
 
-    cubePso = gpuDevice.createPipeline(pipelineCreation);
+    demoPso = gpuDevice.createPipeline(pipelineCreation);
   } // end Create pipeline
 
   // Create drawable objects (mesh draws)
@@ -471,8 +482,8 @@ void main() {
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             Graphics::ResourceUsageType::kDynamic,
             sizeof(UniformData))
-        .setName("cubeCb");
-    cubeCb = gpuDevice.createBuffer(cbCreation);
+        .setName("demoCb");
+    demoCb = gpuDevice.createBuffer(cbCreation);
 
     for (uint32_t meshIndex = 0; meshIndex < scene.meshesCount; ++meshIndex)
     {
@@ -565,7 +576,7 @@ void main() {
 
         // Descriptor Set
         Graphics::DescriptorSetCreation dsCreation{};
-        dsCreation.setLayout(cubeDsl).buffer(cubeCb, 0);
+        dsCreation.setLayout(demoDsl).buffer(demoCb, 0);
 
         // NOTE(marco): for now we expect all three textures to be defined. In the next chapter
         // we'll relax this constraint thanks to bindless rendering!
@@ -674,7 +685,6 @@ void main() {
 #pragma endregion End Load glTF scene
 
   int64_t beginFrameTick = Framework::Time::getCurrentTime();
-  float modelScale = 0.008f;
 
   vec3s eye = vec3s{0.0f, 2.5f, 2.0f};
   vec3s look = vec3s{0.0f, 0.0, -1.0f};
@@ -683,7 +693,7 @@ void main() {
   float yaw = 0.0f;
   float pitch = 0.0f;
 
-  float model_scale = 0.008f;
+  float modelScale = 0.008f;
 
 #pragma region Window loop
   while (!window.m_RequestedExit)
@@ -711,9 +721,9 @@ void main() {
     inputHandler.newFrame();
     inputHandler.update(deltaTime);
 
-    // Update rotating cube gpu data
+    // Update rotating demo gpu data
     {
-      Graphics::MapBufferParameters cbMap = {cubeCb, 0, 0};
+      Graphics::MapBufferParameters cbMap = {demoCb, 0, 0};
       float* cbData = (float*)gpuDevice.mapBuffer(cbMap);
       if (cbData)
       {
@@ -766,14 +776,14 @@ void main() {
         // Calculate view projection matrix
         mat4s view_projection = glms_mat4_mul(projection, view);
 
-        // Rotate cube:
+        // Rotate:
         rx += 1.0f * deltaTime;
         ry += 2.0f * deltaTime;
 
         mat4s rxm = glms_rotate_make(rx, vec3s{1.0f, 0.0f, 0.0f});
         mat4s rym = glms_rotate_make(glm_rad(45.0f), vec3s{0.0f, 1.0f, 0.0f});
 
-        mat4s sm = glms_scale_make(vec3s{model_scale, model_scale, model_scale});
+        mat4s sm = glms_scale_make(vec3s{modelScale, modelScale, modelScale});
         mat4s model = glms_mat4_mul(rym, sm);
 
         UniformData uniform_data{};
@@ -796,7 +806,7 @@ void main() {
       gpuCommands->clear(0.3f, 0.9f, 0.3f, 1.0f);
       gpuCommands->clearDepthStencil(1.0f, 0);
       gpuCommands->bindPass(gpuDevice.m_SwapchainPass);
-      gpuCommands->bindPipeline(cubePso);
+      gpuCommands->bindPipeline(demoPso);
       gpuCommands->setScissor(nullptr);
       gpuCommands->setViewport(nullptr);
 
@@ -829,6 +839,7 @@ void main() {
     }
   }
 #pragma endregion End Window loop
+
 #pragma region Deinit, shutdown and cleanup
 
   for (uint32_t meshIndex = 0; meshIndex < meshDraws.m_Size; ++meshIndex)
@@ -840,9 +851,9 @@ void main() {
 
   meshDraws.shutdown();
 
-  gpuDevice.destroyBuffer(cubeCb);
-  gpuDevice.destroyPipeline(cubePso);
-  gpuDevice.destroyDescriptorSetLayout(cubeDsl);
+  gpuDevice.destroyBuffer(demoCb);
+  gpuDevice.destroyPipeline(demoPso);
+  gpuDevice.destroyDescriptorSetLayout(demoDsl);
 
   imgui->shutdown();
 
