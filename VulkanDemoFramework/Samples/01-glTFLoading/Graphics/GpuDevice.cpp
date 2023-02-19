@@ -1134,6 +1134,15 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     CHECKRES(result);
   }
 
+  // Allocate command buffers queue
+  {
+    uint8_t* memory = FRAMEWORK_ALLOCAM(sizeof(CommandBuffer*) * 128, m_Allocator);
+    m_QueuedCommandBuffers = (CommandBuffer**)(memory);
+
+    // Init the command buffer ring:
+    g_CmdBufferRing.init(this);
+  }
+
   // Init pools
   m_Buffers.init(m_Allocator, 512, sizeof(Buffer));
   m_Textures.init(m_Allocator, 512, sizeof(Texture));
@@ -1160,9 +1169,6 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     vkCreateFence(
         m_VulkanDevice, &fenceCi, m_VulkanAllocCallbacks, &m_VulkanCmdBufferExectuedFence[i]);
   }
-
-  // Init the command buffer ring:
-  g_CmdBufferRing.init(this);
 
   // Init frame counters
   m_VulkanImageIndex = 0;
@@ -1490,8 +1496,9 @@ void GpuDevice::present()
     return;
   }
 
+  // TODO:
   // This is called inside resizeSwapchain as well to correctly work.
-  frameCountersAdvance();
+  // frameCountersAdvance();
 
   // Resource deletion using reverse iteration and swap with last element.
   if (m_ResourceDeletionQueue.m_Size > 0)
