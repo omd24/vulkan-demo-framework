@@ -89,21 +89,21 @@ ImguiService* ImguiService::instance() { return &g_ImguiService; }
 //---------------------------------------------------------------------------//
 void ImguiService::init(void* p_Configuration)
 {
-  ImguiServiceConfiguration* imgui_config = (ImguiServiceConfiguration*)p_Configuration;
-  m_GpuDevice = imgui_config->gpuDevice;
+  ImguiServiceConfiguration* imguiConfig = (ImguiServiceConfiguration*)p_Configuration;
+  m_GpuDevice = imguiConfig->gpuDevice;
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGui::StyleColorsDark();
 
   // Setup Platform/Renderer bindings
-  ImGui_ImplSDL2_InitForVulkan((SDL_Window*)imgui_config->windowHandle);
+  ImGui_ImplSDL2_InitForVulkan((SDL_Window*)imguiConfig->windowHandle);
 
   ImGuiIO& io = ImGui::GetIO();
   io.BackendRendererName = "Framework ImGui Helper";
   io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 
-  // Load font texture atlas //////////////////////////////////////////////////
+  // Load font texture atlas
   unsigned char* pixels;
   int width, height;
   // Load as RGBA 32-bits (75% of the memory is wasted, but default font is so small) because it is
@@ -112,22 +112,21 @@ void ImguiService::init(void* p_Configuration)
   // to save on GPU memory.
   io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 
-  TextureCreation texture_creation; // = { pixels, ( uint16_t )width, ( uint16_t )height, 1, 1, 0,
-                                    // TextureFormat::R8G8B8A8_UNORM, TextureType::Texture2D };
-  texture_creation.setFormatType(VK_FORMAT_R8G8B8A8_UNORM, TextureType::kTexture2D)
+  TextureCreation textureCreation;
+  textureCreation.setFormatType(VK_FORMAT_R8G8B8A8_UNORM, TextureType::kTexture2D)
       .setData(pixels)
       .setSize(width, height, 1)
       .setFlags(1, 0)
       .setName("ImGui Font");
-  g_FontTexture = m_GpuDevice->createTexture(texture_creation);
+  g_FontTexture = m_GpuDevice->createTexture(textureCreation);
 
   // Store our identifier
   io.Fonts->TexID = (ImTextureID)&g_FontTexture;
 
   // Manual code. Used to remove dependency from that.
-  ShaderStateCreation shader_creation{};
+  ShaderStateCreation shaderCreation{};
 
-  shader_creation.setName("ImGui")
+  shaderCreation.setName("ImGui")
       .addStage(
           g_VertexShaderCode, (uint32_t)strlen(g_VertexShaderCode), VK_SHADER_STAGE_VERTEX_BIT)
       .addStage(
@@ -135,63 +134,63 @@ void ImguiService::init(void* p_Configuration)
           (uint32_t)strlen(g_FragmentShaderCode),
           VK_SHADER_STAGE_FRAGMENT_BIT);
 
-  PipelineCreation pipeline_creation = {};
-  pipeline_creation.name = "Pipeline_ImGui";
-  pipeline_creation.shaders = shader_creation;
+  PipelineCreation pipelineCreation = {};
+  pipelineCreation.name = "Pipeline_ImGui";
+  pipelineCreation.shaders = shaderCreation;
 
-  pipeline_creation.blendState.addBlendState().setColor(
+  pipelineCreation.blendState.addBlendState().setColor(
       VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
 
-  pipeline_creation.vertexInput.addVertexAttribute({0, 0, 0, VertexComponentFormat::kFloat2})
+  pipelineCreation.vertexInput.addVertexAttribute({0, 0, 0, VertexComponentFormat::kFloat2})
       .addVertexAttribute({1, 0, 8, VertexComponentFormat::kFloat2})
       .addVertexAttribute({2, 0, 16, VertexComponentFormat::kUByte4N});
 
-  pipeline_creation.vertexInput.addVertexStream({0, 20, VertexInputRate::kPerVertex});
-  pipeline_creation.renderPass = m_GpuDevice->m_SwapchainOutput;
+  pipelineCreation.vertexInput.addVertexStream({0, 20, VertexInputRate::kPerVertex});
+  pipelineCreation.renderPass = m_GpuDevice->m_SwapchainOutput;
 
-  DescriptorSetLayoutCreation descriptor_set_layout_creation{};
-  descriptor_set_layout_creation
+  DescriptorSetLayoutCreation descriptorSetLayoutCreation{};
+  descriptorSetLayoutCreation
       .addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"})
       .setName("Descriptor Uniform ImGui");
-  descriptor_set_layout_creation
+  descriptorSetLayoutCreation
       .addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, 1, "LocalConstants"})
       .setName("Descriptor Sampler ImGui");
 
-  g_DescriptorSetLayout = m_GpuDevice->createDescriptorSetLayout(descriptor_set_layout_creation);
+  g_DescriptorSetLayout = m_GpuDevice->createDescriptorSetLayout(descriptorSetLayoutCreation);
 
-  pipeline_creation.addDescriptorSetLayout(g_DescriptorSetLayout);
+  pipelineCreation.addDescriptorSetLayout(g_DescriptorSetLayout);
 
-  g_ImguiPipeline = m_GpuDevice->createPipeline(pipeline_creation);
+  g_ImguiPipeline = m_GpuDevice->createPipeline(pipelineCreation);
 
   // Create constant buffer
-  BufferCreation cb_creation;
-  cb_creation.set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::kDynamic, 64)
+  BufferCreation constantBufferCreation;
+  constantBufferCreation.set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::kDynamic, 64)
       .setName("Constant buffer ImGui");
-  g_UiConstantBuffer = m_GpuDevice->createBuffer(cb_creation);
+  g_UiConstantBuffer = m_GpuDevice->createBuffer(constantBufferCreation);
 
   // Create descriptor set
-  DescriptorSetCreation ds_creation{};
-  ds_creation.setLayout(pipeline_creation.descriptorSetLayouts[0])
+  DescriptorSetCreation descriptorSetCreation{};
+  descriptorSetCreation.setLayout(pipelineCreation.descriptorSetLayouts[0])
       .buffer(g_UiConstantBuffer, 0)
       .texture(g_FontTexture, 1)
-      .setName("RL_ImGui");
-  g_UiDescriptorSet = m_GpuDevice->createDescriptorSet(ds_creation);
+      .setName("Descriptor set ImGui");
+  g_UiDescriptorSet = m_GpuDevice->createDescriptorSet(descriptorSetCreation);
 
   // Add descriptor set to the map
   // Old Map
   g_TextureToDescriptorSetMap.init(&Framework::MemoryService::instance()->m_SystemAllocator, 4);
   g_TextureToDescriptorSetMap.insert(g_FontTexture.index, g_UiDescriptorSet.index);
 
-  // Create vertex and index buffers //////////////////////////////////////////
-  BufferCreation vb_creation;
-  vb_creation.set(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, ResourceUsageType::kDynamic, g_VbSize)
+  // Create vertex and index buffers
+  BufferCreation vbCreation;
+  vbCreation.set(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, ResourceUsageType::kDynamic, g_VbSize)
       .setName("VB ImGui");
-  g_Vb = m_GpuDevice->createBuffer(vb_creation);
+  g_Vb = m_GpuDevice->createBuffer(vbCreation);
 
-  BufferCreation ib_creation;
-  ib_creation.set(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, ResourceUsageType::kDynamic, g_IbSize)
-      .setName("IB_ImGui");
-  g_Ib = m_GpuDevice->createBuffer(ib_creation);
+  BufferCreation ibCreation;
+  ibCreation.set(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, ResourceUsageType::kDynamic, g_IbSize)
+      .setName("IB ImGui");
+  g_Ib = m_GpuDevice->createBuffer(ibCreation);
 }
 //---------------------------------------------------------------------------//
 void ImguiService::shutdown()
@@ -229,66 +228,66 @@ void ImguiService::render(CommandBuffer& p_Commands)
 {
   ImGui::Render();
 
-  ImDrawData* draw_data = ImGui::GetDrawData();
+  ImDrawData* drawData = ImGui::GetDrawData();
 
   // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates !=
   // framebuffer coordinates)
-  int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
-  int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
-  if (fb_width <= 0 || fb_height <= 0)
+  int fbWidth = (int)(drawData->DisplaySize.x * drawData->FramebufferScale.x);
+  int fbHeight = (int)(drawData->DisplaySize.y * drawData->FramebufferScale.y);
+  if (fbWidth <= 0 || fbHeight <= 0)
     return;
 
   // Vulkan backend has a different origin than OpenGL.
-  bool clip_origin_lower_left = false;
+  bool clipOriginLowerLeft = false;
 
-  size_t vertex_size = draw_data->TotalVtxCount * sizeof(ImDrawVert);
-  size_t index_size = draw_data->TotalIdxCount * sizeof(ImDrawIdx);
+  size_t vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
+  size_t indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
 
-  if (vertex_size >= g_VbSize || index_size >= g_IbSize)
+  if (vertexSize >= g_VbSize || indexSize >= g_IbSize)
   {
     OutputDebugStringA("ImGui Backend Error: vertex/index overflow!\n");
     return;
   }
 
-  if (vertex_size == 0 && index_size == 0)
+  if (vertexSize == 0 && indexSize == 0)
   {
     return;
   }
 
   // Upload data
-  ImDrawVert* vtx_dst = NULL;
-  ImDrawIdx* idx_dst = NULL;
+  ImDrawVert* vtxDst = NULL;
+  ImDrawIdx* idxDst = NULL;
 
-  MapBufferParameters map_parameters_vb = {g_Vb, 0, (uint32_t)vertex_size};
-  vtx_dst = (ImDrawVert*)m_GpuDevice->mapBuffer(map_parameters_vb);
+  MapBufferParameters mapParametersVb = {g_Vb, 0, (uint32_t)vertexSize};
+  vtxDst = (ImDrawVert*)m_GpuDevice->mapBuffer(mapParametersVb);
 
-  if (vtx_dst)
+  if (vtxDst)
   {
-    for (int n = 0; n < draw_data->CmdListsCount; n++)
+    for (int n = 0; n < drawData->CmdListsCount; n++)
     {
 
-      const ImDrawList* cmd_list = draw_data->CmdLists[n];
-      memcpy(vtx_dst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
-      vtx_dst += cmd_list->VtxBuffer.Size;
+      const ImDrawList* cmdList = drawData->CmdLists[n];
+      memcpy(vtxDst, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
+      vtxDst += cmdList->VtxBuffer.Size;
     }
 
-    m_GpuDevice->unmapBuffer(map_parameters_vb);
+    m_GpuDevice->unmapBuffer(mapParametersVb);
   }
 
-  MapBufferParameters map_parameters_ib = {g_Ib, 0, (uint32_t)index_size};
-  idx_dst = (ImDrawIdx*)m_GpuDevice->mapBuffer(map_parameters_ib);
+  MapBufferParameters mapParamsIb = {g_Ib, 0, (uint32_t)indexSize};
+  idxDst = (ImDrawIdx*)m_GpuDevice->mapBuffer(mapParamsIb);
 
-  if (idx_dst)
+  if (idxDst)
   {
-    for (int n = 0; n < draw_data->CmdListsCount; n++)
+    for (int n = 0; n < drawData->CmdListsCount; n++)
     {
 
-      const ImDrawList* cmd_list = draw_data->CmdLists[n];
-      memcpy(idx_dst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
-      idx_dst += cmd_list->IdxBuffer.Size;
+      const ImDrawList* cmdList = drawData->CmdLists[n];
+      memcpy(idxDst, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
+      idxDst += cmdList->IdxBuffer.Size;
     }
 
-    m_GpuDevice->unmapBuffer(map_parameters_ib);
+    m_GpuDevice->unmapBuffer(mapParamsIb);
   }
 
   // todo: key
@@ -297,99 +296,98 @@ void ImguiService::render(CommandBuffer& p_Commands)
   p_Commands.bindVertexBuffer(g_Vb, 0, 0);
   p_Commands.bindIndexBuffer(g_Ib, 0);
 
-  const Viewport viewport = {0, 0, (uint16_t)fb_width, (uint16_t)fb_height, 0.0f, 1.0f};
+  const Viewport viewport = {0, 0, (uint16_t)fbWidth, (uint16_t)fbHeight, 0.0f, 1.0f};
   p_Commands.setViewport(&viewport);
 
   // single viewport apps.
-  float L = draw_data->DisplayPos.x;
-  float R = draw_data->DisplayPos.x + draw_data->DisplaySize.x;
-  float T = draw_data->DisplayPos.y;
-  float B = draw_data->DisplayPos.y + draw_data->DisplaySize.y;
-  const float ortho_projection[4][4] = {
+  float L = drawData->DisplayPos.x;
+  float R = drawData->DisplayPos.x + drawData->DisplaySize.x;
+  float T = drawData->DisplayPos.y;
+  float B = drawData->DisplayPos.y + drawData->DisplaySize.y;
+  const float orthoProjection[4][4] = {
       {2.0f / (R - L), 0.0f, 0.0f, 0.0f},
       {0.0f, 2.0f / (T - B), 0.0f, 0.0f},
       {0.0f, 0.0f, -1.0f, 0.0f},
       {(R + L) / (L - R), (T + B) / (B - T), 0.0f, 1.0f},
   };
 
-  MapBufferParameters cb_map = {g_UiConstantBuffer, 0, 0};
-  float* cb_data = (float*)m_GpuDevice->mapBuffer(cb_map);
-  if (cb_data)
+  MapBufferParameters mapParamsCb = {g_UiConstantBuffer, 0, 0};
+  float* constantBufferData = (float*)m_GpuDevice->mapBuffer(mapParamsCb);
+  if (constantBufferData)
   {
-    memcpy(cb_data, &ortho_projection[0][0], 64);
-    m_GpuDevice->unmapBuffer(cb_map);
+    memcpy(constantBufferData, &orthoProjection[0][0], 64);
+    m_GpuDevice->unmapBuffer(mapParamsCb);
   }
 
   // Will project scissor/clipping rectangles into framebuffer space
-  ImVec2 clip_off = draw_data->DisplayPos; // (0,0) unless using multi-viewports
-  ImVec2 clip_scale =
-      draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+  ImVec2 clipOff = drawData->DisplayPos; // (0,0) unless using multi-viewports
+  ImVec2 clipScale =
+      drawData->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
 
   // Render command lists
   //
-  int counts = draw_data->CmdListsCount;
+  int counts = drawData->CmdListsCount;
 
-  TextureHandle last_texture = g_FontTexture;
+  TextureHandle lastTexture = g_FontTexture;
   // todo:map
-  DescriptorSetHandle last_descriptor_set = {g_TextureToDescriptorSetMap.get(last_texture.index)};
+  DescriptorSetHandle lastDescriptorSet = {g_TextureToDescriptorSetMap.get(lastTexture.index)};
 
-  p_Commands.bindDescriptorSet(&last_descriptor_set, 1, nullptr, 0);
+  p_Commands.bindDescriptorSet(&lastDescriptorSet, 1, nullptr, 0);
 
-  uint32_t vtx_buffer_offset = 0, index_buffer_offset = 0;
+  uint32_t vtxBufferOffset = 0, indexBufferOffset = 0;
   for (int n = 0; n < counts; n++)
   {
-    const ImDrawList* cmd_list = draw_data->CmdLists[n];
+    const ImDrawList* cmdList = drawData->CmdLists[n];
 
-    for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+    for (int cmd_i = 0; cmd_i < cmdList->CmdBuffer.Size; cmd_i++)
     {
-      const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+      const ImDrawCmd* pcmd = &cmdList->CmdBuffer[cmd_i];
       if (pcmd->UserCallback)
       {
         // User callback (registered via ImDrawList::AddCallback)
-        pcmd->UserCallback(cmd_list, pcmd);
+        pcmd->UserCallback(cmdList, pcmd);
       }
       else
       {
         // Project scissor/clipping rectangles into framebuffer space
-        ImVec4 clip_rect;
-        clip_rect.x = (pcmd->ClipRect.x - clip_off.x) * clip_scale.x;
-        clip_rect.y = (pcmd->ClipRect.y - clip_off.y) * clip_scale.y;
-        clip_rect.z = (pcmd->ClipRect.z - clip_off.x) * clip_scale.x;
-        clip_rect.w = (pcmd->ClipRect.w - clip_off.y) * clip_scale.y;
+        ImVec4 clipRect;
+        clipRect.x = (pcmd->ClipRect.x - clipOff.x) * clipScale.x;
+        clipRect.y = (pcmd->ClipRect.y - clipOff.y) * clipScale.y;
+        clipRect.z = (pcmd->ClipRect.z - clipOff.x) * clipScale.x;
+        clipRect.w = (pcmd->ClipRect.w - clipOff.y) * clipScale.y;
 
-        if (clip_rect.x < fb_width && clip_rect.y < fb_height && clip_rect.z >= 0.0f &&
-            clip_rect.w >= 0.0f)
+        if (clipRect.x < fbWidth && clipRect.y < fbHeight && clipRect.z >= 0.0f &&
+            clipRect.w >= 0.0f)
         {
           // Apply scissor/clipping rectangle
-          if (clip_origin_lower_left)
+          if (clipOriginLowerLeft)
           {
-            Rect2DInt scissor_rect = {
-                (int16_t)clip_rect.x,
-                (int16_t)(fb_height - clip_rect.w),
-                (uint16_t)(clip_rect.z - clip_rect.x),
-                (uint16_t)(clip_rect.w - clip_rect.y)};
-            p_Commands.setScissor(&scissor_rect);
+            Rect2DInt scissorRect = {
+                (int16_t)clipRect.x,
+                (int16_t)(fbHeight - clipRect.w),
+                (uint16_t)(clipRect.z - clipRect.x),
+                (uint16_t)(clipRect.w - clipRect.y)};
+            p_Commands.setScissor(&scissorRect);
           }
           else
           {
-            Rect2DInt scissor_rect = {
-                (int16_t)clip_rect.x,
-                (int16_t)clip_rect.y,
-                (uint16_t)(clip_rect.z - clip_rect.x),
-                (uint16_t)(clip_rect.w - clip_rect.y)};
-            p_Commands.setScissor(&scissor_rect);
+            Rect2DInt scissorRect = {
+                (int16_t)clipRect.x,
+                (int16_t)clipRect.y,
+                (uint16_t)(clipRect.z - clipRect.x),
+                (uint16_t)(clipRect.w - clipRect.y)};
+            p_Commands.setScissor(&scissorRect);
           }
 
           // Retrieve
-          TextureHandle new_texture = *(TextureHandle*)(pcmd->TextureId);
+          TextureHandle newTexture = *(TextureHandle*)(pcmd->TextureId);
           if (true)
           {
-            if (new_texture.index != last_texture.index &&
-                new_texture.index != kInvalidTexture.index)
+            if (newTexture.index != lastTexture.index && newTexture.index != kInvalidTexture.index)
             {
-              last_texture = new_texture;
+              lastTexture = newTexture;
               Framework::FlatHashMapIterator it =
-                  g_TextureToDescriptorSetMap.find(last_texture.index);
+                  g_TextureToDescriptorSetMap.find(lastTexture.index);
 
               // TODO: invalidate handles and update descriptor set when needed ?
               // Found this problem when reusing the handle from a previous
@@ -397,21 +395,21 @@ void ImguiService::render(CommandBuffer& p_Commands)
               if (it.isInvalid())
               {
                 // Create new descriptor set
-                DescriptorSetCreation ds_creation{};
+                DescriptorSetCreation descriptorSetCreation{};
 
-                ds_creation.setLayout(g_DescriptorSetLayout)
+                descriptorSetCreation.setLayout(g_DescriptorSetLayout)
                     .buffer(g_UiConstantBuffer, 0)
-                    .texture(last_texture, 1)
+                    .texture(lastTexture, 1)
                     .setName("RL_Dynamic_ImGUI");
-                last_descriptor_set = m_GpuDevice->create_descriptor_set(ds_creation);
+                lastDescriptorSet = m_GpuDevice->createDescriptorSet(descriptorSetCreation);
 
-                g_TextureToDescriptorSetMap.insert(new_texture.index, last_descriptor_set.index);
+                g_TextureToDescriptorSetMap.insert(newTexture.index, lastDescriptorSet.index);
               }
               else
               {
-                last_descriptor_set.index = g_TextureToDescriptorSetMap.get(it);
+                lastDescriptorSet.index = g_TextureToDescriptorSetMap.get(it);
               }
-              p_Commands.bindDescriptorSet(&last_descriptor_set, 1, nullptr, 0);
+              p_Commands.bindDescriptorSet(&lastDescriptorSet, 1, nullptr, 0);
             }
           }
 
@@ -419,14 +417,14 @@ void ImguiService::render(CommandBuffer& p_Commands)
               Graphics::TopologyType::kTriangle,
               pcmd->ElemCount,
               1,
-              index_buffer_offset + pcmd->IdxOffset,
-              vtx_buffer_offset + pcmd->VtxOffset,
-              new_texture.index);
+              indexBufferOffset + pcmd->IdxOffset,
+              vtxBufferOffset + pcmd->VtxOffset,
+              newTexture.index);
         }
       }
     }
-    index_buffer_offset += cmd_list->IdxBuffer.Size;
-    vtx_buffer_offset += cmd_list->VtxBuffer.Size;
+    indexBufferOffset += cmdList->IdxBuffer.Size;
+    vtxBufferOffset += cmdList->VtxBuffer.Size;
   }
 }
 //---------------------------------------------------------------------------//

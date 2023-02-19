@@ -24,6 +24,7 @@
 #include "Graphics/GpuDevice.hpp"
 #include "Graphics/CommandBuffer.hpp"
 #include "Graphics/Renderer.hpp"
+#include "Graphics/ImguiHelper.hpp"
 
 //---------------------------------------------------------------------------//
 // Demo specific utils:
@@ -101,8 +102,9 @@ int main(int argc, char** argv)
   renderer.init({&gpuDevice, allocator});
   renderer.setLoaders(&resourceMgr);
 
-  // TODO #1
-  // 4. Imgui helper
+  Graphics::ImguiUtil::ImguiService* imgui = Graphics::ImguiUtil::ImguiService::instance();
+  Graphics::ImguiUtil::ImguiServiceConfiguration imguiConfig{&gpuDevice, window.m_PlatformHandle};
+  imgui->init(&imguiConfig);
 
   // Load glTF scene
 #pragma region Load glTF scene
@@ -228,14 +230,15 @@ int main(int argc, char** argv)
       gpuDevice.newFrame();
     }
 
-    // TODO! first set up imgui
-    // window.handleOSMessages();
+    window.handleOSMessages();
 
     if (window.m_Resized)
     {
       // gpuDevice.resize(window.m_Width, window.m_Height);
       window.m_Resized = false;
     }
+
+    imgui->newFrame();
 
     const int64_t currentTick = Framework::Time::getCurrentTime();
     float deltaTime = (float)Framework::Time::deltaSeconds(beginFrameTick, currentTick);
@@ -244,17 +247,26 @@ int main(int argc, char** argv)
     inputHandler.newFrame();
     inputHandler.update(deltaTime);
 
-    if (!window.m_Minimized)
-    {
-      // TODO:
-      // Draw!
-    }
+    // if (!window.m_Minimized)
+    //{
+    //  Graphics::CommandBuffer* gpuCommands = gpuDevice.getCommandBuffer(true);
+
+    //  // TODO
+    //  // draw
+
+    //  imgui->render(*gpuCommands);
+
+    //  // Submit commands
+    //  gpuDevice.queueCommandBuffer(gpuCommands);
+    //  gpuDevice.present();
+    //}
   }
 #pragma endregion End Window loop
 #pragma region Deinit, shutdown and cleanup
 
-  resourceMgr.shutdown();
+  imgui->shutdown();
 
+  resourceMgr.shutdown();
   renderer.shutdown();
 
   Framework::gltfFree(scene);

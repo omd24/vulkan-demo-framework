@@ -8,10 +8,29 @@ namespace Graphics
 struct CommandBuffer
 {
   void init(QueueType::Enum p_Type, uint32_t p_BufferSize, uint32_t p_SubmitSize);
-  void terminate();
+  void shutdown();
   void reset();
 
   void bindPass(RenderPassHandle p_Passhandle);
+  void bindPipeline(PipelineHandle p_Handle);
+  void bindVertexBuffer(BufferHandle p_Handle, uint32_t p_Binding, uint32_t p_Offset);
+  void bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset);
+  void bindDescriptorSet(
+      DescriptorSetHandle* p_Handles,
+      uint32_t p_NumLists,
+      uint32_t* p_Offsets,
+      uint32_t p_NumOffsets);
+
+  void setViewport(const Viewport* p_Viewport);
+  void setScissor(const Rect2DInt* p_Rect);
+
+  void drawIndexed(
+      TopologyType::Enum p_Topology,
+      uint32_t p_IndexCount,
+      uint32_t p_InstanceCount,
+      uint32_t p_FirstIndex,
+      int p_VertexOffset,
+      uint32_t p_FirstInstance);
 
   void clear(float p_Red, float p_Green, float p_Blue, float p_Alpha)
   {
@@ -26,7 +45,7 @@ struct CommandBuffer
 
   VkCommandBuffer m_VulkanCmdBuffer;
   GpuDevice* m_GpuDevice;
-  VkCopyDescriptorSet m_VulkanDescriptorSets[16];
+  VkDescriptorSet m_VulkanDescriptorSets[16];
 
   RenderPass* m_CurrentRenderPass;
   Pipeline* m_CurrentPipeline;
