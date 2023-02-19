@@ -676,6 +676,15 @@ void main() {
   int64_t beginFrameTick = Framework::Time::getCurrentTime();
   float modelScale = 0.008f;
 
+  vec3s eye = vec3s{0.0f, 2.5f, 2.0f};
+  vec3s look = vec3s{0.0f, 0.0, -1.0f};
+  vec3s right = vec3s{1.0f, 0.0, 0.0f};
+
+  float yaw = 0.0f;
+  float pitch = 0.0f;
+
+  float model_scale = 0.008f;
+
 #pragma region Window loop
   while (!window.m_RequestedExit)
   {
@@ -701,6 +710,84 @@ void main() {
 
     inputHandler.newFrame();
     inputHandler.update(deltaTime);
+
+    // Update rotating cube gpu data
+    {
+      Graphics::MapBufferParameters cbMap = {cubeCb, 0, 0};
+      float* cbData = (float*)gpuDevice.mapBuffer(cbMap);
+      if (cbData)
+      {
+        if (inputHandler.isMouseDown(Framework::MouseButtons::MOUSE_BUTTONS_LEFT))
+        {
+          pitch += (inputHandler.m_MousePosition.y - inputHandler.m_PreviousMousePosition.y) * 0.1f;
+          yaw += (inputHandler.m_MousePosition.x - inputHandler.m_PreviousMousePosition.x) * 0.3f;
+
+          pitch = clamp(pitch, -60.0f, 60.0f);
+
+          if (yaw > 360.0f)
+          {
+            yaw -= 360.0f;
+          }
+
+          mat3s rxm = glms_mat4_pick3(glms_rotate_make(glm_rad(-pitch), vec3s{1.0f, 0.0f, 0.0f}));
+          mat3s rym = glms_mat4_pick3(glms_rotate_make(glm_rad(-yaw), vec3s{0.0f, 1.0f, 0.0f}));
+
+          look = glms_mat3_mulv(rxm, vec3s{0.0f, 0.0f, -1.0f});
+          look = glms_mat3_mulv(rym, look);
+
+          right = glms_cross(look, vec3s{0.0f, 1.0f, 0.0f});
+        }
+
+        if (inputHandler.isKeyDown(Framework::Keys::KEY_W))
+        {
+          eye = glms_vec3_add(eye, glms_vec3_scale(look, 5.0f * deltaTime));
+        }
+        else if (inputHandler.isKeyDown(Framework::Keys::KEY_S))
+        {
+          eye = glms_vec3_sub(eye, glms_vec3_scale(look, 5.0f * deltaTime));
+        }
+
+        if (inputHandler.isKeyDown(Framework::Keys::KEY_D))
+        {
+          eye = glms_vec3_add(eye, glms_vec3_scale(right, 5.0f * deltaTime));
+        }
+        else if (inputHandler.isKeyDown(Framework::Keys::KEY_A))
+        {
+          eye = glms_vec3_sub(eye, glms_vec3_scale(right, 5.0f * deltaTime));
+        }
+
+        mat4s view = glms_lookat(eye, glms_vec3_add(eye, look), vec3s{0.0f, 1.0f, 0.0f});
+        mat4s projection = glms_perspective(
+            glm_rad(60.0f),
+            gpuDevice.m_SwapchainWidth * 1.0f / gpuDevice.m_SwapchainHeight,
+            0.01f,
+            1000.0f);
+
+        // Calculate view projection matrix
+        mat4s view_projection = glms_mat4_mul(projection, view);
+
+        // Rotate cube:
+        rx += 1.0f * deltaTime;
+        ry += 2.0f * deltaTime;
+
+        mat4s rxm = glms_rotate_make(rx, vec3s{1.0f, 0.0f, 0.0f});
+        mat4s rym = glms_rotate_make(glm_rad(45.0f), vec3s{0.0f, 1.0f, 0.0f});
+
+        mat4s sm = glms_scale_make(vec3s{model_scale, model_scale, model_scale});
+        mat4s model = glms_mat4_mul(rym, sm);
+
+        UniformData uniform_data{};
+        uniform_data.viewProj = view_projection, model;
+        uniform_data.model = model;
+        uniform_data.invModel = glms_mat4_inv(glms_mat4_transpose(model));
+        uniform_data.eye = vec4s{eye.x, eye.y, eye.z, 1.0f};
+        uniform_data.light = vec4s{2.0f, 2.0f, 0.0f, 1.0f};
+
+        memcpy(cbData, &uniform_data, sizeof(UniformData));
+
+        gpuDevice.unmapBuffer(cbMap);
+      }
+    }
 
     if (!window.m_Minimized)
     {
