@@ -48,9 +48,6 @@
 #define FRAMEWORK_LINE_STRING FRAMEWORK_MAKESTRING(__LINE__)
 #define FRAMEWORK_FILELINE(MESSAGE) __FILE__ "(" FRAMEWORK_LINE_STRING ") : " MESSAGE
 
-// Unique names
-#define FRAMEWORK_UNIQUE_SUFFIX(PARAM) RAPTOR_CONCAT(PARAM, __LINE__)
-
 //---------------------------------------------------------------------------//
 // Helper functions:
 //---------------------------------------------------------------------------//

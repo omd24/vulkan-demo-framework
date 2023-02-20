@@ -3,6 +3,7 @@
 #include <Foundation/Numerics.hpp>
 #include <Foundation/ResourceManager.hpp>
 #include <Foundation/Time.hpp>
+#include <Foundation/String.hpp>
 
 #include <Application/Window.hpp>
 #include <Application/Input.hpp>
@@ -92,79 +93,36 @@ static void inputOSMessagesCallback(void* p_OSEvent, void* p_UserData)
   input->onEvent(p_OSEvent);
 }
 //---------------------------------------------------------------------------//
-int main(int argc, char** argv)
+void _loadGltfScene(
+    Framework::StringBuffer& modelPath,
+    Framework::Allocator* allocator,
+    Framework::glTF::glTF& scene,
+    Framework::Array<Graphics::RendererUtil::TextureResource>& images,
+    Graphics::RendererUtil::Renderer& renderer,
+    Framework::Array<Graphics::RendererUtil::SamplerResource>& samplers,
+    Framework::Array<Graphics::RendererUtil::BufferResource>& buffers,
+    Graphics::GpuDevice& gpuDevice,
+    Framework::Array<MeshDraw>& meshDraws)
 {
-  if (argc < 2)
-  {
-    printf("No model specified, using the default model\n");
-    exit(-1);
-    // argv[1] = const_cast<char*>("C:\\gltf-models\\FlightHelmet\\FlightHelmet.gltf");
-  }
-
-  // Init services
-  Framework::MemoryService::instance()->init(nullptr);
-  Framework::Time::serviceInit();
-
-  Framework::Allocator* allocator = &Framework::MemoryService::instance()->m_SystemAllocator;
-  Framework::StackAllocator scratchAllocator;
-  scratchAllocator.init(FRAMEWORK_MEGA(8));
-
-  Framework::InputService inputHandler = {};
-  inputHandler.init(allocator);
-
-  // Init window
-  Framework::WindowConfiguration winCfg = {};
-  winCfg.m_Width = 1280;
-  winCfg.m_Height = 800;
-  winCfg.m_Name = "Demo 01";
-  winCfg.m_Allocator = allocator;
-  Framework::Window window = {};
-  window.init(&winCfg);
-
-  window.registerOSMessagesCallback(inputOSMessagesCallback, &inputHandler);
-
-  // graphics
-  Graphics::DeviceCreation deviceCreation;
-  deviceCreation.setWindow(window.m_Width, window.m_Height, window.m_PlatformHandle)
-      .setAllocator(allocator)
-      .setTemporaryAllocator(&scratchAllocator);
-  Graphics::GpuDevice gpuDevice;
-  gpuDevice.init(deviceCreation);
-
-  Framework::ResourceManager resourceMgr = {};
-  resourceMgr.init(allocator, nullptr);
-
-  Graphics::RendererUtil::Renderer renderer;
-  renderer.init({&gpuDevice, allocator});
-  renderer.setLoaders(&resourceMgr);
-
-  Graphics::ImguiUtil::ImguiService* imgui = Graphics::ImguiUtil::ImguiService::instance();
-  Graphics::ImguiUtil::ImguiServiceConfiguration imguiConfig{&gpuDevice, window.m_PlatformHandle};
-  imgui->init(&imguiConfig);
-
-  // Load glTF scene
-#pragma region Load glTF scene
-
   // Store currect working dir to restore later
   Framework::Directory cwd = {};
   Framework::directoryCurrent(&cwd);
 
   // Change directory:
   char gltfBasePath[512] = {};
-  ::memcpy(gltfBasePath, argv[1], strlen(argv[1]));
+  ::memcpy(gltfBasePath, modelPath.m_Data, modelPath.m_CurrentSize);
   Framework::fileDirectoryFromPath(gltfBasePath);
   Framework::directoryChange(gltfBasePath);
 
   // Determine filename:
   char gltfFile[512] = {};
-  ::memcpy(gltfFile, argv[1], strlen(argv[1]));
+  ::memcpy(gltfFile, modelPath.m_Data, modelPath.m_CurrentSize);
   Framework::filenameFromPath(gltfFile);
 
   // Load scene:
-  Framework::glTF::glTF scene = Framework::gltfLoadFile(gltfFile);
+  scene = Framework::gltfLoadFile(gltfFile);
 
   // Create textures:
-  Framework::Array<Graphics::RendererUtil::TextureResource> images;
   images.init(allocator, scene.imagesCount);
   for (uint32_t imageIndex = 0; imageIndex < scene.imagesCount; ++imageIndex)
   {
@@ -179,7 +137,6 @@ int main(int argc, char** argv)
   Framework::StringBuffer resourceNameBuffer;
   resourceNameBuffer.init(4096, allocator);
 
-  Framework::Array<Graphics::RendererUtil::SamplerResource> samplers;
   samplers.init(allocator, scene.samplersCount);
   for (uint32_t samplerIndex = 0; samplerIndex < scene.samplersCount; ++samplerIndex)
   {
@@ -204,7 +161,6 @@ int main(int argc, char** argv)
   // Create buffers:
   Framework::Array<void*> buffersData;
   buffersData.init(allocator, scene.buffersCount);
-
   for (uint32_t bufferIndex = 0; bufferIndex < scene.buffersCount; ++bufferIndex)
   {
     Framework::glTF::Buffer& buffer = scene.buffers[bufferIndex];
@@ -213,9 +169,7 @@ int main(int argc, char** argv)
     buffersData.push(bufferData.data);
   }
 
-  Framework::Array<Graphics::RendererUtil::BufferResource> buffers;
   buffers.init(allocator, scene.bufferViewsCount);
-
   for (uint32_t bufferIndex = 0; bufferIndex < scene.bufferViewsCount; ++bufferIndex)
   {
     Framework::glTF::BufferView& buffer = scene.bufferViews[bufferIndex];
@@ -472,7 +426,6 @@ void main() {
   } // end Create pipeline
 
   // Create drawable objects (mesh draws)
-  Framework::Array<MeshDraw> meshDraws;
   meshDraws.init(allocator, scene.meshesCount);
   {
     // Constant buffer
@@ -552,10 +505,10 @@ void main() {
           Framework::glTF::Accessor& texcoordAccessor = scene.accessors[texcoordAccessorIndex];
           Framework::glTF::BufferView& texcoordBufferView =
               scene.bufferViews[texcoordAccessor.bufferView];
-          Graphics::RendererUtil::BufferResource& texcoord_buffer_gpu =
+          Graphics::RendererUtil::BufferResource& texcoordBufferGpu =
               buffers[texcoordAccessor.bufferView];
 
-          meshDraw.texcoordBuffer = texcoord_buffer_gpu.m_Handle;
+          meshDraw.texcoordBuffer = texcoordBufferGpu.m_Handle;
           meshDraw.texcoordOffset =
               texcoordAccessor.byteOffset == Framework::glTF::INVALID_INT_VALUE
                   ? 0
@@ -681,8 +634,92 @@ void main() {
       }
     }
   }
+}
+void _unloadGltfScene(
+    Framework::Array<MeshDraw>& meshDraws,
+    Graphics::GpuDevice& gpuDevice,
+    Framework::StringBuffer& modelPath)
+{
+  for (uint32_t meshIndex = 0; meshIndex < meshDraws.m_Size; ++meshIndex)
+  {
+    MeshDraw& meshDraw = meshDraws[meshIndex];
+    gpuDevice.destroyDescriptorSet(meshDraw.descriptorSet);
+    gpuDevice.destroyBuffer(meshDraw.materialBuffer);
+  }
 
-#pragma endregion End Load glTF scene
+  meshDraws.shutdown();
+
+  gpuDevice.destroyBuffer(demoCb);
+  gpuDevice.destroyPipeline(demoPso);
+  gpuDevice.destroyDescriptorSetLayout(demoDsl);
+}
+//---------------------------------------------------------------------------//
+int main(int argc, char** argv)
+{
+
+  if (argc < 2)
+  {
+    printf("No model specified, using the default model\n");
+    exit(-1);
+  }
+
+  // main variable:
+  Graphics::GpuDevice gpuDevice;
+  Framework::ResourceManager resourceMgr = {};
+  Graphics::RendererUtil::Renderer renderer;
+  Graphics::ImguiUtil::ImguiService* imgui = nullptr;
+  Framework::glTF::glTF scene;
+  Framework::Array<Graphics::RendererUtil::TextureResource> images;
+  Framework::Array<Graphics::RendererUtil::BufferResource> buffers;
+  Framework::Array<Graphics::RendererUtil::SamplerResource> samplers;
+  Framework::Array<MeshDraw> meshDraws;
+  Framework::StringBuffer modelPath;
+  int modelPathIdx = 0;
+
+  // Init services
+  Framework::MemoryService::instance()->init(nullptr);
+  Framework::Time::serviceInit();
+
+  Framework::Allocator* allocator = &Framework::MemoryService::instance()->m_SystemAllocator;
+  Framework::StackAllocator scratchAllocator;
+  scratchAllocator.init(FRAMEWORK_MEGA(8));
+
+  Framework::InputService inputHandler = {};
+  inputHandler.init(allocator);
+
+  // Init window
+  Framework::WindowConfiguration winCfg = {};
+  winCfg.m_Width = 1280;
+  winCfg.m_Height = 800;
+  winCfg.m_Name = "Demo 01";
+  winCfg.m_Allocator = allocator;
+  Framework::Window window = {};
+  window.init(&winCfg);
+
+  window.registerOSMessagesCallback(inputOSMessagesCallback, &inputHandler);
+
+  // graphics
+  Graphics::DeviceCreation deviceCreation;
+  deviceCreation.setWindow(window.m_Width, window.m_Height, window.m_PlatformHandle)
+      .setAllocator(allocator)
+      .setTemporaryAllocator(&scratchAllocator);
+
+  gpuDevice.init(deviceCreation);
+  resourceMgr.init(allocator, nullptr);
+  renderer.init({&gpuDevice, allocator});
+  renderer.setLoaders(&resourceMgr);
+
+  imgui = Graphics::ImguiUtil::ImguiService::instance();
+  Graphics::ImguiUtil::ImguiServiceConfiguration imguiConfig{&gpuDevice, window.m_PlatformHandle};
+  imgui->init(&imguiConfig);
+
+  // Load glTF scene
+  {
+    modelPath.init(MAX_PATH, allocator);
+    modelPath.append(argv[1]);
+    _loadGltfScene(
+        modelPath, allocator, scene, images, renderer, samplers, buffers, gpuDevice, meshDraws);
+  }
 
   int64_t beginFrameTick = Framework::Time::getCurrentTime();
 
@@ -694,6 +731,7 @@ void main() {
   float pitch = 0.0f;
 
   float modelScale = 0.008f;
+  int counter = 0;
 
 #pragma region Window loop
   while (!window.m_RequestedExit)
@@ -722,9 +760,57 @@ void main() {
     inputHandler.update(deltaTime);
 
     // Imgui control
-    if (ImGui::Begin("Raptor ImGui"))
+    if (ImGui::Begin("Framework ImGui"))
     {
       ImGui::InputFloat("Model scale", &modelScale, 0.001f);
+
+      ImGui::Combo("glTF Model", &modelPathIdx, "Flight Helmet\0Sponza\0Classic\0");
+      // Buttons return true when clicked (most widgets return true
+      // when edited/activated)
+      if (ImGui::Button("Load model"))
+      {
+#if 0 // Delegate this to the next frame
+        _unloadGltfScene(meshDraws, gpuDevice, modelPath);
+
+        imgui->shutdown(); // This should be freed bc it uses gpuDevice (in the renderer object)
+
+        // TODO: just reset these instead of full shutdown/init
+        {
+          resourceMgr.shutdown();
+          renderer.shutdown();
+        }
+        Framework::gltfFree(scene); // should be after renderer shutdown
+
+        modelPath.clear();
+        switch (modelPathIdx)
+        {
+        case 0:
+          modelPath.append("c:/gltf-models/FlightHelmet/FlightHelmet.gltf");
+          modelScale = 5.0f;
+          break;
+        case 1:
+          modelPath.append("c:/gltf-models/Sponza/Sponza.gltf");
+          modelScale = 0.008f;
+          break;
+        case 2:
+          modelPath.append("c:/gltf-models/Sponza/Sponza.gltf");
+          modelScale = 0.008f;
+          break;
+        }
+
+        // TODO: just reset these instead of full shutdown/init
+        {
+          gpuDevice.init(deviceCreation);
+          resourceMgr.init(allocator, nullptr);
+          renderer.init({&gpuDevice, allocator});
+          renderer.setLoaders(&resourceMgr);
+          imgui->init(&imguiConfig);
+        }
+
+        _loadGltfScene(
+            modelPath, allocator, scene, images, renderer, samplers, buffers, gpuDevice, meshDraws);
+#endif // 0
+      }
     }
     ImGui::End();
 
@@ -849,25 +935,15 @@ void main() {
 
 #pragma region Deinit, shutdown and cleanup
 
-  for (uint32_t meshIndex = 0; meshIndex < meshDraws.m_Size; ++meshIndex)
-  {
-    MeshDraw& meshDraw = meshDraws[meshIndex];
-    gpuDevice.destroyDescriptorSet(meshDraw.descriptorSet);
-    gpuDevice.destroyBuffer(meshDraw.materialBuffer);
-  }
+  _unloadGltfScene(meshDraws, gpuDevice, modelPath);
 
-  meshDraws.shutdown();
-
-  gpuDevice.destroyBuffer(demoCb);
-  gpuDevice.destroyPipeline(demoPso);
-  gpuDevice.destroyDescriptorSetLayout(demoDsl);
+  modelPath.shutdown();
 
   imgui->shutdown();
 
   resourceMgr.shutdown();
   renderer.shutdown();
-
-  Framework::gltfFree(scene);
+  Framework::gltfFree(scene); // should be after renderer shutdown
 
   inputHandler.shutdown();
   window.unregisterOSMessagesCallback(inputOSMessagesCallback);
