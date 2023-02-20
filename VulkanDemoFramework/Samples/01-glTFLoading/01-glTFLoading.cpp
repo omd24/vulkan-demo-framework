@@ -721,6 +721,13 @@ void main() {
     inputHandler.newFrame();
     inputHandler.update(deltaTime);
 
+    // Imgui control
+    if (ImGui::Begin("Raptor ImGui"))
+    {
+      ImGui::InputFloat("Model scale", &modelScale, 0.001f);
+    }
+    ImGui::End();
+
     // Update rotating demo gpu data
     {
       Graphics::MapBufferParameters cbMap = {demoCb, 0, 0};
