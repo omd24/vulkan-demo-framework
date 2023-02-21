@@ -731,11 +731,52 @@ int main(int argc, char** argv)
   float pitch = 0.0f;
 
   float modelScale = 0.008f;
-  int counter = 0;
+  bool reloadModel = false;
 
 #pragma region Window loop
   while (!window.m_RequestedExit)
   {
+    if (reloadModel)
+    {
+      _unloadGltfScene(meshDraws, gpuDevice, modelPath);
+
+      imgui->shutdown(); // This should be freed bc it uses gpuDevice (in the renderer object)
+
+      // TODO: just reset these instead of full shutdown/init
+      {
+        resourceMgr.shutdown();
+        renderer.shutdown();
+      }
+      Framework::gltfFree(scene); // should be after renderer shutdown
+
+      modelPath.clear();
+      switch (modelPathIdx)
+      {
+      case 0:
+        modelPath.append("c:/gltf-models/FlightHelmet/FlightHelmet.gltf");
+        modelScale = 4.0f;
+        break;
+      case 1:
+        modelPath.append("c:/gltf-models/Sponza/Sponza.gltf");
+        modelScale = 0.008f;
+        break;
+      }
+
+      // TODO: just reset these instead of full shutdown/init
+      {
+        gpuDevice.init(deviceCreation);
+        resourceMgr.init(allocator, nullptr);
+        renderer.init({&gpuDevice, allocator});
+        renderer.setLoaders(&resourceMgr);
+        imgui->init(&imguiConfig);
+      }
+
+      _loadGltfScene(
+          modelPath, allocator, scene, images, renderer, samplers, buffers, gpuDevice, meshDraws);
+
+      reloadModel = false;
+    }
+
     // New frame
     if (!window.m_Minimized)
     {
@@ -762,54 +803,23 @@ int main(int argc, char** argv)
     // Imgui control
     if (ImGui::Begin("Framework ImGui"))
     {
-      ImGui::InputFloat("Model scale", &modelScale, 0.001f);
+      ImGui::InputFloat("Model scale", &modelScale, 0.01f);
+      modelScale = Framework::max(modelScale, 0.005f);
 
-      ImGui::Combo("glTF Model", &modelPathIdx, "Flight Helmet\0Sponza\0Classic\0");
+      ImGui::Combo(
+          "glTF Model",
+          &modelPathIdx,
+          "Flight Helmet\0"
+          "Sponza\0"
+          /*"Triangle\0"
+          "Dragon\0"
+          "Suzanne\0"*/
+      );
       // Buttons return true when clicked (most widgets return true
       // when edited/activated)
       if (ImGui::Button("Load model"))
       {
-#if 0 // Delegate this to the next frame
-        _unloadGltfScene(meshDraws, gpuDevice, modelPath);
-
-        imgui->shutdown(); // This should be freed bc it uses gpuDevice (in the renderer object)
-
-        // TODO: just reset these instead of full shutdown/init
-        {
-          resourceMgr.shutdown();
-          renderer.shutdown();
-        }
-        Framework::gltfFree(scene); // should be after renderer shutdown
-
-        modelPath.clear();
-        switch (modelPathIdx)
-        {
-        case 0:
-          modelPath.append("c:/gltf-models/FlightHelmet/FlightHelmet.gltf");
-          modelScale = 5.0f;
-          break;
-        case 1:
-          modelPath.append("c:/gltf-models/Sponza/Sponza.gltf");
-          modelScale = 0.008f;
-          break;
-        case 2:
-          modelPath.append("c:/gltf-models/Sponza/Sponza.gltf");
-          modelScale = 0.008f;
-          break;
-        }
-
-        // TODO: just reset these instead of full shutdown/init
-        {
-          gpuDevice.init(deviceCreation);
-          resourceMgr.init(allocator, nullptr);
-          renderer.init({&gpuDevice, allocator});
-          renderer.setLoaders(&resourceMgr);
-          imgui->init(&imguiConfig);
-        }
-
-        _loadGltfScene(
-            modelPath, allocator, scene, images, renderer, samplers, buffers, gpuDevice, meshDraws);
-#endif // 0
+        reloadModel = true;
       }
     }
     ImGui::End();
