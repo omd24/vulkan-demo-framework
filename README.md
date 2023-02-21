@@ -1,2 +1,2 @@
 # vulkan-demo-framework
-Vulkan Framework and Samples
+Vulkan framework based on Mastering-Graphics-Programming-with-Vulkan
