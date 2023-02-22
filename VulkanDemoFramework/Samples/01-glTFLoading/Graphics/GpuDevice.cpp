@@ -1258,6 +1258,9 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
 
   // Init render pass cache
   g_RenderPassCache.init(m_Allocator, 16);
+
+  // Cache working directory
+  Framework::directoryCurrent(&m_Cwd);
 }
 //---------------------------------------------------------------------------//
 void GpuDevice::shutdown()

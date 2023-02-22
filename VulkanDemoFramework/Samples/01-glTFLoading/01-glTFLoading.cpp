@@ -105,8 +105,7 @@ void _loadGltfScene(
     Framework::Array<MeshDraw>& meshDraws)
 {
   // Store currect working dir to restore later
-  Framework::Directory cwd = {};
-  Framework::directoryCurrent(&cwd);
+  Framework::Directory cwd = gpuDevice.m_Cwd;
 
   // Change directory:
   char gltfBasePath[512] = {};

@@ -5,6 +5,8 @@
 
 #include "Graphics/CommandBuffer.hpp"
 
+#include "Foundation/File.hpp"
+
 namespace Graphics
 {
 //---------------------------------------------------------------------------//
@@ -23,64 +25,6 @@ static uint32_t g_VbSize = 665536, g_IbSize = 665536;
 //---------------------------------------------------------------------------//
 Framework::FlatHashMap<Graphics::ResourceHandle, Graphics::ResourceHandle>
     g_TextureToDescriptorSetMap;
-//---------------------------------------------------------------------------//
-static const char* g_VertexShaderCode = {
-    "#version 450\n"
-    "layout( location = 0 ) in vec2 Position;\n"
-    "layout( location = 1 ) in vec2 UV;\n"
-    "layout( location = 2 ) in uvec4 Color;\n"
-    "layout( location = 0 ) out vec2 Frag_UV;\n"
-    "layout( location = 1 ) out vec4 Frag_Color;\n"
-    "layout( std140, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };\n"
-    "void main()\n"
-    "{\n"
-    "    Frag_UV = UV;\n"
-    "    Frag_Color = Color / 255.0f;\n"
-    "    gl_Position = ProjMtx * vec4( Position.xy,0,1 );\n"
-    "}\n"};
-//---------------------------------------------------------------------------//
-static const char* g_VertexShaderCodeBindless = {
-    "#version 450\n"
-    "layout( location = 0 ) in vec2 Position;\n"
-    "layout( location = 1 ) in vec2 UV;\n"
-    "layout( location = 2 ) in uvec4 Color;\n"
-    "layout( location = 0 ) out vec2 Frag_UV;\n"
-    "layout( location = 1 ) out vec4 Frag_Color;\n"
-    "layout (location = 2) flat out uint texture_id;\n"
-    "layout( std140, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };\n"
-    "void main()\n"
-    "{\n"
-    "    Frag_UV = UV;\n"
-    "    Frag_Color = Color / 255.0f;\n"
-    "    texture_id = gl_InstanceIndex;\n"
-    "    gl_Position = ProjMtx * vec4( Position.xy,0,1 );\n"
-    "}\n"};
-//---------------------------------------------------------------------------//
-static const char* g_FragmentShaderCode = {
-    "#version 450\n"
-    "#extension GL_EXT_nonuniform_qualifier : enable\n"
-    "layout (location = 0) in vec2 Frag_UV;\n"
-    "layout (location = 1) in vec4 Frag_Color;\n"
-    "layout (location = 0) out vec4 Out_Color;\n"
-    "layout (binding = 1) uniform sampler2D Texture;\n"
-    "void main()\n"
-    "{\n"
-    "    Out_Color = Frag_Color * texture(Texture, Frag_UV.st);\n"
-    "}\n"};
-//---------------------------------------------------------------------------//
-static const char* g_FragmentShaderCodeBindless = {
-    "#version 450\n"
-    "#extension GL_EXT_nonuniform_qualifier : enable\n"
-    "layout (location = 0) in vec2 Frag_UV;\n"
-    "layout (location = 1) in vec4 Frag_Color;\n"
-    "layout (location = 2) flat in uint texture_id;\n"
-    "layout (location = 0) out vec4 Out_Color;\n"
-    "#extension GL_EXT_nonuniform_qualifier : enable\n"
-    "layout (set = 1, binding = 10) uniform sampler2D textures[];\n"
-    "void main()\n"
-    "{\n"
-    "    Out_Color = Frag_Color * texture(textures[nonuniformEXT(texture_id)], Frag_UV.st);\n"
-    "}\n"};
 //---------------------------------------------------------------------------//
 // ImguiService impl:
 //---------------------------------------------------------------------------//
@@ -126,13 +70,32 @@ void ImguiService::init(void* p_Configuration)
   // Manual code. Used to remove dependency from that.
   ShaderStateCreation shaderCreation{};
 
+  Framework::StringBuffer shaderPath;
+  shaderPath.init(MAX_PATH, m_GpuDevice->m_Allocator);
+
+  // Reading vertex shader:
+  shaderPath.append(m_GpuDevice->m_Cwd.path);
+  shaderPath.append(R"FOO(\Shaders\imgui.vert.glsl)FOO");
+  const char* vsCode =
+      Framework::fileReadText(shaderPath.m_Data, m_GpuDevice->m_TemporaryAllocator, nullptr);
+  assert(vsCode != nullptr && "Error reading vertex shader");
+
+  // Reset string buffer
+  shaderPath.clear();
+
+  // Reading fragment shader
+  shaderPath.append(m_GpuDevice->m_Cwd.path);
+  shaderPath.append(R"FOO(\Shaders\imgui.frag.glsl)FOO");
+  const char* fsCode =
+      Framework::fileReadText(shaderPath.m_Data, m_GpuDevice->m_TemporaryAllocator, nullptr);
+  assert(fsCode != nullptr && "Error reading fragment shader");
+
+  // Release string buffer
+  shaderPath.shutdown();
+
   shaderCreation.setName("ImGui")
-      .addStage(
-          g_VertexShaderCode, (uint32_t)strlen(g_VertexShaderCode), VK_SHADER_STAGE_VERTEX_BIT)
-      .addStage(
-          g_FragmentShaderCode,
-          (uint32_t)strlen(g_FragmentShaderCode),
-          VK_SHADER_STAGE_FRAGMENT_BIT);
+      .addStage(vsCode, (uint32_t)strlen(vsCode), VK_SHADER_STAGE_VERTEX_BIT)
+      .addStage(fsCode, (uint32_t)strlen(fsCode), VK_SHADER_STAGE_FRAGMENT_BIT);
 
   PipelineCreation pipelineCreation = {};
   pipelineCreation.name = "Pipeline_ImGui";

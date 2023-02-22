@@ -12,6 +12,7 @@
 #include "Foundation/String.hpp"
 #include "Foundation/Service.hpp"
 #include "Foundation/Array.hpp"
+#include "Foundation/File.hpp"
 
 // TODOs:
 // 1. gpu timing
@@ -185,6 +186,8 @@ struct GpuDevice : public Framework::Service
 
   bool m_DebugUtilsExtensionPresent = false;
   char m_VulkanBinariesPath[512];
+
+  Framework::Directory m_Cwd;
 };
 //---------------------------------------------------------------------------//
 } // namespace Graphics
