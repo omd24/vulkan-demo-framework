@@ -697,7 +697,7 @@ bool capacityIsValid(size_t n) { return ((n + 1) & n) == 0 && n > 0; }
 
 inline uint64_t lzcnt_soft(uint64_t n)
 {
-  // NOTE(marco): the __lzcnt intrisics require at least haswell
+  // NOTE: the __lzcnt intrisics require at least haswell
 #if defined(_MSC_VER)
   unsigned long index = 0;
   _BitScanReverse64(&index, n);

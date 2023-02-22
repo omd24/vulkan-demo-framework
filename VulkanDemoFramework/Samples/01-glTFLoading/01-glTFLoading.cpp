@@ -182,7 +182,7 @@ void _loadGltfScene(
 
     uint8_t* data = (uint8_t*)buffersData[buffer.buffer] + offset;
 
-    // NOTE(marco): the target attribute of a BufferView is not mandatory, so we prepare for both
+    // NOTE: the target attribute of a BufferView is not mandatory, so we prepare for both
     // uses
     VkBufferUsageFlags flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 
@@ -212,7 +212,7 @@ void _loadGltfScene(
     Graphics::PipelineCreation pipelineCreation;
 
     // Vertex input
-    // TODO(marco): component format should be based on buffer view type
+    // TODO: component format should be based on buffer view type
     pipelineCreation.vertexInput.addVertexAttribute(
         {0, 0, 0, Graphics::VertexComponentFormat::kFloat3}); // position
     pipelineCreation.vertexInput.addVertexStream({0, 12, Graphics::VertexInputRate::kPerVertex});
@@ -388,7 +388,7 @@ void _loadGltfScene(
         Graphics::DescriptorSetCreation dsCreation{};
         dsCreation.setLayout(demoDsl).buffer(demoCb, 0);
 
-        // NOTE(marco): for now we expect all three textures to be defined. In the next chapter
+        // NOTE: for now we expect all three textures to be defined. In the next chapter
         // we'll relax this constraint thanks to bindless rendering!
 
         if (material.pbrMetallicRoughness != nullptr)

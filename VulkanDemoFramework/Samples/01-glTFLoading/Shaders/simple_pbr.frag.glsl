@@ -77,7 +77,7 @@ float heaviside( float v ) {
 }
 
 void main() {
-    // NOTE(marco): normal textures are encoded to [0, 1] but need to be mapped to [-1, 1] value
+    // NOTE: normal textures are encoded to [0, 1] but need to be mapped to [-1, 1] value
     vec3 bump_normal = normalize( texture(normalTexture, vTexcoord0).rgb * 2.0 - 1.0 );
     vec3 tangent = normalize( vTangent.xyz );
     vec3 bitangent = cross( normalize( vNormal ), tangent ) * vTangent.w;
@@ -129,10 +129,10 @@ void main() {
 
     vec3 diffuse_brdf = (1 / PI) * base_colour.rgb;
 
-    // NOTE(marco): f0 in the formula notation refers to the base colour here
+    // NOTE: f0 in the formula notation refers to the base colour here
     vec3 conductor_fresnel = specular_brdf * ( base_colour.rgb + ( 1.0 - base_colour.rgb ) * pow( 1.0 - abs( HdotV ), 5 ) );
 
-    // NOTE(marco): f0 in the formula notation refers to the value derived from ior = 1.5
+    // NOTE: f0 in the formula notation refers to the value derived from ior = 1.5
     float f0 = 0.04; // pow( ( 1 - ior ) / ( 1 + ior ), 2 )
     float fr = f0 + ( 1 - f0 ) * pow(1 - abs( HdotV ), 5 );
     vec3 fresnel_mix = mix( diffuse_brdf, vec3( specular_brdf ), fr );

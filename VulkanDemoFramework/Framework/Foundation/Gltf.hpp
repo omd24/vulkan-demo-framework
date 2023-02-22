@@ -174,7 +174,7 @@ struct MeshPrimitive
   // 6 TRIANGLE_FAN
   int mode;
   // uint32_t targets_count;
-  // object* targets; // TODO(marco): this is a json object
+  // object* targets; // TODO: this is a json object
 };
 
 struct AccessorSparseIndices
