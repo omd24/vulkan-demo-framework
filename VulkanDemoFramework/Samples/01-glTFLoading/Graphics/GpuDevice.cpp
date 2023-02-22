@@ -592,7 +592,7 @@ static VkRenderPass _vulkanCreateRenderPass(
   renderPassCi.subpassCount = 1;
   renderPassCi.pSubpasses = &subpass;
 
-  VkRenderPass ret;
+  VkRenderPass ret{};
   CHECKRES(vkCreateRenderPass(p_GpuDevice.m_VulkanDevice, &renderPassCi, nullptr, &ret));
 
   p_GpuDevice.setResourceName(VK_OBJECT_TYPE_RENDER_PASS, (uint64_t)ret, p_Name);
@@ -1613,8 +1613,8 @@ TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation)
     memoryCi.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
     VmaAllocationInfo allocationInfo{};
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
+    VkBuffer stagingBuffer{};
+    VmaAllocation stagingAllocation{};
     CHECKRES(vmaCreateBuffer(
         m_VmaAllocator, &bufferCi, &memoryCi, &stagingBuffer, &stagingAllocation, &allocationInfo));
 
@@ -1729,7 +1729,7 @@ PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
   pipelineLayoutInfo.pSetLayouts = vkLayouts;
   pipelineLayoutInfo.setLayoutCount = p_Creation.numActiveLayouts;
 
-  VkPipelineLayout pipelineLayout;
+  VkPipelineLayout pipelineLayout{};
   CHECKRES(vkCreatePipelineLayout(
       m_VulkanDevice, &pipelineLayoutInfo, m_VulkanAllocCallbacks, &pipelineLayout));
   // Cache pipeline layout
@@ -2779,7 +2779,6 @@ VkShaderModuleCreateInfo GpuDevice::compileShader(
   Framework::processExecute(".", glslCompilerPath, arguments, "");
 
   bool optimize_shaders = false;
-
   if (optimize_shaders)
   {
     // TODO: add optional optimization stage
