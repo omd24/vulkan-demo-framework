@@ -123,12 +123,12 @@ struct GpuDevice : public Framework::Service
   uint16_t m_SwapchainHeight = 1;
   bool m_Resized = false;
   RenderPassOutput m_SwapchainOutput;
+  VkSwapchainKHR m_VulkanSwapchain;
 
   // Windows specific
   VkSurfaceKHR m_VulkanWindowSurface;
   VkSurfaceFormatKHR m_VulkanSurfaceFormat;
   VkPresentModeKHR m_VulkanPresentMode;
-  VkSwapchainKHR m_VulkanSwapchain;
   uint32_t m_VulkanSwapchainImageCount;
   PresentMode::Enum m_PresentMode = PresentMode::kVSync;
 

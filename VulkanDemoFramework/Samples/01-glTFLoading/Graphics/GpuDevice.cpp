@@ -2655,6 +2655,8 @@ void GpuDevice::createSwapchain()
   swapchainCi.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   swapchainCi.presentMode = m_VulkanPresentMode;
 
+  // TODO(OM): Investigate the validation errors here:
+  m_VulkanSwapchain = VK_NULL_HANDLE;
   VkResult result = vkCreateSwapchainKHR(m_VulkanDevice, &swapchainCi, 0, &m_VulkanSwapchain);
   CHECKRES(result);
 

@@ -111,20 +111,21 @@ bool processExecute(
   // Terminate current read and initialize the next.
   while (ok == TRUE)
   {
-    g_ProcessOutputBuffer[bytesRead] = 0;
-    char msg[256]{};
-    sprintf(msg, "Message: %s\n", g_ProcessLogBuffer);
-    OutputDebugStringA(msg);
-
     ok = ReadFile(handleStdoutPipeRead, g_ProcessOutputBuffer, 1024, &bytesRead, nullptr);
+
+    g_ProcessOutputBuffer[bytesRead] = 0;
+    if (g_ProcessOutputBuffer[0] != '\0')
+    {
+      char msg[256]{};
+      sprintf(msg, "Message: %s\n", g_ProcessLogBuffer);
+      OutputDebugStringA(msg);
+    }
   }
 
   if (strlen(p_SearchErrorString) > 0 && strstr(g_ProcessOutputBuffer, p_SearchErrorString))
   {
     executionSuccess = false;
   }
-
-  OutputDebugStringA("\n");
 
   // Close handles.
   CloseHandle(handleStdoutPipeRead);
