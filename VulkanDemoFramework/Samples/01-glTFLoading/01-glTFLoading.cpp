@@ -42,8 +42,6 @@
 // Demo specific utils:
 //---------------------------------------------------------------------------//
 // Demo objects
-Graphics::BufferHandle demoVb;
-Graphics::BufferHandle demoIb;
 Graphics::PipelineHandle demoPso;
 Graphics::BufferHandle demoCb;
 Graphics::DescriptorSetHandle demoDs;
