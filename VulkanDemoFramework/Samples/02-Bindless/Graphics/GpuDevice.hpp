@@ -194,6 +194,8 @@ struct GpuDevice : public Framework::Service
   static const uint32_t kMaxBindlessResources = 1024u;
   static const uint32_t kBindlessTextureBinding = 10u;
   VkDescriptorPool m_VulkanBindlessDescriptorPool;
+  VkDescriptorSetLayout m_VulkanBindlessDescriptorSetLayout;
+  VkDescriptorSet m_VulkanBindlessDescriptorSet;
 };
 //---------------------------------------------------------------------------//
 } // namespace Graphics

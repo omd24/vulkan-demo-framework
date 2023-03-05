@@ -1153,11 +1153,11 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   }
 
   // Create descriptor pool for bindless textures
+  VkDescriptorPoolSize poolSizesBindless[] = {
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxBindlessResources},
+      {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kMaxBindlessResources},
+  };
   {
-    VkDescriptorPoolSize poolSizesBindless[] = {
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxBindlessResources},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kMaxBindlessResources},
-    };
     VkDescriptorPoolCreateInfo ci = {};
     ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     ci.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
@@ -1165,7 +1165,62 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     ci.poolSizeCount = arrayCount32(poolSizesBindless);
     ci.pPoolSizes = poolSizesBindless;
     VkResult result = vkCreateDescriptorPool(
-        m_VulkanDevice, &ci, m_VulkanAllocCallbacks, &m_VulkanDescriptorPool);
+        m_VulkanDevice, &ci, m_VulkanAllocCallbacks, &m_VulkanBindlessDescriptorPool);
+    CHECKRES(result);
+  }
+
+  // Create descriptor set layout for bindless resources
+  {
+    const uint32_t poolCount = arrayCount32(poolSizesBindless);
+    VkDescriptorSetLayoutBinding vkBinding[4] = {};
+
+    // Actual decsriptor set layout
+    VkDescriptorSetLayoutBinding& imageSamplerBinding = vkBinding[0];
+    imageSamplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    imageSamplerBinding.descriptorCount = kMaxBindlessResources;
+    imageSamplerBinding.binding = kBindlessTextureBinding;
+    imageSamplerBinding.stageFlags = VK_SHADER_STAGE_ALL;
+
+    VkDescriptorSetLayoutBinding& storageImageBinding = vkBinding[1];
+    storageImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    storageImageBinding.descriptorCount = kMaxBindlessResources;
+    storageImageBinding.binding = kBindlessTextureBinding + 1;
+    storageImageBinding.stageFlags = VK_SHADER_STAGE_ALL;
+
+    VkDescriptorSetLayoutCreateInfo layoutCi = {};
+    layoutCi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutCi.bindingCount = poolCount;
+    layoutCi.pBindings = vkBinding;
+    layoutCi.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
+
+    VkDescriptorBindingFlags bindlessFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
+                                             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
+    VkDescriptorBindingFlags bindingFlags[4];
+    bindingFlags[0] = bindlessFlags;
+    bindingFlags[1] = bindlessFlags;
+
+    VkDescriptorSetLayoutBindingFlagsCreateInfoEXT flagsCiExt = {};
+    flagsCiExt.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
+    flagsCiExt.bindingCount = poolCount;
+    flagsCiExt.pBindingFlags = bindingFlags;
+
+    layoutCi.pNext = &flagsCiExt;
+
+    VkResult result = vkCreateDescriptorSetLayout(
+        m_VulkanDevice, &layoutCi, m_VulkanAllocCallbacks, &m_VulkanBindlessDescriptorSetLayout);
+    CHECKRES(result);
+  }
+
+  // Create descriptor sets for bindless resources
+  {
+    VkDescriptorSetAllocateInfo descriptorSetAllocInfo = {};
+    descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptorSetAllocInfo.descriptorPool = m_VulkanBindlessDescriptorPool;
+    descriptorSetAllocInfo.descriptorSetCount = 1;
+    descriptorSetAllocInfo.pSetLayouts = &m_VulkanBindlessDescriptorSetLayout;
+
+    VkResult result = vkAllocateDescriptorSets(
+        m_VulkanDevice, &descriptorSetAllocInfo, &m_VulkanBindlessDescriptorSet);
     CHECKRES(result);
   }
 
@@ -1372,6 +1427,11 @@ void GpuDevice::shutdown()
   vkDestroyDebugUtilsMessengerEXT(
       m_VulkanInstance, m_VulkanDebugUtilsMessenger, m_VulkanAllocCallbacks);
 
+  // Release bindless descriptor set layout and pool
+  vkDestroyDescriptorSetLayout(
+      m_VulkanDevice, m_VulkanBindlessDescriptorSetLayout, m_VulkanAllocCallbacks);
+  vkDestroyDescriptorPool(m_VulkanDevice, m_VulkanBindlessDescriptorPool, m_VulkanAllocCallbacks);
+
   vkDestroyDescriptorPool(m_VulkanDevice, m_VulkanDescriptorPool, m_VulkanAllocCallbacks);
 
   vkDestroyDevice(m_VulkanDevice, m_VulkanAllocCallbacks);
@@ -1424,9 +1484,9 @@ void GpuDevice::newFrame()
       destroyDescriptorSet(dummyDeleteDescriptorSetHandle);
 
       // Allocate the new descriptor set and update its content.
-      VkWriteDescriptorSet descriptor_write[8];
-      VkDescriptorBufferInfo buffer_info[8];
-      VkDescriptorImageInfo image_info[8];
+      VkWriteDescriptorSet descriptorWrite[8];
+      VkDescriptorBufferInfo bufferInfo[8];
+      VkDescriptorImageInfo imageInfo[8];
 
       Sampler* defaultSampler = (Sampler*)m_Samplers.accessResource(m_DefaultSampler.index);
 
@@ -1441,16 +1501,16 @@ void GpuDevice::newFrame()
           *this,
           descriptorSetLayout,
           descriptorSet->vkDescriptorSet,
-          descriptor_write,
-          buffer_info,
-          image_info,
+          descriptorWrite,
+          bufferInfo,
+          imageInfo,
           defaultSampler->vkSampler,
           numResources,
           descriptorSet->resources,
           descriptorSet->samplers,
           descriptorSet->bindings);
 
-      vkUpdateDescriptorSets(m_VulkanDevice, numResources, descriptor_write, 0, nullptr);
+      vkUpdateDescriptorSets(m_VulkanDevice, numResources, descriptorWrite, 0, nullptr);
 #pragma endregion End Update descriptor set
 
       update.frameIssued = UINT32_MAX;
