@@ -196,6 +196,9 @@ struct GpuDevice : public Framework::Service
   VkDescriptorPool m_VulkanBindlessDescriptorPool;
   VkDescriptorSetLayout m_VulkanBindlessDescriptorSetLayout;
   VkDescriptorSet m_VulkanBindlessDescriptorSet;
+  Framework::Array<ResourceUpdate> m_TextureToUpdateBindless;
+
+  void linkTextureSampler(TextureHandle p_Texture, SamplerHandle p_Sampler);
 };
 //---------------------------------------------------------------------------//
 } // namespace Graphics
