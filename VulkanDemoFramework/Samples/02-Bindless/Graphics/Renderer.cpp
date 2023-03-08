@@ -1,5 +1,7 @@
 #include "Renderer.hpp"
 
+#include "Graphics/CommandBuffer.hpp"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "Externals/stb_image.h"
 
@@ -12,7 +14,6 @@ namespace RendererUtil
 void ResourceCache::shutdown(Renderer* p_Renderer)
 {
   Framework::FlatHashMapIterator it = m_Textures.iteratorBegin();
-
   while (it.isValid())
   {
     Graphics::RendererUtil::TextureResource* texture = m_Textures.get(it);
@@ -22,7 +23,6 @@ void ResourceCache::shutdown(Renderer* p_Renderer)
   }
 
   it = m_Buffers.iteratorBegin();
-
   while (it.isValid())
   {
     Graphics::RendererUtil::BufferResource* buffer = m_Buffers.get(it);
@@ -32,7 +32,6 @@ void ResourceCache::shutdown(Renderer* p_Renderer)
   }
 
   it = m_Samplers.iteratorBegin();
-
   while (it.isValid())
   {
     Graphics::RendererUtil::SamplerResource* sampler = m_Samplers.get(it);
@@ -41,9 +40,29 @@ void ResourceCache::shutdown(Renderer* p_Renderer)
     m_Samplers.iteratorAdvance(it);
   }
 
+  it = m_Materials.iteratorBegin();
+  while (it.isValid())
+  {
+    Graphics::RendererUtil::Material* material = m_Materials.get(it);
+    p_Renderer->destroyMaterial(material);
+
+    m_Materials.iteratorAdvance(it);
+  }
+
+  it = m_Programs.iteratorBegin();
+  while (it.isValid())
+  {
+    Graphics::RendererUtil::Program* program = m_Programs.get(it);
+    p_Renderer->destroyProgram(program);
+
+    m_Programs.iteratorAdvance(it);
+  }
+
   m_Textures.shutdown();
   m_Buffers.shutdown();
   m_Samplers.shutdown();
+  m_Materials.shutdown();
+  m_Programs.shutdown();
 }
 //---------------------------------------------------------------------------//
 // Internals:
@@ -134,6 +153,32 @@ struct SamplerLoader : public Framework::ResourceLoader
 
   Renderer* m_Renderer;
 };
+//---------------------------------------------------------------------------//
+MaterialCreation& MaterialCreation::reset()
+{
+  program = nullptr;
+  name = nullptr;
+  renderIndex = ~0u;
+  return *this;
+}
+//---------------------------------------------------------------------------//
+MaterialCreation& MaterialCreation::setProgram(Program* p_Program)
+{
+  program = p_Program;
+  return *this;
+}
+//---------------------------------------------------------------------------//
+MaterialCreation& MaterialCreation::setRenderIndex(uint32_t p_RenderIndex)
+{
+  renderIndex = p_RenderIndex;
+  return *this;
+}
+//---------------------------------------------------------------------------//
+MaterialCreation& MaterialCreation::setName(const char* p_Name)
+{
+  name = p_Name;
+  return *this;
+}
 //---------------------------------------------------------------------------//
 static TextureHandle
 _createTextureFromFile(GpuDevice& p_GpuDevice, const char* p_Filename, const char* p_Name)
@@ -351,6 +396,100 @@ SamplerResource* Renderer::createSampler(const SamplerCreation& p_Creation)
     return sampler;
   }
   return nullptr;
+}
+//---------------------------------------------------------------------------//
+Program* Renderer::createProgram(const ProgramCreation& creation)
+{
+  Program* program = programs.obtain();
+  if (program)
+  {
+    const uint32_t num_passes = 1;
+    // First create arrays
+    program->passes.init(m_GpuDevice->m_Allocator, num_passes, num_passes);
+
+    program->m_Name = creation.pipelineCreation.name;
+
+    Framework::StringBuffer pipelineCachePath;
+    pipelineCachePath.init(1024, m_GpuDevice->m_Allocator);
+
+    for (uint32_t i = 0; i < num_passes; ++i)
+    {
+      ProgramPass& pass = program->passes[i];
+
+      if (creation.pipelineCreation.name != nullptr)
+      {
+        char* cachePath = pipelineCachePath.appendUseFormatted(
+            "%s%s.cache", SHADER_FOLDER, creation.pipelineCreation.name);
+
+        pass.pipeline = m_GpuDevice->createPipeline(creation.pipelineCreation, cachePath);
+      }
+      else
+      {
+        pass.pipeline = m_GpuDevice->createPipeline(creation.pipelineCreation);
+      }
+
+      pass.descriptorSetLayout = m_GpuDevice->getDescriptorSetLayout(pass.pipeline, 0);
+    }
+
+    pipelineCachePath.shutdown();
+
+    if (creation.pipelineCreation.name != nullptr)
+    {
+      m_ResourceCache.m_Programs.insert(
+          Framework::hashCalculate(creation.pipelineCreation.name), program);
+    }
+
+    program->m_References = 1;
+
+    return program;
+  }
+  return nullptr;
+}
+//---------------------------------------------------------------------------//
+Material* Renderer::createMaterial(const MaterialCreation& creation)
+{
+  Material* material = materials.obtain();
+  if (material)
+  {
+    material->program = creation.program;
+    material->m_Name = creation.name;
+    material->renderIndex = creation.renderIndex;
+
+    if (creation.name != nullptr)
+    {
+      m_ResourceCache.m_Materials.insert(Framework::hashCalculate(creation.name), material);
+    }
+
+    material->m_References = 1;
+
+    return material;
+  }
+  return nullptr;
+}
+//---------------------------------------------------------------------------//
+Material* Renderer::createMaterial(Program* program, const char* name)
+{
+  MaterialCreation creation{program, name};
+  return createMaterial(creation);
+}
+//---------------------------------------------------------------------------//
+PipelineHandle Renderer::getPipeline(Material* material)
+{
+  assert(material != nullptr);
+
+  return material->program->passes[0].pipeline;
+}
+//---------------------------------------------------------------------------//
+DescriptorSetHandle Renderer::createDescriptorSet(
+    CommandBuffer* commandBuffer, Material* material, DescriptorSetCreation& dsCreation)
+{
+  assert(material != nullptr);
+
+  DescriptorSetLayoutHandle set_layout = material->program->passes[0].descriptorSetLayout;
+
+  dsCreation.setLayout(set_layout);
+
+  return commandBuffer->createDescriptorSet(dsCreation);
 }
 //---------------------------------------------------------------------------//
 void Renderer::destroyBuffer(BufferResource* p_Buffer)

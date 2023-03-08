@@ -147,6 +147,7 @@
     <ClCompile Include="Graphics\GpuResources.cpp" />
     <ClCompile Include="Graphics\ImguiHelper.cpp" />
     <ClCompile Include="Graphics\Renderer.cpp" />
+    <ClCompile Include="Graphics\SpirvParser.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Graphics\CommandBuffer.hpp" />
@@ -155,6 +156,7 @@
     <ClInclude Include="Graphics\GpuResources.hpp" />
     <ClInclude Include="Graphics\ImguiHelper.hpp" />
     <ClInclude Include="Graphics\Renderer.hpp" />
+    <ClInclude Include="Graphics\SpirvParser.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

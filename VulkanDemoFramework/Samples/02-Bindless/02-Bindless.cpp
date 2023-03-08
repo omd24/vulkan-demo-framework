@@ -31,47 +31,70 @@
 // Demo specific utils:
 //---------------------------------------------------------------------------//
 // Demo objects
-Graphics::PipelineHandle demoPso;
-Graphics::BufferHandle demoCb;
-Graphics::DescriptorSetHandle demoDs;
-Graphics::DescriptorSetLayoutHandle demoDsl;
-
-float rx, ry;
-struct MaterialData
-{
-  vec4s baseColorFactor;
-};
+Graphics::BufferHandle sceneCb;
 
 struct MeshDraw
 {
+  Graphics::RendererUtil::Material* material;
+
   Graphics::BufferHandle indexBuffer;
   Graphics::BufferHandle positionBuffer;
   Graphics::BufferHandle tangentBuffer;
   Graphics::BufferHandle normalBuffer;
   Graphics::BufferHandle texcoordBuffer;
-
   Graphics::BufferHandle materialBuffer;
-  MaterialData materialData;
 
-  uint32_t indexOffset;
-  uint32_t positionOffset;
-  uint32_t tangentOffset;
-  uint32_t normalOffset;
-  uint32_t texcoordOffset;
+  uint32_t primitiveCount;
 
-  uint32_t count;
+  // Indices used for bindless textures.
+  uint16_t diffuseTextureIndex;
+  uint16_t roughnessTextureIndex;
+  uint16_t normalTextureIndex;
+  uint16_t occlusionTextureIndex;
 
-  Graphics::DescriptorSetHandle descriptorSet;
+  vec4s baseColorFactor;
+  vec4s metallicRoughnessOcclusionFactor;
+  vec3s scale;
+
+  float alphaCutoff;
+  uint32_t flags;
+};
+
+enum DrawFlags
+{
+  DrawFlagsAlphaMask = 1 << 0, // two power by zero
 };
 
 struct UniformData
 {
-  mat4s model;
   mat4s viewProj;
-  mat4s invModel;
   vec4s eye;
   vec4s light;
+  float lightRange;
+  float lightIntenstiy;
 };
+
+struct MeshData
+{
+  mat4s model;
+  mat4s invModel;
+
+  uint32_t textures[4]; // diffuse, roughness, normal, occlusion
+  vec4s baseColorFactor;
+  vec4s metallicRoughnessOcclusionFactor; // metallic, roughness, occlusion
+  float alphaCutoff;
+  float padding[3];
+  uint32_t flags;
+};
+
+struct GpuEffect
+{
+
+  Graphics::PipelineHandle pipelineCull;
+  Graphics::PipelineHandle pipelineNoCull;
+
+}; // struct GpuEffect
+
 //---------------------------------------------------------------------------//
 /// Window message loop callback
 static void inputOSMessagesCallback(void* p_OSEvent, void* p_UserData)
@@ -80,421 +103,417 @@ static void inputOSMessagesCallback(void* p_OSEvent, void* p_UserData)
   input->onEvent(p_OSEvent);
 }
 //---------------------------------------------------------------------------//
-void _loadGltfScene(
-    Framework::StringBuffer& modelPath,
-    Framework::Allocator* allocator,
-    Framework::glTF::glTF& scene,
-    Framework::Array<Graphics::RendererUtil::TextureResource>& images,
-    Graphics::RendererUtil::Renderer& renderer,
-    Framework::Array<Graphics::RendererUtil::SamplerResource>& samplers,
-    Framework::Array<Graphics::RendererUtil::BufferResource>& buffers,
-    Graphics::GpuDevice& gpuDevice,
-    Framework::Array<MeshDraw>& meshDraws)
+// Local helpers
+//---------------------------------------------------------------------------//
+static void uploadMaterial(MeshData& p_MeshData, const MeshDraw& p_MeshDraw, const float p_Scale)
 {
-  // Store currect working dir to restore later
-  Framework::Directory cwd = gpuDevice.m_Cwd;
+  p_MeshData.textures[0] = p_MeshDraw.diffuseTextureIndex;
+  p_MeshData.textures[1] = p_MeshDraw.roughnessTextureIndex;
+  p_MeshData.textures[2] = p_MeshDraw.normalTextureIndex;
+  p_MeshData.textures[3] = p_MeshDraw.occlusionTextureIndex;
+  p_MeshData.baseColorFactor = p_MeshDraw.baseColorFactor;
+  p_MeshData.metallicRoughnessOcclusionFactor = p_MeshDraw.metallicRoughnessOcclusionFactor;
+  p_MeshData.alphaCutoff = p_MeshDraw.alphaCutoff;
+  p_MeshData.flags = p_MeshDraw.flags;
 
-  // Change directory:
-  char gltfBasePath[512] = {};
-  ::memcpy(gltfBasePath, modelPath.m_Data, modelPath.m_CurrentSize);
-  Framework::fileDirectoryFromPath(gltfBasePath);
-  Framework::directoryChange(gltfBasePath);
+  // NOTE: for left-handed systems (as defined in cglm) need to invert positive and negative Z.
+  mat4s model = glms_scale_make(glms_vec3_mul(p_MeshDraw.scale, {p_Scale, p_Scale, -p_Scale}));
+  p_MeshData.model = model;
+  p_MeshData.invModel = glms_mat4_inv(glms_mat4_transpose(model));
+}
+#if 0
 
-  // Determine filename:
-  char gltfFile[512] = {};
-  ::memcpy(gltfFile, modelPath.m_Data, modelPath.m_CurrentSize);
-  Framework::filenameFromPath(gltfFile);
+//---------------------------------------------------------------------------//
+static void drawMesh(
+    Graphics::RendererUtil::Renderer& p_Renderer,
+    Graphics::CommandBuffer* p_CommandBuffers,
+    MeshDraw& p_MeshDraw)
+{
+  // Descriptor Set
+  Graphics::DescriptorSetCreation dsCreation{};
+  dsCreation.buffer(sceneCb, 0).buffer(p_MeshDraw.materialBuffer, 1);
+  Graphics::DescriptorSetHandle descriptorSet =
+      p_Renderer.createDescriptorSet(p_CommandBuffers, p_MeshDraw.material, dsCreation);
 
-  // Load scene:
-  scene = Framework::gltfLoadFile(gltfFile);
+  p_CommandBuffers->bind_vertex_buffer(p_MeshDraw.position_buffer, 0, p_MeshDraw.position_offset);
+  p_CommandBuffers->bind_vertex_buffer(p_MeshDraw.tangent_buffer, 1, p_MeshDraw.tangent_offset);
+  p_CommandBuffers->bind_vertex_buffer(p_MeshDraw.normal_buffer, 2, p_MeshDraw.normal_offset);
+  p_CommandBuffers->bind_vertex_buffer(p_MeshDraw.texcoord_buffer, 3, p_MeshDraw.texcoord_offset);
+  p_CommandBuffers->bind_index_buffer(p_MeshDraw.index_buffer, p_MeshDraw.index_offset);
+  p_CommandBuffers->bind_local_descriptorSet(&descriptorSet, 1, nullptr, 0);
 
-  // Create textures:
-  images.init(allocator, scene.imagesCount);
-  for (uint32_t imageIndex = 0; imageIndex < scene.imagesCount; ++imageIndex)
+  p_CommandBuffers->draw_indexed(
+      Graphics::TopologyType::Triangle, p_MeshDraw.primitive_count, 1, 0, 0, 0);
+}
+//---------------------------------------------------------------------------//
+struct Scene
+{
+  Framework::Array<MeshDraw> m_MeshDraws;
+
+  // All graphics resources used by the scene
+  Framework::Array<Framework::TextureResource> images;
+  Framework::Array<Framework::SamplerResource> samplers;
+  Framework::Array<Framework::BufferResource> buffers;
+
+  Framework::glTF::glTF gltf_scene; // Source gltf scene
+
+}; // struct GltfScene
+
+static void scene_load_from_gltf(
+    cstring filename, Framework::Renderer& renderer, Framework::Allocator* allocator, Scene& scene)
+{
+
+  using namespace Framework;
+
+  scene.gltf_scene = gltf_load_file(filename);
+
+  // Load all textures
+  scene.images.init(allocator, scene.gltf_scene.images_count);
+
+  for (u32 image_index = 0; image_index < scene.gltf_scene.images_count; ++image_index)
   {
-    Framework::glTF::Image& image = scene.images[imageIndex];
-    Graphics::RendererUtil::TextureResource* tr =
-        renderer.createTexture(image.uri.m_Data, image.uri.m_Data);
-    assert(tr != nullptr);
-    images.push(*tr);
+    glTF::Image& image = scene.gltf_scene.images[image_index];
+    TextureResource* tr = renderer.create_texture(image.uri.data, image.uri.data, true);
+    RASSERT(tr != nullptr);
+
+    scene.images.push(*tr);
   }
 
-  // Create samplers
-  Framework::StringBuffer resourceNameBuffer;
-  resourceNameBuffer.init(4096, allocator);
+  StringBuffer resource_name_buffer;
+  resource_name_buffer.init(4096, allocator);
 
-  samplers.init(allocator, scene.samplersCount);
-  for (uint32_t samplerIndex = 0; samplerIndex < scene.samplersCount; ++samplerIndex)
+  // Load all samplers
+  scene.samplers.init(allocator, scene.gltf_scene.samplers_count);
+
+  for (u32 sampler_index = 0; sampler_index < scene.gltf_scene.samplers_count; ++sampler_index)
   {
-    Framework::glTF::Sampler& sampler = scene.samplers[samplerIndex];
+    glTF::Sampler& sampler = scene.gltf_scene.samplers[sampler_index];
 
-    char* samplerName = resourceNameBuffer.appendUseFormatted("sampler %u", samplerIndex);
+    char* sampler_name = resource_name_buffer.append_use_f("sampler_%u", sampler_index);
 
-    Graphics::SamplerCreation creation;
-    creation.minFilter = sampler.minFilter == Framework::glTF::Sampler::Filter::LINEAR
-                             ? VK_FILTER_LINEAR
-                             : VK_FILTER_NEAREST;
-    creation.magFilter = sampler.magFilter == Framework::glTF::Sampler::Filter::LINEAR
-                             ? VK_FILTER_LINEAR
-                             : VK_FILTER_NEAREST;
-    creation.name = samplerName;
+    SamplerCreation creation;
+    switch (sampler.min_filter)
+    {
+    case glTF::Sampler::NEAREST:
+      creation.min_filter = VK_FILTER_NEAREST;
+      break;
+    case glTF::Sampler::LINEAR:
+      creation.min_filter = VK_FILTER_LINEAR;
+      break;
+    case glTF::Sampler::LINEAR_MIPMAP_NEAREST:
+      creation.min_filter = VK_FILTER_LINEAR;
+      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+      break;
+    case glTF::Sampler::LINEAR_MIPMAP_LINEAR:
+      creation.min_filter = VK_FILTER_LINEAR;
+      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+      break;
+    case glTF::Sampler::NEAREST_MIPMAP_NEAREST:
+      creation.min_filter = VK_FILTER_NEAREST;
+      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+      break;
+    case glTF::Sampler::NEAREST_MIPMAP_LINEAR:
+      creation.min_filter = VK_FILTER_NEAREST;
+      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+      break;
+    }
 
-    Graphics::RendererUtil::SamplerResource* sr = renderer.createSampler(creation);
-    assert(sr != nullptr);
-    samplers.push(*sr);
+    creation.mag_filter =
+        sampler.mag_filter == glTF::Sampler::Filter::LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+
+    switch (sampler.wrap_s)
+    {
+    case glTF::Sampler::CLAMP_TO_EDGE:
+      creation.address_mode_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+      break;
+    case glTF::Sampler::MIRRORED_REPEAT:
+      creation.address_mode_u = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+      break;
+    case glTF::Sampler::REPEAT:
+      creation.address_mode_u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+      break;
+    }
+
+    switch (sampler.wrap_t)
+    {
+    case glTF::Sampler::CLAMP_TO_EDGE:
+      creation.address_mode_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+      break;
+    case glTF::Sampler::MIRRORED_REPEAT:
+      creation.address_mode_v = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+      break;
+    case glTF::Sampler::REPEAT:
+      creation.address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+      break;
+    }
+
+    creation.name = sampler_name;
+
+    SamplerResource* sr = renderer.create_sampler(creation);
+    RASSERT(sr != nullptr);
+
+    scene.samplers.push(*sr);
   }
 
-  // Create buffers:
-  Framework::Array<void*> buffersData;
-  buffersData.init(allocator, scene.buffersCount);
-  for (uint32_t bufferIndex = 0; bufferIndex < scene.buffersCount; ++bufferIndex)
-  {
-    Framework::glTF::Buffer& buffer = scene.buffers[bufferIndex];
+  // Temporary array of buffer data
+  Framework::Array<void*> buffers_data;
+  buffers_data.init(allocator, scene.gltf_scene.buffers_count);
 
-    Framework::FileReadResult bufferData = Framework::fileReadBinary(buffer.uri.m_Data, allocator);
-    buffersData.push(bufferData.data);
+  for (u32 buffer_index = 0; buffer_index < scene.gltf_scene.buffers_count; ++buffer_index)
+  {
+    glTF::Buffer& buffer = scene.gltf_scene.buffers[buffer_index];
+
+    FileReadResult buffer_data = file_read_binary(buffer.uri.data, allocator);
+    buffers_data.push(buffer_data.data);
   }
 
-  buffers.init(allocator, scene.bufferViewsCount);
-  for (uint32_t bufferIndex = 0; bufferIndex < scene.bufferViewsCount; ++bufferIndex)
-  {
-    Framework::glTF::BufferView& buffer = scene.bufferViews[bufferIndex];
+  // Load all buffers and initialize them with buffer data
+  scene.buffers.init(allocator, scene.gltf_scene.buffer_views_count);
 
-    int offset = buffer.byteOffset;
-    if (offset == Framework::glTF::INVALID_INT_VALUE)
+  for (u32 buffer_index = 0; buffer_index < scene.gltf_scene.buffer_views_count; ++buffer_index)
+  {
+    glTF::BufferView& buffer = scene.gltf_scene.buffer_views[buffer_index];
+
+    i32 offset = buffer.byte_offset;
+    if (offset == glTF::INVALID_INT_VALUE)
     {
       offset = 0;
     }
 
-    uint8_t* data = (uint8_t*)buffersData[buffer.buffer] + offset;
+    u8* data = (u8*)buffers_data[buffer.buffer] + offset;
 
-    // NOTE: the target attribute of a BufferView is not mandatory, so we prepare for both
+    // NOTE(marco): the target attribute of a BufferView is not mandatory, so we prepare for both
     // uses
     VkBufferUsageFlags flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 
-    char* bufferName = buffer.name.m_Data;
-    if (bufferName == nullptr)
+    char* buffer_name = buffer.name.data;
+    if (buffer_name == nullptr)
     {
-      bufferName = resourceNameBuffer.appendUseFormatted("buffer %u", bufferIndex);
+      buffer_name = resource_name_buffer.append_use_f("buffer_%u", buffer_index);
     }
 
-    Graphics::RendererUtil::BufferResource* br = renderer.createBuffer(
-        flags, Graphics::ResourceUsageType::kImmutable, buffer.byteLength, data, bufferName);
-    assert(br != nullptr);
+    BufferResource* br = renderer.create_buffer(
+        flags, ResourceUsageType::Immutable, buffer.byte_length, data, buffer_name);
+    RASSERT(br != nullptr);
 
-    buffers.push(*br);
+    scene.buffers.push(*br);
   }
 
-  for (uint32_t bufferIndex = 0; bufferIndex < scene.buffersCount; ++bufferIndex)
+  for (u32 buffer_index = 0; buffer_index < scene.gltf_scene.buffers_count; ++buffer_index)
   {
-    void* buffer = buffersData[bufferIndex];
+    void* buffer = buffers_data[buffer_index];
     allocator->deallocate(buffer);
   }
-  buffersData.shutdown();
-  resourceNameBuffer.shutdown();
+  buffers_data.shutdown();
 
-  // Create pipeline state
+  resource_name_buffer.shutdown();
+
+  // Init runtime meshes
+  scene.mesh_draws.init(allocator, scene.gltf_scene.meshes_count);
+}
+
+static void scene_free_gpu_resources(Scene& scene, Framework::Renderer& renderer)
+{
+  Framework::GpuDevice& gpu = *renderer.gpu;
+
+  for (u32 mesh_index = 0; mesh_index < scene.mesh_draws.size; ++mesh_index)
   {
-    Graphics::PipelineCreation pipelineCreation;
+    MeshDraw& mesh_draw = scene.mesh_draws[mesh_index];
+    gpu.destroy_buffer(mesh_draw.material_buffer);
+  }
 
-    // Vertex input
-    // TODO: component format should be based on buffer view type
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {0, 0, 0, Graphics::VertexComponentFormat::kFloat3}); // position
-    pipelineCreation.vertexInput.addVertexStream({0, 12, Graphics::VertexInputRate::kPerVertex});
+  scene.mesh_draws.shutdown();
+}
 
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {1, 1, 0, Graphics::VertexComponentFormat::kFloat4}); // tangent
-    pipelineCreation.vertexInput.addVertexStream({1, 16, Graphics::VertexInputRate::kPerVertex});
+static void scene_unload(Scene& scene, Framework::Renderer& renderer)
+{
 
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {2, 2, 0, Graphics::VertexComponentFormat::kFloat3}); // normal
-    pipelineCreation.vertexInput.addVertexStream({2, 12, Graphics::VertexInputRate::kPerVertex});
+  Framework::GpuDevice& gpu = *renderer.gpu;
 
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {3, 3, 0, Graphics::VertexComponentFormat::kFloat2}); // texcoord
-    pipelineCreation.vertexInput.addVertexStream({3, 8, Graphics::VertexInputRate::kPerVertex});
+  // Free scene buffers
+  scene.samplers.shutdown();
+  scene.images.shutdown();
+  scene.buffers.shutdown();
 
-    // Render pass
-    pipelineCreation.renderPass = gpuDevice.m_SwapchainOutput;
-    // Depth
-    pipelineCreation.depthStencil.setDepth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
+  // NOTE(marco): we can't destroy this sooner as textures and buffers
+  // hold a pointer to the names stored here
+  Framework::gltf_free(scene.gltf_scene);
+}
 
-    // Shader state
-    {
-      Framework::StringBuffer shaderPath;
-      shaderPath.init(MAX_PATH, allocator);
+static int mesh_material_compare(const void* a, const void* b)
+{
+  const MeshDraw* mesh_a = (const MeshDraw*)a;
+  const MeshDraw* mesh_b = (const MeshDraw*)b;
 
-      // Reading vertex shader:
-      shaderPath.append(cwd.path);
-      shaderPath.append(R"FOO(\Shaders\default.vert.glsl)FOO");
-      const char* vsCode =
-          Framework::fileReadText(shaderPath.m_Data, gpuDevice.m_TemporaryAllocator, nullptr);
-      assert(vsCode != nullptr && "Error reading vertex shader");
+  if (mesh_a->material->render_index < mesh_b->material->render_index)
+    return -1;
+  if (mesh_a->material->render_index > mesh_b->material->render_index)
+    return 1;
+  return 0;
+}
 
-      // Reset string buffer
-      shaderPath.clear();
+static void get_mesh_vertex_buffer(
+    Scene& scene,
+    i32 accessor_index,
+    Framework::BufferHandle& out_buffer_handle,
+    u32& out_buffer_offset)
+{
+  using namespace Framework;
 
-      // Reading fragment shader
-      shaderPath.append(cwd.path);
-      shaderPath.append(R"FOO(\Shaders\simple_pbr.frag.glsl)FOO");
-      const char* fsCode =
-          Framework::fileReadText(shaderPath.m_Data, gpuDevice.m_TemporaryAllocator, nullptr);
-      assert(fsCode != nullptr && "Error reading fragment shader");
-
-      // Release string buffer
-      shaderPath.shutdown();
-
-      pipelineCreation.shaders.setName("Demo")
-          .addStage(vsCode, (uint32_t)strlen(vsCode), VK_SHADER_STAGE_VERTEX_BIT)
-          .addStage(fsCode, (uint32_t)strlen(fsCode), VK_SHADER_STAGE_FRAGMENT_BIT);
-    }
-
-    // Descriptor set layout
-    Graphics::DescriptorSetLayoutCreation demoDslCreation{};
-    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"});
-    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, 1, "diffuseTexture"});
-    demoDslCreation.addBinding(
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, 1, "occlusionRoughnessMetalnessTexture"});
-    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, 1, "normalTexture"});
-    demoDslCreation.addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, 1, "MaterialConstant"});
-    // Setting it into pipeline
-    demoDsl = gpuDevice.createDescriptorSetLayout(demoDslCreation);
-    pipelineCreation.addDescriptorSetLayout(demoDsl);
-
-    demoPso = gpuDevice.createPipeline(pipelineCreation);
-  } // end Create pipeline
-
-  // Restore directory:
-  Framework::directoryChange(cwd.path);
-
-  // Create drawable objects (mesh draws)
-  meshDraws.init(allocator, scene.meshesCount);
+  if (accessor_index != -1)
   {
-    // Constant buffer
-    Graphics::BufferCreation cbCreation;
-    cbCreation.reset()
-        .set(
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            Graphics::ResourceUsageType::kDynamic,
-            sizeof(UniformData))
-        .setName("demoCb");
-    demoCb = gpuDevice.createBuffer(cbCreation);
+    glTF::Accessor& buffer_accessor = scene.gltf_scene.accessors[accessor_index];
+    glTF::BufferView& buffer_view = scene.gltf_scene.buffer_views[buffer_accessor.buffer_view];
+    BufferResource& buffer_gpu = scene.buffers[buffer_accessor.buffer_view];
 
-    for (uint32_t meshIndex = 0; meshIndex < scene.meshesCount; ++meshIndex)
-    {
-      MeshDraw meshDraw{};
-
-      Framework::glTF::Mesh& mesh = scene.meshes[meshIndex];
-
-      for (uint32_t primitiveIndex = 0; primitiveIndex < mesh.primitivesCount; ++primitiveIndex)
-      {
-        Framework::glTF::MeshPrimitive& meshPrimitive = mesh.primitives[primitiveIndex];
-
-        int positionAccessorIndex = Framework::gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "POSITION");
-        int tangentAccessorIndex = Framework::gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "TANGENT");
-        int normalAccessorIndex = Framework::gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "NORMAL");
-        int texcoordAccessorIndex = Framework::gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "TEXCOORD_0");
-
-        if (positionAccessorIndex != -1)
-        {
-          Framework::glTF::Accessor& positionAccessor = scene.accessors[positionAccessorIndex];
-          Framework::glTF::BufferView& positionBufferView =
-              scene.bufferViews[positionAccessor.bufferView];
-          Graphics::RendererUtil::BufferResource& positionBufferGpu =
-              buffers[positionAccessor.bufferView];
-
-          meshDraw.positionBuffer = positionBufferGpu.m_Handle;
-          meshDraw.positionOffset =
-              positionAccessor.byteOffset == Framework::glTF::INVALID_INT_VALUE
-                  ? 0
-                  : positionAccessor.byteOffset;
-        }
-
-        if (tangentAccessorIndex != -1)
-        {
-          Framework::glTF::Accessor& tangentAccessor = scene.accessors[tangentAccessorIndex];
-          Framework::glTF::BufferView& tangentBufferView =
-              scene.bufferViews[tangentAccessor.bufferView];
-          Graphics::RendererUtil::BufferResource& tangentBufferGpu =
-              buffers[tangentAccessor.bufferView];
-
-          meshDraw.tangentBuffer = tangentBufferGpu.m_Handle;
-          meshDraw.tangentOffset = tangentAccessor.byteOffset == Framework::glTF::INVALID_INT_VALUE
-                                       ? 0
-                                       : tangentAccessor.byteOffset;
-        }
-
-        if (normalAccessorIndex != -1)
-        {
-          Framework::glTF::Accessor& normalAccessor = scene.accessors[normalAccessorIndex];
-          Framework::glTF::BufferView& normalBufferView =
-              scene.bufferViews[normalAccessor.bufferView];
-          Graphics::RendererUtil::BufferResource& normalBufferGpu =
-              buffers[normalAccessor.bufferView];
-
-          meshDraw.normalBuffer = normalBufferGpu.m_Handle;
-          meshDraw.normalOffset = normalAccessor.byteOffset == Framework::glTF::INVALID_INT_VALUE
-                                      ? 0
-                                      : normalAccessor.byteOffset;
-        }
-
-        if (texcoordAccessorIndex != -1)
-        {
-          Framework::glTF::Accessor& texcoordAccessor = scene.accessors[texcoordAccessorIndex];
-          Framework::glTF::BufferView& texcoordBufferView =
-              scene.bufferViews[texcoordAccessor.bufferView];
-          Graphics::RendererUtil::BufferResource& texcoordBufferGpu =
-              buffers[texcoordAccessor.bufferView];
-
-          meshDraw.texcoordBuffer = texcoordBufferGpu.m_Handle;
-          meshDraw.texcoordOffset =
-              texcoordAccessor.byteOffset == Framework::glTF::INVALID_INT_VALUE
-                  ? 0
-                  : texcoordAccessor.byteOffset;
-        }
-
-        Framework::glTF::Accessor& indicesAccessor = scene.accessors[meshPrimitive.indices];
-        Framework::glTF::BufferView& indicesBufferView =
-            scene.bufferViews[indicesAccessor.bufferView];
-        Graphics::RendererUtil::BufferResource& indicesBufferGpu =
-            buffers[indicesAccessor.bufferView];
-        meshDraw.indexBuffer = indicesBufferGpu.m_Handle;
-        meshDraw.indexOffset = indicesAccessor.byteOffset == Framework::glTF::INVALID_INT_VALUE
-                                   ? 0
-                                   : indicesAccessor.byteOffset;
-
-        Framework::glTF::Material& material = scene.materials[meshPrimitive.material];
-
-        // Descriptor Set
-        Graphics::DescriptorSetCreation dsCreation{};
-        dsCreation.setLayout(demoDsl).buffer(demoCb, 0);
-
-        // NOTE: for now we expect all three textures to be defined. In the next chapter
-        // we'll relax this constraint thanks to bindless rendering!
-
-        if (material.pbrMetallicRoughness != nullptr)
-        {
-          if (material.pbrMetallicRoughness->baseColorFactorCount != 0)
-          {
-            assert(material.pbrMetallicRoughness->baseColorFactorCount == 4);
-
-            meshDraw.materialData.baseColorFactor = {
-                material.pbrMetallicRoughness->baseColorFactor[0],
-                material.pbrMetallicRoughness->baseColorFactor[1],
-                material.pbrMetallicRoughness->baseColorFactor[2],
-                material.pbrMetallicRoughness->baseColorFactor[3],
-            };
-          }
-          else
-          {
-            meshDraw.materialData.baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f};
-          }
-
-          if (material.pbrMetallicRoughness->baseColorTexture != nullptr)
-          {
-            Framework::glTF::Texture& diffuseTexture =
-                scene.textures[material.pbrMetallicRoughness->baseColorTexture->index];
-            Graphics::RendererUtil::TextureResource& diffuseTextureGpu =
-                images[diffuseTexture.source];
-            Graphics::RendererUtil::SamplerResource& diffuseSamplerGpu =
-                samplers[diffuseTexture.sampler];
-
-            dsCreation.textureSampler(diffuseTextureGpu.m_Handle, diffuseSamplerGpu.m_Handle, 1);
-          }
-          else
-          {
-            continue;
-          }
-
-          if (material.pbrMetallicRoughness->metallicRoughnessTexture != nullptr)
-          {
-            Framework::glTF::Texture& roughness_texture =
-                scene.textures[material.pbrMetallicRoughness->metallicRoughnessTexture->index];
-            Graphics::RendererUtil::TextureResource& roughnessTextureGpu =
-                images[roughness_texture.source];
-            Graphics::RendererUtil::SamplerResource& roughnessSamplerGpu =
-                samplers[roughness_texture.sampler];
-
-            dsCreation.textureSampler(
-                roughnessTextureGpu.m_Handle, roughnessSamplerGpu.m_Handle, 2);
-          }
-          else if (material.occlusionTexture != nullptr)
-          {
-            Framework::glTF::Texture& occlusionTexture =
-                scene.textures[material.occlusionTexture->index];
-
-            Graphics::RendererUtil::TextureResource& occlusionTextureGpu =
-                images[occlusionTexture.source];
-            Graphics::RendererUtil::SamplerResource& occlusionSamplerGpu =
-                samplers[occlusionTexture.sampler];
-
-            dsCreation.textureSampler(
-                occlusionTextureGpu.m_Handle, occlusionSamplerGpu.m_Handle, 2);
-          }
-          else
-          {
-            continue;
-          }
-        }
-        else
-        {
-          continue;
-        }
-
-        if (material.normalTexture != nullptr)
-        {
-          Framework::glTF::Texture& normalTexture = scene.textures[material.normalTexture->index];
-          Graphics::RendererUtil::TextureResource& normalTextureGpu = images[normalTexture.source];
-          Graphics::RendererUtil::SamplerResource& normalSamplerGpu =
-              samplers[normalTexture.sampler];
-
-          dsCreation.textureSampler(normalTextureGpu.m_Handle, normalSamplerGpu.m_Handle, 3);
-        }
-        else
-        {
-          continue;
-        }
-
-        cbCreation.reset()
-            .set(
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                Graphics::ResourceUsageType::kDynamic,
-                sizeof(MaterialData))
-            .setName("material");
-        meshDraw.materialBuffer = gpuDevice.createBuffer(cbCreation);
-        dsCreation.buffer(meshDraw.materialBuffer, 4);
-
-        meshDraw.count = indicesAccessor.count;
-
-        meshDraw.descriptorSet = gpuDevice.createDescriptorSet(dsCreation);
-
-        meshDraws.push(meshDraw);
-      }
-    }
+    out_buffer_handle = buffer_gpu.handle;
+    out_buffer_offset =
+        buffer_accessor.byte_offset == glTF::INVALID_INT_VALUE ? 0 : buffer_accessor.byte_offset;
   }
 }
-void _unloadGltfScene(
-    Framework::Array<MeshDraw>& meshDraws,
-    Graphics::GpuDevice& gpuDevice,
-    Framework::StringBuffer& modelPath)
+
+static bool get_mesh_material(
+    Framework::Renderer& renderer,
+    Scene& scene,
+    Framework::glTF::Material& material,
+    MeshDraw& mesh_draw)
 {
-  for (uint32_t meshIndex = 0; meshIndex < meshDraws.m_Size; ++meshIndex)
+  using namespace Framework;
+
+  bool transparent = false;
+  GpuDevice& gpu = *renderer.gpu;
+
+  if (material.pbr_metallic_roughness != nullptr)
   {
-    MeshDraw& meshDraw = meshDraws[meshIndex];
-    gpuDevice.destroyDescriptorSet(meshDraw.descriptorSet);
-    gpuDevice.destroyBuffer(meshDraw.materialBuffer);
+    if (material.pbr_metallic_roughness->baseColorFactor_count != 0)
+    {
+      RASSERT(material.pbr_metallic_roughness->baseColorFactor_count == 4);
+
+      mesh_draw.baseColorFactor = {
+          material.pbr_metallic_roughness->baseColorFactor[0],
+          material.pbr_metallic_roughness->baseColorFactor[1],
+          material.pbr_metallic_roughness->baseColorFactor[2],
+          material.pbr_metallic_roughness->baseColorFactor[3],
+      };
+    }
+    else
+    {
+      mesh_draw.baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f};
+    }
+
+    if (material.pbr_metallic_roughness->roughness_factor != glTF::INVALID_FLOAT_VALUE)
+    {
+      mesh_draw.metallicRoughnessOcclusionFactor.x =
+          material.pbr_metallic_roughness->roughness_factor;
+    }
+    else
+    {
+      mesh_draw.metallicRoughnessOcclusionFactor.x = 1.0f;
+    }
+
+    if (material.alpha_mode.data != nullptr && strcmp(material.alpha_mode.data, "MASK") == 0)
+    {
+      mesh_draw.flags |= DrawFlags_AlphaMask;
+      transparent = true;
+    }
+
+    if (material.alphaCutoff != glTF::INVALID_FLOAT_VALUE)
+    {
+      mesh_draw.alphaCutoff = material.alphaCutoff;
+    }
+
+    if (material.pbr_metallic_roughness->metallic_factor != glTF::INVALID_FLOAT_VALUE)
+    {
+      mesh_draw.metallicRoughnessOcclusionFactor.y =
+          material.pbr_metallic_roughness->metallic_factor;
+    }
+    else
+    {
+      mesh_draw.metallicRoughnessOcclusionFactor.y = 1.0f;
+    }
+
+    if (material.pbr_metallic_roughness->base_color_texture != nullptr)
+    {
+      glTF::Texture& diffuse_texture =
+          scene.gltf_scene.textures[material.pbr_metallic_roughness->base_color_texture->index];
+      TextureResource& diffuse_texture_gpu = scene.images[diffuse_texture.source];
+      SamplerResource& diffuse_sampler_gpu = scene.samplers[diffuse_texture.sampler];
+
+      mesh_draw.diffuseTextureIndex = diffuse_texture_gpu.handle.index;
+
+      gpu.link_texture_sampler(diffuse_texture_gpu.handle, diffuse_sampler_gpu.handle);
+    }
+    else
+    {
+      mesh_draw.diffuseTextureIndex = INVALID_TEXTURE_INDEX;
+    }
+
+    if (material.pbr_metallic_roughness->metallic_roughness_texture != nullptr)
+    {
+      glTF::Texture& roughness_texture =
+          scene.gltf_scene
+              .textures[material.pbr_metallic_roughness->metallic_roughness_texture->index];
+      TextureResource& roughness_texture_gpu = scene.images[roughness_texture.source];
+      SamplerResource& roughness_sampler_gpu = scene.samplers[roughness_texture.sampler];
+
+      mesh_draw.roughnessTextureIndex = roughness_texture_gpu.handle.index;
+
+      gpu.link_texture_sampler(roughness_texture_gpu.handle, roughness_sampler_gpu.handle);
+    }
+    else
+    {
+      mesh_draw.roughnessTextureIndex = INVALID_TEXTURE_INDEX;
+    }
   }
 
-  meshDraws.shutdown();
+  if (material.occlusion_texture != nullptr)
+  {
+    glTF::Texture& occlusion_texture = scene.gltf_scene.textures[material.occlusion_texture->index];
 
-  gpuDevice.destroyBuffer(demoCb);
-  gpuDevice.destroyPipeline(demoPso);
-  gpuDevice.destroyDescriptorSetLayout(demoDsl);
+    TextureResource& occlusion_texture_gpu = scene.images[occlusion_texture.source];
+    SamplerResource& occlusion_sampler_gpu = scene.samplers[occlusion_texture.sampler];
+
+    mesh_draw.occlusionTextureIndex = occlusion_texture_gpu.handle.index;
+
+    if (material.occlusion_texture->strength != glTF::INVALID_FLOAT_VALUE)
+    {
+      mesh_draw.metallicRoughnessOcclusionFactor.z = material.occlusion_texture->strength;
+    }
+    else
+    {
+      mesh_draw.metallicRoughnessOcclusionFactor.z = 1.0f;
+    }
+
+    gpu.link_texture_sampler(occlusion_texture_gpu.handle, occlusion_sampler_gpu.handle);
+  }
+  else
+  {
+    mesh_draw.occlusionTextureIndex = INVALID_TEXTURE_INDEX;
+  }
+
+  if (material.normal_texture != nullptr)
+  {
+    glTF::Texture& normal_texture = scene.gltf_scene.textures[material.normal_texture->index];
+    TextureResource& normal_texture_gpu = scene.images[normal_texture.source];
+    SamplerResource& normal_sampler_gpu = scene.samplers[normal_texture.sampler];
+
+    gpu.link_texture_sampler(normal_texture_gpu.handle, normal_sampler_gpu.handle);
+
+    mesh_draw.normalTextureIndex = normal_texture_gpu.handle.index;
+  }
+  else
+  {
+    mesh_draw.normalTextureIndex = INVALID_TEXTURE_INDEX;
+  }
+
+  // Create material buffer
+  BufferCreation buffer_creation;
+  buffer_creation.reset()
+      .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(MeshData))
+      .set_name("Mesh Data");
+  mesh_draw.material_buffer = gpu.create_buffer(buffer_creation);
+
+  return transparent;
 }
 //---------------------------------------------------------------------------//
 int main(int argc, char** argv)
@@ -576,7 +595,7 @@ int main(int argc, char** argv)
   float modelScale = 0.008f;
   bool reloadModel = false;
 
-#pragma region Window loop
+#  pragma region Window loop
   while (!window.m_RequestedExit)
   {
     if (reloadModel)
@@ -784,9 +803,9 @@ int main(int argc, char** argv)
       gpuDevice.present();
     }
   }
-#pragma endregion End Window loop
+#  pragma endregion End Window loop
 
-#pragma region Deinit, shutdown and cleanup
+#  pragma region Deinit, shutdown and cleanup
 
   _unloadGltfScene(meshDraws, gpuDevice, modelPath);
 
@@ -803,7 +822,9 @@ int main(int argc, char** argv)
   window.shutdown();
 
   Framework::MemoryService::instance()->shutdown();
-#pragma endregion End Deinit, shutdown and cleanup
+#  pragma endregion End Deinit, shutdown and cleanup
 
   return (0);
 }
+#endif
+int main() { return (0); }

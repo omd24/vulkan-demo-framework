@@ -6,8 +6,16 @@
 #include <vulkan/vulkan.h>
 #include "Externals/vk_mem_alloc.h"
 
+#define SHADER_FOLDER "\\Shaders\\"
+
 namespace Graphics
 {
+// Forward delcare
+namespace Spirv
+{
+struct ParseResult;
+}
+
 static const uint32_t kInvalidIndex = 0xffffffff;
 typedef uint32_t ResourceHandle;
 
@@ -291,6 +299,7 @@ struct DescriptorSetLayoutCreation
   // Building helpers
   DescriptorSetLayoutCreation& reset();
   DescriptorSetLayoutCreation& addBinding(const Binding& binding);
+  DescriptorSetLayoutCreation& addBindingAtIndex(const Binding& binding, int index);
   DescriptorSetLayoutCreation& setName(const char* name);
   DescriptorSetLayoutCreation& setSetIndex(uint32_t index);
 
@@ -670,6 +679,8 @@ struct ShaderState
 
   uint32_t activeShaders = 0;
   bool graphicsPipeline = false;
+
+  Spirv::ParseResult* parseResult;
 }; // struct ShaderStateVulkan
 
 struct DescriptorBinding

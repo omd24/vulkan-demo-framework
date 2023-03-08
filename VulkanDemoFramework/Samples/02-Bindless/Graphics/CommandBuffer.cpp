@@ -8,10 +8,46 @@ void CommandBuffer::init(QueueType::Enum p_Type, uint32_t p_BufferSize, uint32_t
   this->m_Type = p_Type;
   this->m_BufferSize = p_BufferSize;
 
+  static const u32 k_global_pool_elements = 128;
+  VkDescriptorPoolSize pool_sizes[] = {
+      {VK_DESCRIPTOR_TYPE_SAMPLER, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, k_global_pool_elements},
+      {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, k_global_pool_elements}};
+  VkDescriptorPoolCreateInfo pool_info = {};
+  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  pool_info.maxSets = k_global_pool_elements * ArraySize(pool_sizes);
+  pool_info.poolSizeCount = (u32)ArraySize(pool_sizes);
+  pool_info.pPoolSizes = pool_sizes;
+  VkResult result = vkCreateDescriptorPool(
+      gpu_device->vulkan_device,
+      &pool_info,
+      gpu_device->vulkan_allocation_callbacks,
+      &vk_descriptor_pool);
+  RASSERT(result == VK_SUCCESS);
+
+  descriptor_sets.init(gpu_device->allocator, 256, sizeof(DesciptorSet));
+
   reset();
 }
 //---------------------------------------------------------------------------//
-void CommandBuffer::shutdown() { m_IsRecording = false; }
+void CommandBuffer::shutdown()
+{
+  m_IsRecording = false;
+  reset();
+
+  m_descriptorSet.shutdown
+
+  vkDestroyDescriptorPool()
+}
 //---------------------------------------------------------------------------//
 void CommandBuffer::reset()
 {
@@ -19,6 +55,21 @@ void CommandBuffer::reset()
   m_CurrentRenderPass = nullptr;
   m_CurrentPipeline = nullptr;
   m_CurrentCommand = 0;
+
+  vkResetDescriptorPool(gpu_device->vulkan_device, vk_descriptor_pool, 0);
+
+  u32 resource_count = descriptor_sets.free_indices_head;
+  for (u32 i = 0; i < resource_count; ++i)
+  {
+    DesciptorSet* v_descriptor_set = (DesciptorSet*)descriptor_sets.access_resource(i);
+
+    if (v_descriptor_set)
+    {
+      // Contains the allocation for all the resources, binding and samplers arrays.
+      rfree(v_descriptor_set->resources, gpu_device->allocator);
+    }
+    descriptor_sets.release_resource(i);
+  }
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::bindPass(RenderPassHandle p_Passhandle)
@@ -142,6 +193,19 @@ void CommandBuffer::bindDescriptorSet(
       m_VulkanDescriptorSets,
       p_NumOffsets,
       offsetsCache);
+
+  if (gpu_device->bindless_supported)
+  {
+    vkCmdBindDescriptorSets(
+        vk_command_buffer,
+        current_pipeline->vk_bind_point,
+        current_pipeline->vk_pipeline_layout,
+        1,
+        1,
+        &gpu_device->vulkan_bindless_descriptor_set,
+        0,
+        nullptr);
+  }
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::setViewport(const Viewport* p_Viewport)

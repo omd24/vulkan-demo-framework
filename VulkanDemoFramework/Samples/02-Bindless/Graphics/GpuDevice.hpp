@@ -47,7 +47,8 @@ struct GpuDevice : public Framework::Service
   // Creation/Destruction of resources
   BufferHandle createBuffer(const BufferCreation& p_Creation);
   TextureHandle createTexture(const TextureCreation& p_Creation);
-  PipelineHandle createPipeline(const PipelineCreation& p_Creation);
+  PipelineHandle
+  createPipeline(const PipelineCreation& p_Creation, const char* p_CachePath = nullptr);
   SamplerHandle createSampler(const SamplerCreation& p_Creation);
   DescriptorSetLayoutHandle
   createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation);
@@ -199,6 +200,12 @@ struct GpuDevice : public Framework::Service
   Framework::Array<ResourceUpdate> m_TextureToUpdateBindless;
 
   void linkTextureSampler(TextureHandle p_Texture, SamplerHandle p_Sampler);
+  DescriptorSetLayoutHandle getDescriptorSetLayout(PipelineHandle handle, int layoutIndex)
+  {
+    Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(handle.index);
+    assert(pipeline != nullptr);
+    return pipeline->descriptorSetLayoutHandle[layoutIndex];
+  }
 };
 //---------------------------------------------------------------------------//
 } // namespace Graphics

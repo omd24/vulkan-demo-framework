@@ -44,6 +44,56 @@ struct SamplerResource : public Framework::Resource
   static uint64_t ms_TypeHash;
 };
 //---------------------------------------------------------------------------//
+// Material and Shaders
+//---------------------------------------------------------------------------//
+struct ProgramPass
+{
+
+  PipelineHandle pipeline;
+  DescriptorSetLayoutHandle descriptorSetLayout;
+};
+//---------------------------------------------------------------------------//
+struct ProgramCreation
+{
+  PipelineCreation pipelineCreation;
+};
+//---------------------------------------------------------------------------//
+struct Program : public Framework::Resource
+{
+  uint32_t getNumPasses() const;
+
+  Framework::Array<ProgramPass> passes;
+
+  uint32_t poolIndex;
+
+  static constexpr const char* kType = "program_type";
+  static uint64_t kTypeHash;
+};
+//---------------------------------------------------------------------------//
+struct MaterialCreation
+{
+  MaterialCreation& reset();
+  MaterialCreation& setProgram(Program* program);
+  MaterialCreation& setName(const char* name);
+  MaterialCreation& setRenderIndex(uint32_t renderIndex);
+
+  Program* program = nullptr;
+  const char* name = nullptr;
+  uint32_t renderIndex = ~0u;
+};
+//---------------------------------------------------------------------------//
+struct Material : public Framework::Resource
+{
+  Program* program;
+
+  uint32_t renderIndex;
+
+  uint32_t poolIndex;
+
+  static constexpr const char* kType = "material_type";
+  static uint64_t kTypeHash;
+};
+//---------------------------------------------------------------------------//
 // Forward declare
 struct Renderer;
 //---------------------------------------------------------------------------//
@@ -54,12 +104,16 @@ struct ResourceCache
     m_Textures.init(p_Allocator, 16);
     m_Buffers.init(p_Allocator, 16);
     m_Samplers.init(p_Allocator, 16);
+    m_Programs.init(p_Allocator, 16);
+    m_Materials.init(p_Allocator, 16);
   }
   void shutdown(Renderer* p_Renderer);
 
   Framework::FlatHashMap<uint64_t, TextureResource*> m_Textures;
   Framework::FlatHashMap<uint64_t, BufferResource*> m_Buffers;
   Framework::FlatHashMap<uint64_t, SamplerResource*> m_Samplers;
+  Framework::FlatHashMap<uint64_t, Program*> m_Programs;
+  Framework::FlatHashMap<uint64_t, Material*> m_Materials;
 };
 //---------------------------------------------------------------------------//
 struct RendererCreation
@@ -95,11 +149,21 @@ struct Renderer : public Framework::Service
   TextureResource* createTexture(const TextureCreation& p_Creation);
   TextureResource* createTexture(const char* p_Name, const char* p_Filename);
 
+  Program* createProgram(const ProgramCreation& creation);
+  Material* createMaterial(const MaterialCreation& creation);
+  Material* createMaterial(Program* program, const char* name);
+
   SamplerResource* createSampler(const SamplerCreation& p_Creation);
+
+  PipelineHandle getPipeline(Material* material);
+  DescriptorSetHandle createDescriptorSet(
+      CommandBuffer* p_CommandBuffer, Material* p_Material, DescriptorSetCreation& p_DsCreation);
 
   void destroyBuffer(BufferResource* p_Buffer);
   void destroyTexture(TextureResource* p_Texture);
   void destroySampler(SamplerResource* p_Sampler);
+  void destroyProgram(Program* program);
+  void destroyMaterial(Material* material);
 
   void* mapBuffer(BufferResource* p_Buffer, uint32_t p_Offset = 0, uint32_t p_Size = 0);
   void unmapBuffer(BufferResource* p_Buffer);
@@ -109,14 +173,16 @@ struct Renderer : public Framework::Service
     // TODO: use queue type
     return m_GpuDevice->getCommandBuffer(p_Begin);
   }
-  void queueCommandBuffer(Graphics::CommandBuffer* p_Commands)
+  void queueCommandBuffer(Graphics::CommandBuffer* p_CommandBuffer)
   {
-    m_GpuDevice->queueCommandBuffer(p_Commands);
+    m_GpuDevice->queueCommandBuffer(p_CommandBuffer);
   }
 
   Framework::ResourcePoolTyped<TextureResource> m_Textures;
   Framework::ResourcePoolTyped<BufferResource> m_Buffers;
   Framework::ResourcePoolTyped<SamplerResource> m_Samplers;
+  Framework::ResourcePoolTyped<Program> programs;
+  Framework::ResourcePoolTyped<Material> materials;
 
   ResourceCache m_ResourceCache;
 

@@ -11,11 +11,18 @@ struct CommandBuffer
   void shutdown();
   void reset();
 
+  DescriptorSetHandle createDescriptorSet(const DescriptorSetCreation& p_Creation);
+
   void bindPass(RenderPassHandle p_Passhandle);
   void bindPipeline(PipelineHandle p_Handle);
   void bindVertexBuffer(BufferHandle p_Handle, uint32_t p_Binding, uint32_t p_Offset);
   void bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset);
   void bindDescriptorSet(
+      DescriptorSetHandle* p_Handles,
+      uint32_t p_NumLists,
+      uint32_t* p_Offsets,
+      uint32_t p_NumOffsets);
+  void bindLocalDescriptorSet(
       DescriptorSetHandle* p_Handles,
       uint32_t p_NumLists,
       uint32_t* p_Offsets,

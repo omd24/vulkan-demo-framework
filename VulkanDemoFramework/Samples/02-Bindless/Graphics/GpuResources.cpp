@@ -215,7 +215,13 @@ DescriptorSetLayoutCreation& DescriptorSetLayoutCreation::addBinding(const Bindi
   bindings[numBindings++] = binding;
   return *this;
 }
-
+DescriptorSetLayoutCreation&
+DescriptorSetLayoutCreation::addBindingAtIndex(const Binding& binding, int index)
+{
+  bindings[index] = binding;
+  numBindings = (index + 1) > numBindings ? (index + 1) : numBindings;
+  return *this;
+}
 DescriptorSetLayoutCreation& DescriptorSetLayoutCreation::setName(const char* name_)
 {
   name = name_;

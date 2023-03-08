@@ -1,5 +1,6 @@
 #include "GpuDevice.hpp"
 #include "Graphics/CommandBuffer.hpp"
+#include "Graphics/SpirvParser.hpp"
 
 #include "Externals/SDL2-2.0.18/include/SDL.h"        // SDL_Window
 #include "Externals/SDL2-2.0.18/include/SDL_vulkan.h" // SDL_Vulkan_CreateSurface
@@ -1873,12 +1874,53 @@ TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation)
   return handle;
 }
 //---------------------------------------------------------------------------//
-PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
+PipelineHandle
+GpuDevice::createPipeline(const PipelineCreation& p_Creation, const char* p_CachePath)
 {
   PipelineHandle handle = {m_Pipelines.obtainResource()};
   if (handle.index == kInvalidIndex)
   {
     return handle;
+  }
+
+  // Set up pipeline cache
+  VkPipelineCache pipelineCache = VK_NULL_HANDLE;
+  bool cacheExists = Framework::fileExists(p_CachePath);
+  {
+    VkPipelineCacheCreateInfo pipelineCacheCi{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+
+    if (p_CachePath != nullptr && cacheExists)
+    {
+      Framework::FileReadResult readResult = Framework::fileReadBinary(p_CachePath, m_Allocator);
+
+      VkPipelineCacheHeaderVersionOne* cacheHeader =
+          (VkPipelineCacheHeaderVersionOne*)readResult.data;
+
+      if (cacheHeader->deviceID == m_VulkanPhysicalDeviceProps.deviceID &&
+          cacheHeader->vendorID == m_VulkanPhysicalDeviceProps.vendorID &&
+          memcmp(
+              cacheHeader->pipelineCacheUUID,
+              m_VulkanPhysicalDeviceProps.pipelineCacheUUID,
+              VK_UUID_SIZE) == 0)
+      {
+        pipelineCacheCi.initialDataSize = readResult.size;
+        pipelineCacheCi.pInitialData = readResult.data;
+      }
+      else
+      {
+        cacheExists = false;
+      }
+
+      CHECKRES(vkCreatePipelineCache(
+          m_VulkanDevice, &pipelineCacheCi, m_VulkanAllocCallbacks, &pipelineCache));
+
+      m_Allocator->deallocate(readResult.data);
+    }
+    else
+    {
+      CHECKRES(vkCreatePipelineCache(
+          m_VulkanDevice, &pipelineCacheCi, m_VulkanAllocCallbacks, &pipelineCache));
+    }
   }
 
   ShaderStateHandle shaderState = createShaderState(p_Creation.shaders);
@@ -1899,12 +1941,15 @@ PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
 
   VkDescriptorSetLayout vkLayouts[kMaxDescriptorSetLayouts];
 
+  uint32_t numActiveLayouts = shaderStateData->parseResult->setCount;
+
   // Create VkPipelineLayout
-  for (uint32_t l = 0; l < p_Creation.numActiveLayouts; ++l)
+  for (uint32_t l = 0; l < numActiveLayouts; ++l)
   {
+    pipeline->descriptorSetLayoutHandle[l] =
+        createDescriptorSetLayout(shaderStateData->parseResult->sets[l]);
     pipeline->descriptorSetLayout[l] = (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(
-        p_Creation.descriptorSetLayouts[l].index);
-    pipeline->descriptorSetLayoutHandle[l] = p_Creation.descriptorSetLayouts[l];
+        pipeline->descriptorSetLayoutHandle[l].index);
 
     vkLayouts[l] = pipeline->descriptorSetLayout[l]->vkDescriptorSetLayout;
   }
@@ -1913,20 +1958,20 @@ PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
   uint32_t bindlessAdded = 0;
   if (m_BindlessSupported)
   {
-    vkLayouts[p_Creation.numActiveLayouts] = m_VulkanBindlessDescriptorSetLayout;
+    vkLayouts[numActiveLayouts] = m_VulkanBindlessDescriptorSetLayout;
     bindlessAdded = 1;
   }
 
   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
   pipelineLayoutInfo.pSetLayouts = vkLayouts;
-  pipelineLayoutInfo.setLayoutCount = p_Creation.numActiveLayouts;
+  pipelineLayoutInfo.setLayoutCount = numActiveLayouts + bindlessAdded;
 
   VkPipelineLayout pipelineLayout{};
   CHECKRES(vkCreatePipelineLayout(
       m_VulkanDevice, &pipelineLayoutInfo, m_VulkanAllocCallbacks, &pipelineLayout));
   // Cache pipeline layout
   pipeline->vkPipelineLayout = pipelineLayout;
-  pipeline->numActiveLayouts = p_Creation.numActiveLayouts + bindlessAdded;
+  pipeline->numActiveLayouts = numActiveLayouts;
 
   // Create full pipeline
   if (shaderStateData->graphicsPipeline)
@@ -2135,7 +2180,7 @@ PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
 
     vkCreateGraphicsPipelines(
         m_VulkanDevice,
-        VK_NULL_HANDLE,
+        pipelineCache,
         1,
         &pipelineCi,
         m_VulkanAllocCallbacks,
@@ -2152,7 +2197,7 @@ PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
 
     vkCreateComputePipelines(
         m_VulkanDevice,
-        VK_NULL_HANDLE,
+        pipelineCache,
         1,
         &pipelineCi,
         m_VulkanAllocCallbacks,
@@ -2160,6 +2205,21 @@ PipelineHandle GpuDevice::createPipeline(const PipelineCreation& p_Creation)
 
     pipeline->vkBindPoint = VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_COMPUTE;
   }
+
+  if (p_CachePath != nullptr && !cacheExists)
+  {
+    size_t cacheDataSize = 0;
+    CHECKRES(vkGetPipelineCacheData(m_VulkanDevice, pipelineCache, &cacheDataSize, nullptr));
+
+    void* cacheData = m_Allocator->allocate(cacheDataSize, 64);
+    CHECKRES(vkGetPipelineCacheData(m_VulkanDevice, pipelineCache, &cacheDataSize, cacheData));
+
+    Framework::fileWriteBinary(p_CachePath, cacheData, cacheDataSize);
+
+    m_Allocator->deallocate(cacheData);
+  }
+
+  vkDestroyPipelineCache(m_VulkanDevice, pipelineCache, m_VulkanAllocCallbacks);
 
   return handle;
 }
@@ -2430,6 +2490,14 @@ ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Crea
 
   size_t currentTemporaryMarker = m_TemporaryAllocator->getMarker();
 
+  Framework::StringBuffer nameBuffer;
+  nameBuffer.init(4096, m_TemporaryAllocator);
+
+  // Parse result needs to be always in memory as its used to free descriptor sets.
+  shaderState->parseResult =
+      (Spirv::ParseResult*)m_Allocator->allocate(sizeof(Spirv::ParseResult), 64);
+  memset(shaderState->parseResult, 0, sizeof(Spirv::ParseResult));
+
   for (compiledShaders = 0; compiledShaders < p_Creation.stagesCount; ++compiledShaders)
   {
     const ShaderStage& stage = p_Creation.stages[compiledShaders];
@@ -2470,12 +2538,19 @@ ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Crea
       break;
     }
 
+    Spirv::parseBinary(shaderCi.pCode, shaderCi.codeSize, nameBuffer, shaderState->parseResult);
+
+    //
+    // Note - temp allocator freed at the end.
+    //
+
     setResourceName(
         VK_OBJECT_TYPE_SHADER_MODULE,
         (uint64_t)shaderState->shaderStageInfo[compiledShaders].module,
         p_Creation.name);
   }
-
+  // Not needed anymore - temp allocator freed at the end.
+  // nameBuffer.shutdown();
   m_TemporaryAllocator->freeMarker(currentTemporaryMarker);
 
   bool creationFailed = compiledShaders != p_Creation.stagesCount;
@@ -2491,11 +2566,18 @@ ShaderStateHandle GpuDevice::createShaderState(const ShaderStateCreation& p_Crea
     handle.index = kInvalidIndex;
 
     // Dump shader code
-    OutputDebugStringA("Error in creation of shader. Dumping all shader informations.\n");
+    {
+      char msg[256]{};
+      sprintf(
+          msg,
+          "Error in creation of shader %s. Dumping all shader informations.\n",
+          p_Creation.name);
+      OutputDebugStringA(msg);
+    }
     for (compiledShaders = 0; compiledShaders < p_Creation.stagesCount; ++compiledShaders)
     {
       const ShaderStage& stage = p_Creation.stages[compiledShaders];
-      char msg[512]{};
+      char msg[256]{};
       sprintf(msg, "%u:\n%s\n", stage.type, stage.code);
       OutputDebugStringA(msg);
     }
@@ -2543,6 +2625,14 @@ void GpuDevice::destroyPipeline(PipelineHandle p_Pipeline)
     // Shader state creation is handled internally when creating a pipeline, thus add this to track
     // correctly.
     Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(p_Pipeline.index);
+
+    ShaderState* shaderStateData =
+        (ShaderState*)m_Shaders.accessResource(pipeline->shaderState.index);
+    for (uint32_t l = 0; l < shaderStateData->parseResult->setCount; ++l)
+    {
+      destroyDescriptorSetLayout(pipeline->descriptorSetLayoutHandle[l]);
+    }
+
     destroyShaderState(pipeline->shaderState);
   }
   else
@@ -2611,6 +2701,9 @@ void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader)
   {
     m_ResourceDeletionQueue.push(
         {ResourceDeletionType::kShaderState, p_Shader.index, m_CurrentFrameIndex});
+
+    ShaderState* state = (ShaderState*)m_Shaders.accessResource(p_Shader.index);
+    m_Allocator->deallocate(state->parseResult);
   }
   else
   {
