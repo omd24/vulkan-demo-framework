@@ -62,12 +62,12 @@ struct Program : public Framework::Resource
 {
   uint32_t getNumPasses() const;
 
-  Framework::Array<ProgramPass> passes;
+  Framework::Array<ProgramPass> m_Passes;
 
-  uint32_t poolIndex;
+  uint32_t m_PoolIndex;
 
-  static constexpr const char* kType = "program_type";
-  static uint64_t kTypeHash;
+  static constexpr const char* ms_TypeName = "program_type";
+  static uint64_t ms_TypeHash;
 };
 //---------------------------------------------------------------------------//
 struct MaterialCreation
@@ -84,14 +84,14 @@ struct MaterialCreation
 //---------------------------------------------------------------------------//
 struct Material : public Framework::Resource
 {
-  Program* program;
+  Program* m_Program;
 
-  uint32_t renderIndex;
+  uint32_t m_RenderIndex;
 
-  uint32_t poolIndex;
+  uint32_t m_PoolIndex;
 
-  static constexpr const char* kType = "material_type";
-  static uint64_t kTypeHash;
+  static constexpr const char* ms_TypeName = "material_type";
+  static uint64_t ms_TypeHash;
 };
 //---------------------------------------------------------------------------//
 // Forward declare
@@ -181,8 +181,8 @@ struct Renderer : public Framework::Service
   Framework::ResourcePoolTyped<TextureResource> m_Textures;
   Framework::ResourcePoolTyped<BufferResource> m_Buffers;
   Framework::ResourcePoolTyped<SamplerResource> m_Samplers;
-  Framework::ResourcePoolTyped<Program> programs;
-  Framework::ResourcePoolTyped<Material> materials;
+  Framework::ResourcePoolTyped<Program> m_Programs;
+  Framework::ResourcePoolTyped<Material> m_Materials;
 
   ResourceCache m_ResourceCache;
 

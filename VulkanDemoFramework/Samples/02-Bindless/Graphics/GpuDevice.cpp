@@ -710,7 +710,7 @@ static void _vulkanCreateTexture(
   }
 }
 //---------------------------------------------------------------------------//
-static void _vulkanFillWriteDescriptorSets(
+void GpuDevice::fillWriteDescriptorSets(
     GpuDevice& p_GpuDevice,
     const DesciptorSetLayout* p_DescriptorSetLayout,
     VkDescriptorSet p_VkDescriptorSet,
@@ -1520,7 +1520,7 @@ void GpuDevice::newFrame()
       vkAllocateDescriptorSets(m_VulkanDevice, &allocInfo, &descriptorSet->vkDescriptorSet);
 
       uint32_t numResources = descriptorSetLayout->numBindings;
-      _vulkanFillWriteDescriptorSets(
+      fillWriteDescriptorSets(
           *this,
           descriptorSetLayout,
           descriptorSet->vkDescriptorSet,
@@ -2368,7 +2368,7 @@ DescriptorSetHandle GpuDevice::createDescriptorSet(const DescriptorSetCreation& 
   Sampler* defaultSampler = (Sampler*)m_Samplers.accessResource(m_DefaultSampler.index);
 
   uint32_t numResources = p_Creation.numResources;
-  _vulkanFillWriteDescriptorSets(
+  fillWriteDescriptorSets(
       *this,
       descriptorSetLayout,
       descriptorSet->vkDescriptorSet,

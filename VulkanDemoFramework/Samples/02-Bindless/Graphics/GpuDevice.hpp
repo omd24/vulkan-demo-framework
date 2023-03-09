@@ -101,6 +101,19 @@ struct GpuDevice : public Framework::Service
     m_Resized = true;
   }
 
+  static void fillWriteDescriptorSets(
+      GpuDevice& p_GpuDevice,
+      const DesciptorSetLayout* p_DescriptorSetLayout,
+      VkDescriptorSet p_VkDescriptorSet,
+      VkWriteDescriptorSet* p_DescriptorWrite,
+      VkDescriptorBufferInfo* p_BufferInfo,
+      VkDescriptorImageInfo* p_ImageInfo,
+      VkSampler p_VkDefaultSampler,
+      uint32_t& p_NumResources,
+      const ResourceHandle* p_Resources,
+      const SamplerHandle* p_Samplers,
+      const uint16_t* p_Bindings);
+
   // Common members
   Framework::StringBuffer m_StringBuffer;
   Framework::Allocator* m_Allocator;

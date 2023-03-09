@@ -65,6 +65,9 @@ struct CommandBuffer
   ResourceHandle m_ResourceHandle;
   QueueType::Enum m_Type = QueueType::kGraphics;
   uint32_t m_BufferSize = 0;
+
+  VkDescriptorPool m_VulkanDescriptorPool;
+  Framework::ResourcePool m_DescriptorSets;
 };
 //---------------------------------------------------------------------------//
 } // namespace Graphics

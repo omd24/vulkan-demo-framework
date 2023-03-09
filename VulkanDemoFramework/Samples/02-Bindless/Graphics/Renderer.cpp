@@ -400,21 +400,21 @@ SamplerResource* Renderer::createSampler(const SamplerCreation& p_Creation)
 //---------------------------------------------------------------------------//
 Program* Renderer::createProgram(const ProgramCreation& creation)
 {
-  Program* program = programs.obtain();
+  Program* program = m_Programs.obtain();
   if (program)
   {
-    const uint32_t num_passes = 1;
+    const uint32_t numPasses = 1;
     // First create arrays
-    program->passes.init(m_GpuDevice->m_Allocator, num_passes, num_passes);
+    program->m_Passes.init(m_GpuDevice->m_Allocator, numPasses, numPasses);
 
     program->m_Name = creation.pipelineCreation.name;
 
     Framework::StringBuffer pipelineCachePath;
     pipelineCachePath.init(1024, m_GpuDevice->m_Allocator);
 
-    for (uint32_t i = 0; i < num_passes; ++i)
+    for (uint32_t i = 0; i < numPasses; ++i)
     {
-      ProgramPass& pass = program->passes[i];
+      ProgramPass& pass = program->m_Passes[i];
 
       if (creation.pipelineCreation.name != nullptr)
       {
@@ -448,12 +448,12 @@ Program* Renderer::createProgram(const ProgramCreation& creation)
 //---------------------------------------------------------------------------//
 Material* Renderer::createMaterial(const MaterialCreation& creation)
 {
-  Material* material = materials.obtain();
+  Material* material = m_Materials.obtain();
   if (material)
   {
-    material->program = creation.program;
+    material->m_Program = creation.program;
     material->m_Name = creation.name;
-    material->renderIndex = creation.renderIndex;
+    material->m_RenderIndex = creation.renderIndex;
 
     if (creation.name != nullptr)
     {
@@ -477,7 +477,7 @@ PipelineHandle Renderer::getPipeline(Material* material)
 {
   assert(material != nullptr);
 
-  return material->program->passes[0].pipeline;
+  return material->m_Program->m_Passes[0].pipeline;
 }
 //---------------------------------------------------------------------------//
 DescriptorSetHandle Renderer::createDescriptorSet(
@@ -485,9 +485,9 @@ DescriptorSetHandle Renderer::createDescriptorSet(
 {
   assert(material != nullptr);
 
-  DescriptorSetLayoutHandle set_layout = material->program->passes[0].descriptorSetLayout;
+  DescriptorSetLayoutHandle setLayout = material->m_Program->m_Passes[0].descriptorSetLayout;
 
-  dsCreation.setLayout(set_layout);
+  dsCreation.setLayout(setLayout);
 
   return commandBuffer->createDescriptorSet(dsCreation);
 }
@@ -544,6 +544,44 @@ void Renderer::destroySampler(SamplerResource* p_Sampler)
   m_ResourceCache.m_Samplers.remove(Framework::hashCalculate(p_Sampler->m_Desc.name));
   m_GpuDevice->destroySampler(p_Sampler->m_Handle);
   m_Samplers.release(p_Sampler);
+}
+//---------------------------------------------------------------------------//
+void Renderer::destroyProgram(Program* p_Program)
+{
+  if (!p_Program)
+  {
+    return;
+  }
+
+  p_Program->removeReference();
+  if (p_Program->m_References)
+  {
+    return;
+  }
+
+  m_ResourceCache.m_Programs.remove(Framework::hashCalculate(p_Program->m_Name));
+
+  m_GpuDevice->destroyPipeline(p_Program->m_Passes[0].pipeline);
+  p_Program->m_Passes.shutdown();
+
+  m_Programs.release(p_Program);
+}
+//---------------------------------------------------------------------------//
+void Renderer::destroyMaterial(Material* p_Material)
+{
+  if (!p_Material)
+  {
+    return;
+  }
+
+  p_Material->removeReference();
+  if (p_Material->m_References)
+  {
+    return;
+  }
+
+  m_ResourceCache.m_Materials.remove(Framework::hashCalculate(p_Material->m_Name));
+  m_Materials.release(p_Material);
 }
 //---------------------------------------------------------------------------//
 void* Renderer::mapBuffer(BufferResource* p_Buffer, uint32_t p_Offset, uint32_t p_Size)
