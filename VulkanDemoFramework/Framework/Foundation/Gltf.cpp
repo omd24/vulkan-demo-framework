@@ -449,7 +449,7 @@ static void load_material(json& p_JsonData, glTF::Material& material, Allocator*
       material.emissiveFactorCount,
       &material.emissiveFactor,
       p_Allocator);
-  tryLoadFloat(p_JsonData, "alphaCutoff", material.alpha_cutoff);
+  tryLoadFloat(p_JsonData, "alphaCutoff", material.alphaCutoff);
   tryLoadString(p_JsonData, "alphaMode", material.alphaMode, p_Allocator);
   tryLoadBool(p_JsonData, "doubleSided", material.doubleSided);
 

@@ -261,7 +261,7 @@ void parseBinary(
     }
 
     case (SpvOpTypeImage): {
-      // NOTE(marco): not sure we need this information just yet
+      // NOTE: not sure we need this information just yet
       assert(wordCount >= 9);
 
       break;
@@ -360,7 +360,7 @@ void parseBinary(
       Id& id = ids[idIndex];
       id.op = op;
       id.typeIndex = p_Data[wordIndex + 2];
-      id.value = p_Data[wordIndex + 3]; // NOTE(marco): we assume all constants to have maximum
+      id.value = p_Data[wordIndex + 3]; // NOTE: we assume all constants to have maximum
                                         // 32bit width
 
       break;
@@ -397,11 +397,11 @@ void parseBinary(
         if (id.set == 1 &&
             (id.binding == kBindlessTextureBinding || id.binding == (kBindlessTextureBinding + 1)))
         {
-          // NOTE(marco): these are managed by the GPU device
+          // NOTE: these are managed by the GPU device
           continue;
         }
 
-        // NOTE(marco): get actual type
+        // NOTE: get actual type
         Id& uniform_type = ids[ids[id.typeIndex].typeIndex];
 
         DescriptorSetLayoutCreation& setLayout = p_ParseResult->sets[id.set];

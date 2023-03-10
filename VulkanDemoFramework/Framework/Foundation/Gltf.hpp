@@ -256,7 +256,7 @@ struct MaterialOcclusionTextureInfo
 
 struct Material
 {
-  float alpha_cutoff;
+  float alphaCutoff;
   // OPAQUE The alpha value is ignored, and the rendered output is fully opaque.
   // MASK The rendered output is either fully opaque or fully transparent depending on the alpha
   // value and the specified `alphaCutoff` value; the exact appearance of the edges **MAY** be
