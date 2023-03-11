@@ -243,6 +243,8 @@ void Renderer::init(const RendererCreation& p_Creation)
   m_Textures.init(p_Creation.alloc, 512);
   m_Buffers.init(p_Creation.alloc, 512);
   m_Samplers.init(p_Creation.alloc, 128);
+  m_Programs.init(p_Creation.alloc, 128);
+  m_Materials.init(p_Creation.alloc, 128);
 
   m_ResourceCache.init(p_Creation.alloc);
 
@@ -398,7 +400,7 @@ SamplerResource* Renderer::createSampler(const SamplerCreation& p_Creation)
   return nullptr;
 }
 //---------------------------------------------------------------------------//
-Program* Renderer::createProgram(const ProgramCreation& creation)
+Program* Renderer::createProgram(const ProgramCreation& creation, const char* p_Cwd)
 {
   Program* program = m_Programs.obtain();
   if (program)
@@ -419,7 +421,7 @@ Program* Renderer::createProgram(const ProgramCreation& creation)
       if (creation.pipelineCreation.name != nullptr)
       {
         char* cachePath = pipelineCachePath.appendUseFormatted(
-            "%s%s.cache", SHADER_FOLDER, creation.pipelineCreation.name);
+            "%s%s%s.cache", p_Cwd, SHADER_FOLDER, creation.pipelineCreation.name);
 
         pass.pipeline = m_GpuDevice->createPipeline(creation.pipelineCreation, cachePath);
       }

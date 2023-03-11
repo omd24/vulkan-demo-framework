@@ -45,16 +45,17 @@ struct CommandBufferRing
     for (uint32_t i = 0; i < ms_MaxBuffers; i++)
     {
       VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
-      const uint32_t poolIndex = poolFromIndex(i);
-      cmd.commandPool = m_VulkanCmdPools[poolIndex];
+      const uint32_t pool_index = poolFromIndex(i);
+      cmd.commandPool = m_VulkanCmdPools[pool_index];
       cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
       cmd.commandBufferCount = 1;
       CHECKRES(vkAllocateCommandBuffers(
           m_Gpu->m_VulkanDevice, &cmd, &m_CmdBuffers[i].m_VulkanCmdBuffer));
 
+      // TODO(marco): move to have a ring per queue per thread
       m_CmdBuffers[i].m_GpuDevice = m_Gpu;
+      m_CmdBuffers[i].init(QueueType::Enum::kGraphics, 0, 0);
       m_CmdBuffers[i].m_Handle = i;
-      m_CmdBuffers[i].reset();
     }
   }
   void shutdown()

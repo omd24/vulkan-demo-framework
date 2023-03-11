@@ -610,12 +610,12 @@ int main(int argc, char** argv)
     StringBuffer pathBuffer;
     pathBuffer.init(1024, allocator);
 
-    const char* vertFile = "main.vert";
-    char* vertPath = pathBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, vertFile);
+    const char* vertFile = "main.vert.glsl";
+    char* vertPath = pathBuffer.appendUseFormatted("%s%s%s", cwd.path, SHADER_FOLDER, vertFile);
     FileReadResult vertCode = fileReadText(vertPath, allocator);
 
-    const char* fragFile = "main.frag";
-    char* fragPath = pathBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, fragFile);
+    const char* fragFile = "main.frag.glsl";
+    char* fragPath = pathBuffer.appendUseFormatted("%s%s%s", cwd.path, SHADER_FOLDER, fragFile);
     FileReadResult fragCode = fileReadText(fragPath, allocator);
 
     // Vertex input
@@ -657,12 +657,12 @@ int main(int argc, char** argv)
     sceneCb = gpu.createBuffer(bufferCreation);
 
     pipelineCreation.name = "main_no_cull";
-    RendererUtil::Program* programNoCull = renderer.createProgram({pipelineCreation});
+    RendererUtil::Program* programNoCull = renderer.createProgram({pipelineCreation}, cwd.path);
 
     pipelineCreation.rasterization.cullMode = VK_CULL_MODE_BACK_BIT;
 
     pipelineCreation.name = "main_cull";
-    RendererUtil::Program* programCull = renderer.createProgram({pipelineCreation});
+    RendererUtil::Program* programCull = renderer.createProgram({pipelineCreation}, cwd.path);
 
     RendererUtil::MaterialCreation materialCreation;
 
@@ -805,7 +805,7 @@ int main(int argc, char** argv)
       gameCamera.camera.setAspectRatio(window.m_Width * 1.f / window.m_Height);
     }
     // This MUST be AFTER os messages!
-    imgui->newFrame();
+    // imgui->newFrame();
 
     const int64_t currentTick = Time::getCurrentTime();
     float deltaTime = (float)Time::deltaSeconds(beginFrameTick, currentTick);
@@ -815,18 +815,18 @@ int main(int argc, char** argv)
     gameCamera.update(&input, window.m_Width, window.m_Height, deltaTime);
     window.centerMouse(gameCamera.mouseDragging);
 
-    if (ImGui::Begin("Framework ImGui"))
-    {
-      ImGui::InputFloat("Model scale", &modelScale, 0.001f);
-      ImGui::InputFloat3("Light position", light.raw);
-      ImGui::InputFloat("Light range", &lightRange);
-      ImGui::InputFloat("Light intensity", &lightIntensity);
-      ImGui::InputFloat3("Camera position", gameCamera.camera.position.raw);
-      ImGui::InputFloat3("Camera target movement", gameCamera.targetMovement.raw);
-    }
-    ImGui::End();
+    // if (ImGui::Begin("Framework ImGui"))
+    //{
+    //  ImGui::InputFloat("Model scale", &modelScale, 0.001f);
+    //  ImGui::InputFloat3("Light position", light.raw);
+    //  ImGui::InputFloat("Light range", &lightRange);
+    //  ImGui::InputFloat("Light intensity", &lightIntensity);
+    //  ImGui::InputFloat3("Camera position", gameCamera.camera.position.raw);
+    //  ImGui::InputFloat3("Camera target movement", gameCamera.targetMovement.raw);
+    //}
+    // ImGui::End();
 
-    MemoryService::instance()->imguiDraw();
+    // MemoryService::instance()->imguiDraw();
 
     {
       // Update common constant buffer
@@ -895,7 +895,7 @@ int main(int argc, char** argv)
         drawMesh(renderer, cmdBuf, meshDraw);
       }
 
-      imgui->render(*cmdBuf);
+      // imgui->render(*cmdBuf);
 
       // Send commands to GPU
       gpu.queueCommandBuffer(cmdBuf);
@@ -903,7 +903,7 @@ int main(int argc, char** argv)
     }
     else
     {
-      ImGui::Render();
+      // ImGui::Render();
     }
   }
 
