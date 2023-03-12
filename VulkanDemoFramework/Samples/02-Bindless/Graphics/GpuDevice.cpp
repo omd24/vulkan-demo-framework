@@ -65,6 +65,11 @@ struct CommandBufferRing
       vkDestroyCommandPool(
           m_Gpu->m_VulkanDevice, m_VulkanCmdPools[i], m_Gpu->m_VulkanAllocCallbacks);
     }
+
+    for (uint32_t i = 0; i < ms_MaxBuffers; i++)
+    {
+      m_CmdBuffers[i].shutdown();
+    }
   }
 
   void resetPools(uint32_t p_FrameIndex)
