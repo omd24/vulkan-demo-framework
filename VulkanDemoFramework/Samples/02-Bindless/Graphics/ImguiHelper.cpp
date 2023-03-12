@@ -75,7 +75,10 @@ void ImguiService::init(void* p_Configuration)
 
   // Reading vertex shader:
   shaderPath.append(m_GpuDevice->m_Cwd.path);
-  shaderPath.append(R"FOO(\Shaders\imgui.vert.glsl)FOO");
+  if (m_GpuDevice->m_BindlessSupported)
+    shaderPath.append(R"FOO(\Shaders\imgui_bindless.vert.glsl)FOO");
+  else
+    shaderPath.append(R"FOO(\Shaders\imgui.vert.glsl)FOO");
   const char* vsCode =
       Framework::fileReadText(shaderPath.m_Data, m_GpuDevice->m_TemporaryAllocator, nullptr);
   assert(vsCode != nullptr && "Error reading vertex shader");
@@ -85,7 +88,10 @@ void ImguiService::init(void* p_Configuration)
 
   // Reading fragment shader
   shaderPath.append(m_GpuDevice->m_Cwd.path);
-  shaderPath.append(R"FOO(\Shaders\imgui.frag.glsl)FOO");
+  if (m_GpuDevice->m_BindlessSupported)
+    shaderPath.append(R"FOO(\Shaders\imgui_bindless.frag.glsl)FOO");
+  else
+    shaderPath.append(R"FOO(\Shaders\imgui.frag.glsl)FOO");
   const char* fsCode =
       Framework::fileReadText(shaderPath.m_Data, m_GpuDevice->m_TemporaryAllocator, nullptr);
   assert(fsCode != nullptr && "Error reading fragment shader");
@@ -112,12 +118,23 @@ void ImguiService::init(void* p_Configuration)
   pipelineCreation.renderPass = m_GpuDevice->m_SwapchainOutput;
 
   DescriptorSetLayoutCreation descriptorSetLayoutCreation{};
-  descriptorSetLayoutCreation
-      .addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"})
-      .setName("Descriptor Uniform ImGui");
-  descriptorSetLayoutCreation
-      .addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, 1, "LocalConstants"})
-      .setName("Descriptor Sampler ImGui");
+  if (m_GpuDevice->m_BindlessSupported)
+  {
+    descriptorSetLayoutCreation
+        .addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"})
+        .addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, 1, "Texture"})
+        .setName("ImGui Descriptors");
+  }
+  else
+  {
+    descriptorSetLayoutCreation
+        .addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"})
+        .setName("Descriptor Uniform ImGui");
+    // TODO: Check to see we still need this or not !?!
+    // descriptorSetLayoutCreation
+    //    .addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, 1, "LocalConstants"})
+    //    .setName("Descriptor Sampler ImGui");
+  }
 
   g_DescriptorSetLayout = m_GpuDevice->createDescriptorSetLayout(descriptorSetLayoutCreation);
 
@@ -133,10 +150,22 @@ void ImguiService::init(void* p_Configuration)
 
   // Create descriptor set
   DescriptorSetCreation descriptorSetCreation{};
-  descriptorSetCreation.setLayout(pipelineCreation.descriptorSetLayouts[0])
-      .buffer(g_UiConstantBuffer, 0)
-      .texture(g_FontTexture, 1)
-      .setName("Descriptor set ImGui");
+  if (m_GpuDevice->m_BindlessSupported)
+  {
+    descriptorSetCreation.setLayout(pipelineCreation.descriptorSetLayouts[0])
+        .buffer(g_UiConstantBuffer, 0)
+        .texture(g_FontTexture, 1)
+        .setName("Imgui Font Texture");
+  }
+  else
+  {
+    // TODO: Correct this for bindless
+    assert(false);
+    /*descriptorSetCreation.setLayout(pipelineCreation.descriptorSetLayouts[0])
+        .buffer(g_UiConstantBuffer, 0)
+        .texture(g_FontTexture, 1)
+        .setName("Descriptor set ImGui");*/
+  }
   g_UiDescriptorSet = m_GpuDevice->createDescriptorSet(descriptorSetCreation);
 
   // Add descriptor set to the map
@@ -344,7 +373,7 @@ void ImguiService::render(CommandBuffer& p_Commands)
 
           // Retrieve
           TextureHandle newTexture = *(TextureHandle*)(pcmd->TextureId);
-          if (true)
+          if (!m_GpuDevice->m_BindlessSupported)
           {
             if (newTexture.index != lastTexture.index && newTexture.index != kInvalidTexture.index)
             {
@@ -363,7 +392,7 @@ void ImguiService::render(CommandBuffer& p_Commands)
                 descriptorSetCreation.setLayout(g_DescriptorSetLayout)
                     .buffer(g_UiConstantBuffer, 0)
                     .texture(lastTexture, 1)
-                    .setName("RL_Dynamic_ImGUI");
+                    .setName("Dynamic Descriptor ImGUI");
                 lastDescriptorSet = m_GpuDevice->createDescriptorSet(descriptorSetCreation);
 
                 g_TextureToDescriptorSetMap.insert(newTexture.index, lastDescriptorSet.index);
@@ -393,8 +422,17 @@ void ImguiService::render(CommandBuffer& p_Commands)
 //---------------------------------------------------------------------------//
 void ImguiService::removeCachedTexture(TextureHandle& p_Texture)
 {
-  // TODO
-  assert(false && "Not implemented");
+  Framework::FlatHashMapIterator it = g_TextureToDescriptorSetMap.find(p_Texture.index);
+  if (it.isValid())
+  {
+
+    // Destroy descriptor set
+    Graphics::DescriptorSetHandle descriptorSet{g_TextureToDescriptorSetMap.get(it)};
+    m_GpuDevice->destroyDescriptorSet(descriptorSet);
+
+    // Remove from cache
+    g_TextureToDescriptorSetMap.remove(p_Texture.index);
+  }
 }
 //---------------------------------------------------------------------------//
 void ImguiService::setStyle(ImguiStyles p_Style)

@@ -149,7 +149,7 @@ struct Renderer : public Framework::Service
   TextureResource* createTexture(const TextureCreation& p_Creation);
   TextureResource* createTexture(const char* p_Name, const char* p_Filename);
 
-  Program* createProgram(const ProgramCreation& creation, const char* p_Cwd);
+  Program* createProgram(const ProgramCreation& creation);
   Material* createMaterial(const MaterialCreation& creation);
   Material* createMaterial(Program* program, const char* name);
 

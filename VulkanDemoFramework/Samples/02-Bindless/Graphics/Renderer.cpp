@@ -400,7 +400,7 @@ SamplerResource* Renderer::createSampler(const SamplerCreation& p_Creation)
   return nullptr;
 }
 //---------------------------------------------------------------------------//
-Program* Renderer::createProgram(const ProgramCreation& creation, const char* p_Cwd)
+Program* Renderer::createProgram(const ProgramCreation& creation)
 {
   Program* program = m_Programs.obtain();
   if (program)
@@ -421,7 +421,7 @@ Program* Renderer::createProgram(const ProgramCreation& creation, const char* p_
       if (creation.pipelineCreation.name != nullptr)
       {
         char* cachePath = pipelineCachePath.appendUseFormatted(
-            "%s%s%s.cache", p_Cwd, SHADER_FOLDER, creation.pipelineCreation.name);
+            "%s%s%s.cache", m_GpuDevice->m_Cwd.path, SHADER_FOLDER, creation.pipelineCreation.name);
 
         pass.pipeline = m_GpuDevice->createPipeline(creation.pipelineCreation, cachePath);
       }

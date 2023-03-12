@@ -578,7 +578,7 @@ int main(int argc, char** argv)
   ImguiUtil::ImguiServiceConfiguration imguiConfig{&gpu, window.m_PlatformHandle};
   imgui->init(&imguiConfig);
 
-  GameCamera gameCamera;
+  GameCamera gameCamera{};
   gameCamera.camera.initPerpective(0.1f, 4000.f, 60.f, wconf.m_Width * 1.f / wconf.m_Height);
   gameCamera.init(true, 20.f, 6.f, 0.1f);
 
@@ -657,12 +657,12 @@ int main(int argc, char** argv)
     sceneCb = gpu.createBuffer(bufferCreation);
 
     pipelineCreation.name = "main_no_cull";
-    RendererUtil::Program* programNoCull = renderer.createProgram({pipelineCreation}, cwd.path);
+    RendererUtil::Program* programNoCull = renderer.createProgram({pipelineCreation});
 
     pipelineCreation.rasterization.cullMode = VK_CULL_MODE_BACK_BIT;
 
     pipelineCreation.name = "main_cull";
-    RendererUtil::Program* programCull = renderer.createProgram({pipelineCreation}, cwd.path);
+    RendererUtil::Program* programCull = renderer.createProgram({pipelineCreation});
 
     RendererUtil::MaterialCreation materialCreation;
 
@@ -805,7 +805,7 @@ int main(int argc, char** argv)
       gameCamera.camera.setAspectRatio(window.m_Width * 1.f / window.m_Height);
     }
     // This MUST be AFTER os messages!
-    // imgui->newFrame();
+    imgui->newFrame();
 
     const int64_t currentTick = Time::getCurrentTime();
     float deltaTime = (float)Time::deltaSeconds(beginFrameTick, currentTick);
@@ -815,18 +815,18 @@ int main(int argc, char** argv)
     gameCamera.update(&input, window.m_Width, window.m_Height, deltaTime);
     window.centerMouse(gameCamera.mouseDragging);
 
-    // if (ImGui::Begin("Framework ImGui"))
-    //{
-    //  ImGui::InputFloat("Model scale", &modelScale, 0.001f);
-    //  ImGui::InputFloat3("Light position", light.raw);
-    //  ImGui::InputFloat("Light range", &lightRange);
-    //  ImGui::InputFloat("Light intensity", &lightIntensity);
-    //  ImGui::InputFloat3("Camera position", gameCamera.camera.position.raw);
-    //  ImGui::InputFloat3("Camera target movement", gameCamera.targetMovement.raw);
-    //}
-    // ImGui::End();
+    if (ImGui::Begin("Framework ImGui"))
+    {
+      ImGui::InputFloat("Model scale", &modelScale, 0.001f);
+      ImGui::InputFloat3("Light position", light.raw);
+      ImGui::InputFloat("Light range", &lightRange);
+      ImGui::InputFloat("Light intensity", &lightIntensity);
+      ImGui::InputFloat3("Camera position", gameCamera.camera.position.raw);
+      ImGui::InputFloat3("Camera target movement", gameCamera.targetMovement.raw);
+    }
+    ImGui::End();
 
-    // MemoryService::instance()->imguiDraw();
+    MemoryService::instance()->imguiDraw();
 
     {
       // Update common constant buffer
@@ -895,7 +895,7 @@ int main(int argc, char** argv)
         drawMesh(renderer, cmdBuf, meshDraw);
       }
 
-      // imgui->render(*cmdBuf);
+      imgui->render(*cmdBuf);
 
       // Send commands to GPU
       gpu.queueCommandBuffer(cmdBuf);
@@ -903,7 +903,7 @@ int main(int argc, char** argv)
     }
     else
     {
-      // ImGui::Render();
+      ImGui::Render();
     }
   }
 
