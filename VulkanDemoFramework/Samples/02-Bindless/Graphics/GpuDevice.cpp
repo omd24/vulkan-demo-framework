@@ -2259,6 +2259,8 @@ SamplerHandle GpuDevice::createSampler(const SamplerCreation& p_Creation)
   ci.compareEnable = 0;
   ci.unnormalizedCoordinates = 0;
   ci.borderColor = VkBorderColor::VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+  ci.minLod = 0;
+  ci.maxLod = 16;
 
   vkCreateSampler(m_VulkanDevice, &ci, m_VulkanAllocCallbacks, &sampler->vkSampler);
 

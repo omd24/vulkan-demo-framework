@@ -267,7 +267,7 @@ void CommandBuffer::bindDescriptorSet(
 //---------------------------------------------------------------------------//
 void CommandBuffer::setViewport(const Viewport* p_Viewport)
 {
-  VkViewport viewport;
+  VkViewport viewport{};
 
   if (p_Viewport)
   {

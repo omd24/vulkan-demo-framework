@@ -532,11 +532,13 @@ static bool getMeshMaterial(
 int main(int argc, char** argv)
 {
 
-  if (argc < 2)
-  {
-    printf("No model specified, using the default model\n");
-    exit(-1);
-  }
+  // if (argc < 2)
+  //{
+  //  printf("No model specified, using the default model\n");
+  //  exit(-1);
+  //}
+
+  const char* modelPath = "c:/gltf-models/Sponza/Sponza.gltf";
 
   using namespace Framework;
   using namespace Graphics;
@@ -588,13 +590,15 @@ int main(int argc, char** argv)
   directoryCurrent(&cwd);
 
   char gltfBasePath[512]{};
-  memcpy(gltfBasePath, argv[1], strlen(argv[1]));
+  // memcpy(gltfBasePath, argv[1], strlen(argv[1]));
+  memcpy(gltfBasePath, modelPath, strlen(modelPath));
   fileDirectoryFromPath(gltfBasePath);
 
   directoryChange(gltfBasePath);
 
   char gltfFile[512]{};
-  memcpy(gltfFile, argv[1], strlen(argv[1]));
+  // memcpy(gltfFile, argv[1], strlen(argv[1]));
+  memcpy(gltfFile, modelPath, strlen(modelPath));
   filenameFromPath(gltfFile);
 
   Scene scene;
