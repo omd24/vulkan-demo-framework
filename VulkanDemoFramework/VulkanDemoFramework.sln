@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "01-glTFLoading", "Samples\0
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "02-Bindless", "Samples\02-Bindless\02-Bindless.vcxproj", "{37820E4B-94F1-41B9-850E-FE634E2B3CA1}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "03-Multithreading", "Samples\03-Multithreading\03-Multithreading.vcxproj", "{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -41,6 +43,14 @@ Global
 		{37820E4B-94F1-41B9-850E-FE634E2B3CA1}.Release|x64.Build.0 = Release|x64
 		{37820E4B-94F1-41B9-850E-FE634E2B3CA1}.Release|x86.ActiveCfg = Release|Win32
 		{37820E4B-94F1-41B9-850E-FE634E2B3CA1}.Release|x86.Build.0 = Release|Win32
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Debug|x64.ActiveCfg = Debug|x64
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Debug|x64.Build.0 = Debug|x64
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Debug|x86.ActiveCfg = Debug|Win32
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Debug|x86.Build.0 = Debug|Win32
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Release|x64.ActiveCfg = Release|x64
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Release|x64.Build.0 = Release|x64
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Release|x86.ActiveCfg = Release|Win32
+		{75B28FD6-C4BE-4DDF-86B3-ED51B065DDFB}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
