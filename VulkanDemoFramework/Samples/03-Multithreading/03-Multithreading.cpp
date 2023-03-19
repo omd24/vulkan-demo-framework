@@ -17,6 +17,8 @@
 
 #include <Externals/imgui/imgui.h>
 
+#include <Externals/enkiTS/TaskScheduler.h>
+
 #include <stdlib.h> // for exit()
 
 //---------------------------------------------------------------------------//
@@ -48,13 +50,14 @@ struct MeshDraw
   Graphics::BufferHandle texcoordBuffer;
   Graphics::BufferHandle materialBuffer;
 
+  VkIndexType indexType; // 32bit or 16bit type
   uint32_t indexOffset;
   uint32_t positionOffset;
   uint32_t tangentOffset;
   uint32_t normalOffset;
   uint32_t texcoordOffset;
 
-  uint32_t primitive_count;
+  uint32_t primitiveCount;
 
   // Indices used for bindless textures.
   uint16_t diffuseTextureIndex;
@@ -68,6 +71,8 @@ struct MeshDraw
 
   float alphaCutoff;
   uint32_t flags;
+
+  Graphics::DescriptorSetHandle descriptorSet;
 };
 
 enum DrawFlags
@@ -101,6 +106,117 @@ struct GpuEffect
 {
   Graphics::PipelineHandle pipelineCull;
   Graphics::PipelineHandle pipelineNoCull;
+};
+
+struct ObjectMaterial
+{
+  vec4s diffuse;
+  vec3s ambient;
+  vec3s specular;
+  float specularExp;
+
+  float transparency;
+
+  uint16_t diffuseTextureIndex = INVALID_TEXTURE_INDEX;
+  uint16_t normalTextureIndex = INVALID_TEXTURE_INDEX;
+};
+
+struct ObjectDraw
+{
+  Graphics::BufferHandle geometryBufferCpu;
+  Graphics::BufferHandle geometryBufferGpu;
+  Graphics::BufferHandle meshBuffer;
+
+  Graphics::DescriptorSetHandle descriptorSet;
+
+  uint32_t indexOffset;
+  uint32_t positionOffset;
+  uint32_t tangentOffset;
+  uint32_t normalOffset;
+  uint32_t texcoordOffset;
+
+  uint32_t primitiveCount;
+
+  vec4s diffuse;
+  vec3s ambient;
+  vec3s specular;
+  float specular_exp;
+  float transparency;
+
+  uint16_t diffuseTextureIndex = INVALID_TEXTURE_INDEX;
+  uint16_t normalTextureIndex = INVALID_TEXTURE_INDEX;
+
+  uint32_t uploadsQueued = 0;
+  // TODO: this should be an atomic value
+  uint32_t uploadsCompleted = 0;
+
+  Graphics::RendererUtil::Material* material;
+};
+
+struct ObjectGpuData
+{
+  mat4s model;
+  mat4s invModel;
+
+  uint32_t textures[4];
+  vec4s diffuse;
+  vec3s specular;
+  float specularExp;
+  vec3s ambient;
+};
+
+struct FileLoadRequest
+{
+  char path[512];
+  Graphics::TextureHandle texture = Graphics::kInvalidTexture;
+  Graphics::BufferHandle buffer = Graphics::kInvalidBuffer;
+};
+
+struct UploadRequest
+{
+  void* data = nullptr;
+  uint32_t* completed = nullptr;
+  Graphics::TextureHandle texture = Graphics::kInvalidTexture;
+  Graphics::BufferHandle cpuBuffer = Graphics::kInvalidBuffer;
+  Graphics::BufferHandle gpuBuffer = Graphics::kInvalidBuffer;
+};
+//---------------------------------------------------------------------------//
+// Async Loader Interface
+//---------------------------------------------------------------------------//
+struct AsynchronousLoader
+{
+
+  void init(
+      Graphics::RendererUtil::Renderer* p_Renderer,
+      enki::TaskScheduler* p_TaskScheduler,
+      Framework::Allocator* p_ResidentAllocator);
+  void update(Framework::Allocator* p_ScratchAllocator);
+  void shutdown();
+
+  void requestTextureData(const char* p_Filename, Graphics::TextureHandle p_Texture);
+  void requestBufferUpload(void* p_Data, Graphics::BufferHandle p_Buffer);
+  void requestBufferCopy(
+      Graphics::BufferHandle p_Src, Graphics::BufferHandle p_Dst, uint32_t* p_Completed);
+
+  Framework::Allocator* m_Allocator = nullptr;
+  Graphics::RendererUtil::Renderer* m_Renderer = nullptr;
+  enki::TaskScheduler* m_TaskScheduler = nullptr;
+
+  Framework::Array<FileLoadRequest> m_FileLoadRequests;
+  Framework::Array<UploadRequest> m_UploadRequests;
+
+  Graphics::Buffer* m_StagingBuffer = nullptr;
+
+  std::atomic_size_t m_StagingBufferOffset;
+  Graphics::TextureHandle m_TextureReady;
+  Graphics::BufferHandle m_CpuBufferReady;
+  Graphics::BufferHandle m_GpuBufferReady;
+  uint32_t* m_Completed;
+
+  VkCommandPool m_CommandPools[Graphics::GpuDevice::kMaxFrames];
+  Graphics::CommandBuffer m_CommandBuffers[Graphics::GpuDevice::kMaxFrames];
+  VkSemaphore m_TransferCompleteSemaphore;
+  VkFence m_TransferFence;
 };
 
 //---------------------------------------------------------------------------//
@@ -150,7 +266,7 @@ static void drawMesh(
   p_CommandBuffers->bindLocalDescriptorSet(&descriptorSet, 1, nullptr, 0);
 
   p_CommandBuffers->drawIndexed(
-      Graphics::TopologyType::kTriangle, p_MeshDraw.primitive_count, 1, 0, 0, 0);
+      Graphics::TopologyType::kTriangle, p_MeshDraw.primitiveCount, 1, 0, 0, 0);
 }
 //---------------------------------------------------------------------------//
 struct Scene
@@ -745,7 +861,7 @@ int main(int argc, char** argv)
         meshDraw.indexBuffer = indicesBufferGpu.m_Handle;
         meshDraw.indexOffset =
             indicesAccessor.byteOffset == glTF::INVALID_INT_VALUE ? 0 : indicesAccessor.byteOffset;
-        meshDraw.primitive_count = indicesAccessor.count;
+        meshDraw.primitiveCount = indicesAccessor.count;
 
         // Create material
         glTF::Material& material = scene.gltfScene.materials[meshPrimitive.material];
