@@ -140,7 +140,7 @@ struct ObjectDraw
   vec4s diffuse;
   vec3s ambient;
   vec3s specular;
-  float specular_exp;
+  float specularExp;
   float transparency;
 
   uint16_t diffuseTextureIndex = INVALID_TEXTURE_INDEX;
@@ -180,6 +180,9 @@ struct UploadRequest
   Graphics::BufferHandle cpuBuffer = Graphics::kInvalidBuffer;
   Graphics::BufferHandle gpuBuffer = Graphics::kInvalidBuffer;
 };
+
+static bool g_RecreatePerThreadDescriptors = false;
+
 //---------------------------------------------------------------------------//
 // Async Loader Interface
 //---------------------------------------------------------------------------//
@@ -245,6 +248,24 @@ static void uploadMaterial(MeshData& p_MeshData, const MeshDraw& p_MeshDraw, con
   p_MeshData.model = model;
   p_MeshData.invModel = glms_mat4_inv(glms_mat4_transpose(model));
 }
+//---------------------------------------------------------------------------//
+static void
+uploadMaterial(ObjectGpuData& p_MeshData, const ObjectDraw& p_MeshDraw, const float p_Scale)
+{
+  p_MeshData.textures[0] = p_MeshDraw.diffuseTextureIndex;
+  p_MeshData.textures[1] = p_MeshDraw.normalTextureIndex;
+  p_MeshData.textures[2] = 0;
+  p_MeshData.textures[3] = 0;
+  p_MeshData.diffuse = p_MeshDraw.diffuse;
+  p_MeshData.specular = p_MeshDraw.specular;
+  p_MeshData.specularExp = p_MeshDraw.specularExp;
+  p_MeshData.ambient = p_MeshDraw.ambient;
+
+  // NOTE: for left-handed systems (as defined in cglm) need to invert positive and negative Z.
+  mat4s model = glms_scale_make(vec3s({p_Scale, p_Scale, -p_Scale}));
+  p_MeshData.model = model;
+  p_MeshData.invModel = glms_mat4_inv(glms_mat4_transpose(model));
+}
 
 //---------------------------------------------------------------------------//
 static void drawMesh(
@@ -253,23 +274,80 @@ static void drawMesh(
     MeshDraw& p_MeshDraw)
 {
   // Descriptor Set
-  Graphics::DescriptorSetCreation dsCreation{};
-  dsCreation.buffer(sceneCb, 0).buffer(p_MeshDraw.materialBuffer, 1);
-  Graphics::DescriptorSetHandle descriptorSet =
-      p_Renderer.createDescriptorSet(p_CommandBuffers, p_MeshDraw.material, dsCreation);
+  if (g_RecreatePerThreadDescriptors)
+  {
+    Graphics::DescriptorSetCreation dsCreation{};
+    dsCreation.buffer(sceneCb, 0).buffer(p_MeshDraw.materialBuffer, 1);
+    Graphics::DescriptorSetHandle descriptorSet =
+        p_Renderer.createDescriptorSet(p_CommandBuffers, p_MeshDraw.material, dsCreation);
+    p_CommandBuffers->bindLocalDescriptorSet(&descriptorSet, 1, nullptr, 0);
+  }
+  else
+  {
+    p_CommandBuffers->bindLocalDescriptorSet(&p_MeshDraw.descriptorSet, 1, nullptr, 0);
+  }
 
   p_CommandBuffers->bindVertexBuffer(p_MeshDraw.positionBuffer, 0, p_MeshDraw.positionOffset);
   p_CommandBuffers->bindVertexBuffer(p_MeshDraw.tangentBuffer, 1, p_MeshDraw.tangentOffset);
   p_CommandBuffers->bindVertexBuffer(p_MeshDraw.normalBuffer, 2, p_MeshDraw.normalOffset);
   p_CommandBuffers->bindVertexBuffer(p_MeshDraw.texcoordBuffer, 3, p_MeshDraw.texcoordOffset);
   p_CommandBuffers->bindIndexBuffer(p_MeshDraw.indexBuffer, p_MeshDraw.indexOffset);
-  p_CommandBuffers->bindLocalDescriptorSet(&descriptorSet, 1, nullptr, 0);
+
+  p_CommandBuffers->drawIndexed(
+      Graphics::TopologyType::kTriangle, p_MeshDraw.primitiveCount, 1, 0, 0, 0);
+}
+//---------------------------------------------------------------------------//
+static void drawMesh(
+    Graphics::RendererUtil::Renderer& p_Renderer,
+    Graphics::CommandBuffer* p_CommandBuffers,
+    ObjectDraw& p_MeshDraw)
+{
+  // Descriptor Set
+  if (g_RecreatePerThreadDescriptors)
+  {
+    Graphics::DescriptorSetCreation dsCreation{};
+    dsCreation.buffer(sceneCb, 0).buffer(p_MeshDraw.geometryBufferGpu, 1);
+    Graphics::DescriptorSetHandle descriptorSet =
+        p_Renderer.createDescriptorSet(p_CommandBuffers, p_MeshDraw.material, dsCreation);
+    p_CommandBuffers->bindLocalDescriptorSet(&descriptorSet, 1, nullptr, 0);
+  }
+  else
+  {
+    p_CommandBuffers->bindLocalDescriptorSet(&p_MeshDraw.descriptorSet, 1, nullptr, 0);
+  }
+
+  p_CommandBuffers->bindVertexBuffer(p_MeshDraw.geometryBufferGpu, 0, p_MeshDraw.positionOffset);
+  p_CommandBuffers->bindVertexBuffer(p_MeshDraw.geometryBufferGpu, 1, p_MeshDraw.tangentOffset);
+  p_CommandBuffers->bindVertexBuffer(p_MeshDraw.geometryBufferGpu, 2, p_MeshDraw.normalOffset);
+  p_CommandBuffers->bindVertexBuffer(p_MeshDraw.geometryBufferGpu, 3, p_MeshDraw.texcoordOffset);
+  p_CommandBuffers->bindIndexBuffer(p_MeshDraw.geometryBufferGpu, p_MeshDraw.indexOffset);
 
   p_CommandBuffers->drawIndexed(
       Graphics::TopologyType::kTriangle, p_MeshDraw.primitiveCount, 1, 0, 0, 0);
 }
 //---------------------------------------------------------------------------//
 struct Scene
+{
+
+  virtual void load(
+      const char* p_Filename,
+      const char* p_Path,
+      Framework::Allocator* p_ResidentAllocator,
+      Framework::StackAllocator* p_TempAllocator,
+      AsynchronousLoader* p_AsyncLoader){};
+  virtual void freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer){};
+  virtual void unload(Graphics::RendererUtil::Renderer* p_Renderer){};
+
+  virtual void prepareDraws(
+      Graphics::RendererUtil::Renderer* p_Renderer,
+      Framework::StackAllocator* p_ScratchAllocator){};
+
+  virtual void uploadMaterials(float p_ModelScale){};
+  virtual void submitDrawTask(
+      Graphics::ImguiUtil::ImguiService* p_Imgui, enki::TaskScheduler* p_TaskScheduler){};
+};
+//---------------------------------------------------------------------------//
+struct gltfScene : public Scene
 {
   Framework::Array<MeshDraw> meshDraws;
 
