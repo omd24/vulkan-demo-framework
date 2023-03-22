@@ -216,7 +216,7 @@ void ImguiService::newFrame()
   ImGui::NewFrame();
 }
 //---------------------------------------------------------------------------//
-void ImguiService::render(CommandBuffer& p_Commands)
+void ImguiService::render(CommandBuffer& p_Commands, bool p_UseSecondary)
 {
   ImGui::Render();
 
@@ -283,7 +283,7 @@ void ImguiService::render(CommandBuffer& p_Commands)
   }
 
   // todo: key
-  p_Commands.bindPass(m_GpuDevice->m_SwapchainPass);
+  p_Commands.bindPass(m_GpuDevice->m_SwapchainPass, p_UseSecondary);
   p_Commands.bindPipeline(g_ImguiPipeline);
   p_Commands.bindVertexBuffer(g_Vb, 0, 0);
   p_Commands.bindIndexBuffer(g_Ib, 0);

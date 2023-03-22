@@ -30,6 +30,7 @@ struct DeviceCreation
   void* window = nullptr; // api-specific (SDL, GLFW, etc)
   uint16_t width = 1;
   uint16_t height = 1;
+  uint16_t numThreads = 1;
 
   DeviceCreation& setWindow(uint32_t p_Width, uint32_t p_Height, void* p_Handle);
   DeviceCreation& setAllocator(Framework::Allocator* p_Allocator);
@@ -80,7 +81,8 @@ struct GpuDevice : public Framework::Service
   void resizeSwapchain();
 
   // Commands helpers
-  CommandBuffer* getCommandBuffer(bool p_Begin);
+  CommandBuffer* getCommandBuffer(uint32_t p_ThreadIndex, bool p_Begin);
+  CommandBuffer* getSecondaryCommandBuffer(uint32_t p_ThreadIndex);
   void queueCommandBuffer(CommandBuffer* p_CommandBuffer);
 
   // Query resources
@@ -125,8 +127,10 @@ struct GpuDevice : public Framework::Service
   VkPhysicalDevice m_VulkanPhysicalDevice;
   VkPhysicalDeviceProperties m_VulkanPhysicalDeviceProps;
   VkDevice m_VulkanDevice;
-  VkQueue m_VulkanQueue;
-  uint32_t m_VulkanQueueFamily;
+  VkQueue m_VulkanMainQueue;
+  VkQueue m_VulkanTransferQueue;
+  uint32_t m_VulkanMainQueueFamily;
+  uint32_t m_VulkanTransferQueueFamily;
   VkDescriptorPool m_VulkanDescriptorPool;
 
   // Swapchain

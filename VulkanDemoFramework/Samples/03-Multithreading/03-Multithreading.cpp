@@ -347,18 +347,129 @@ struct Scene
       Graphics::ImguiUtil::ImguiService* p_Imgui, enki::TaskScheduler* p_TaskScheduler){};
 };
 //---------------------------------------------------------------------------//
-struct gltfScene : public Scene
+struct glTFScene : public Scene
 {
-  Framework::Array<MeshDraw> meshDraws;
+  void load(
+      const char* p_Filename,
+      const char* p_Path,
+      Framework::Allocator* p_ResidentAllocator,
+      Framework::StackAllocator* p_TempAllocator,
+      AsynchronousLoader* p_AsyncLoader){};
+  void freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer);
+  void unload(Graphics::RendererUtil::Renderer* p_Renderer);
+
+  void prepareDraws(
+      Graphics::RendererUtil::Renderer* p_Renderer, Framework::StackAllocator* p_ScratchAllocator);
+
+  void uploadMaterials(float p_ModelScale);
+  void
+  submitDrawTask(Graphics::ImguiUtil::ImguiService* p_Imgui, enki::TaskScheduler* p_TaskScheduler);
+
+  Framework::Array<MeshDraw> m_MeshDraws;
 
   // All graphics resources used by the scene
-  Framework::Array<Graphics::RendererUtil::TextureResource> images;
-  Framework::Array<Graphics::RendererUtil::SamplerResource> samplers;
-  Framework::Array<Graphics::RendererUtil::BufferResource> buffers;
+  Framework::Array<Graphics::RendererUtil::TextureResource> m_Images;
+  Framework::Array<Graphics::RendererUtil::SamplerResource> m_Samplers;
+  Framework::Array<Graphics::RendererUtil::BufferResource> m_Buffers;
 
-  Framework::glTF::glTF gltfScene; // Source gltf scene
+  Framework::glTF::glTF m_GltfScene; // Source gltf scene
 
-}; // struct GltfScene
+  Graphics::RendererUtil::Renderer* m_Renderer;
+}; // struct gltfScene
+//---------------------------------------------------------------------------//
+struct ObjScene : public Scene
+{
+  void load(
+      const char* p_Filename,
+      const char* p_Path,
+      Framework::Allocator* p_ResidentAllocator,
+      Framework::StackAllocator* p_TempAllocator,
+      AsynchronousLoader* p_AsyncLoader){};
+  void freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer);
+  void unload(Graphics::RendererUtil::Renderer* p_Renderer);
+
+  void prepareDraws(
+      Graphics::RendererUtil::Renderer* p_Renderer, Framework::StackAllocator* p_ScratchAllocator);
+
+  void uploadMaterials(float p_ModelScale);
+  void
+  submitDrawTask(Graphics::ImguiUtil::ImguiService* p_Imgui, enki::TaskScheduler* p_TaskScheduler);
+
+  Framework::Array<ObjectDraw> m_MeshDraws;
+
+  // All graphics resources used by the scene
+  Framework::Array<Graphics::RendererUtil::TextureResource> m_Images;
+  Framework::Array<Graphics::RendererUtil::SamplerResource> m_Samplers;
+  Framework::Array<Graphics::RendererUtil::BufferResource> m_Buffers;
+
+  AsynchronousLoader* m_AsyncLoader;
+
+  Graphics::RendererUtil::Renderer* m_Renderer;
+}; // struct ObjScene
+//---------------------------------------------------------------------------//
+// Draw Tasks:
+//---------------------------------------------------------------------------//
+struct glTFDrawTask : public enki::ITaskSet
+{
+  Graphics::GpuDevice* m_GpuDevice = nullptr;
+  Graphics::RendererUtil::Renderer* m_Renderer = nullptr;
+  Graphics::ImguiUtil::ImguiService* m_Imgui = nullptr;
+  glTFScene* m_Scene = nullptr;
+  uint32_t m_ThreadId = 0;
+
+  void init(
+      Graphics::GpuDevice* p_GpuDevice,
+      Graphics::RendererUtil::Renderer* p_Renderer,
+      Graphics::ImguiUtil::ImguiService* p_Imgui,
+      glTFScene* p_Scene)
+  {
+    m_GpuDevice = p_GpuDevice;
+    m_Renderer = p_Renderer;
+    m_Imgui = p_Imgui;
+    m_Scene = p_Scene;
+  }
+
+  void ExecuteRange(enki::TaskSetPartition range_, uint32_t p_ThreadNum) override
+  {
+    m_ThreadId = p_ThreadNum;
+
+    // TODO: improve getting a command buffer/pool
+    Graphics::CommandBuffer* cmdbuf = m_GpuDevice->getCommandBuffer(p_ThreadNum, true);
+
+    cmdbuf->clear(0.3f, 0.3f, 0.3f, 1.f);
+    cmdbuf->clearDepthStencil(1.0f, 0);
+    cmdbuf->bindPass(m_GpuDevice->m_SwapchainPass, false);
+    cmdbuf->setScissor(nullptr);
+    cmdbuf->setViewport(nullptr);
+
+    Graphics::RendererUtil::Material* lastMaterial = nullptr;
+    // TODO: loop by material so that we can deal with multiple passes
+    for (uint32_t meshIndex = 0; meshIndex < m_Scene->m_MeshDraws.m_Size; ++meshIndex)
+    {
+      MeshDraw& meshDraw = m_Scene->m_MeshDraws[meshIndex];
+
+      if (meshDraw.material != lastMaterial)
+      {
+        Graphics::PipelineHandle pipeline = m_Renderer->getPipeline(meshDraw.material);
+
+        cmdbuf->bindPipeline(pipeline);
+
+        lastMaterial = meshDraw.material;
+      }
+
+      drawMesh(*m_Renderer, cmdbuf, meshDraw);
+    }
+
+    m_Imgui->render(*cmdbuf, false);
+
+    // Send commands to GPU
+    m_GpuDevice->queueCommandBuffer(cmdbuf);
+  }
+
+}; // struct DrawTask
+//---------------------------------------------------------------------------//
+//
+//
 
 static void sceneLoadFromGltf(
     const char* filename,

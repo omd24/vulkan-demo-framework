@@ -30,7 +30,7 @@ struct ImguiService : public Framework::Service
   void shutdown() override;
 
   void newFrame();
-  void render(CommandBuffer& p_Commands);
+  void render(CommandBuffer& p_Commands, bool p_UseSecondary);
 
   // Removes the Texture from the Cache and destroy the associated Descriptor Set.
   void removeCachedTexture(TextureHandle& p_Texture);

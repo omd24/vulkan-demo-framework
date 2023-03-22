@@ -25,92 +25,8 @@ namespace Graphics
 {
 #define CHECKRES(result) assert(result == VK_SUCCESS && "Vulkan assert")
 //---------------------------------------------------------------------------//
-struct CommandBufferRing
-{
-
-  void init(GpuDevice* p_Gpu)
-  {
-    m_Gpu = p_Gpu;
-
-    for (uint32_t i = 0; i < ms_MaxPools; i++)
-    {
-      VkCommandPoolCreateInfo cmdPoolCi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
-      cmdPoolCi.queueFamilyIndex = m_Gpu->m_VulkanQueueFamily;
-      cmdPoolCi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-      CHECKRES(vkCreateCommandPool(
-          m_Gpu->m_VulkanDevice, &cmdPoolCi, m_Gpu->m_VulkanAllocCallbacks, &m_VulkanCmdPools[i]));
-    }
-
-    for (uint32_t i = 0; i < ms_MaxBuffers; i++)
-    {
-      VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
-      const uint32_t pool_index = poolFromIndex(i);
-      cmd.commandPool = m_VulkanCmdPools[pool_index];
-      cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-      cmd.commandBufferCount = 1;
-      CHECKRES(vkAllocateCommandBuffers(
-          m_Gpu->m_VulkanDevice, &cmd, &m_CmdBuffers[i].m_VulkanCmdBuffer));
-
-      // TODO(marco): move to have a ring per queue per thread
-      m_CmdBuffers[i].m_GpuDevice = m_Gpu;
-      m_CmdBuffers[i].init(QueueType::Enum::kGraphics, 0, 0);
-      m_CmdBuffers[i].m_Handle = i;
-    }
-  }
-  void shutdown()
-  {
-    for (uint32_t i = 0; i < kMaxSwapchainImages * ms_MaxThreads; i++)
-    {
-      vkDestroyCommandPool(
-          m_Gpu->m_VulkanDevice, m_VulkanCmdPools[i], m_Gpu->m_VulkanAllocCallbacks);
-    }
-
-    for (uint32_t i = 0; i < ms_MaxBuffers; i++)
-    {
-      m_CmdBuffers[i].shutdown();
-    }
-  }
-
-  void resetPools(uint32_t p_FrameIndex)
-  {
-    for (uint32_t i = 0; i < ms_MaxThreads; i++)
-    {
-      vkResetCommandPool(
-          m_Gpu->m_VulkanDevice, m_VulkanCmdPools[p_FrameIndex * ms_MaxThreads + i], 0);
-    }
-  }
-
-  CommandBuffer* getCmdBuffer(uint32_t p_FrameIndex, bool p_Begin)
-  {
-    // TODO: take in account threads
-    CommandBuffer* cmdBuffer = &m_CmdBuffers[p_FrameIndex * ms_BufferPerPool];
-
-    if (p_Begin)
-    {
-      cmdBuffer->reset();
-
-      VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-      beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-      vkBeginCommandBuffer(cmdBuffer->m_VulkanCmdBuffer, &beginInfo);
-    }
-
-    return cmdBuffer;
-  }
-
-  static uint16_t poolFromIndex(uint32_t p_Index) { return (uint16_t)p_Index / ms_BufferPerPool; }
-
-  static const uint16_t ms_MaxThreads = 1;
-  static const uint16_t ms_MaxPools = kMaxSwapchainImages * ms_MaxThreads;
-  static const uint16_t ms_BufferPerPool = 4;
-  static const uint16_t ms_MaxBuffers = ms_BufferPerPool * ms_MaxPools;
-
-  GpuDevice* m_Gpu;
-  VkCommandPool m_VulkanCmdPools[ms_MaxPools];
-  CommandBuffer m_CmdBuffers[ms_MaxBuffers];
-  uint8_t m_NextFreePerThreadFrame[ms_MaxPools];
-
-}; // struct CommandBufferRing
+struct Framework::FlatHashMap<uint64_t, VkRenderPass> g_RenderPassCache;
+struct CommandBufferManager g_CmdBufferRing;
 //---------------------------------------------------------------------------//
 DeviceCreation& DeviceCreation::setWindow(uint32_t p_Width, uint32_t p_Height, void* p_Handle)
 {
@@ -196,9 +112,6 @@ static size_t kUboAlignment = 256;
 static size_t kSboAlignemnt = 256;
 
 static SDL_Window* g_SdlWindow;
-
-static Framework::FlatHashMap<uint64_t, VkRenderPass> g_RenderPassCache;
-static CommandBufferRing g_CmdBufferRing;
 
 static VkPresentModeKHR _toVkPresentMode(PresentMode::Enum p_Mode)
 {
@@ -401,7 +314,7 @@ static void _vulkanCreateSwapchainPass(
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  CommandBuffer* cmd = p_GpuDevice.getCommandBuffer(false);
+  CommandBuffer* cmd = p_GpuDevice.getCommandBuffer(0, false);
   vkBeginCommandBuffer(cmd->m_VulkanCmdBuffer, &beginInfo);
 
   VkBufferImageCopy region = {};
@@ -441,8 +354,8 @@ static void _vulkanCreateSwapchainPass(
   submitInfo.commandBufferCount = 1;
   submitInfo.pCommandBuffers = &cmd->m_VulkanCmdBuffer;
 
-  vkQueueSubmit(p_GpuDevice.m_VulkanQueue, 1, &submitInfo, VK_NULL_HANDLE);
-  vkQueueWaitIdle(p_GpuDevice.m_VulkanQueue);
+  vkQueueSubmit(p_GpuDevice.m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+  vkQueueWaitIdle(p_GpuDevice.m_VulkanMainQueue);
 }
 //---------------------------------------------------------------------------//
 static RenderPassOutput
@@ -923,12 +836,15 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   m_SwapchainWidth = p_Creation.width;
   m_SwapchainHeight = p_Creation.height;
 
+  Framework::StackAllocator* tempAllocator = p_Creation.temporaryAllocator;
+  size_t initialTempAllocatorMarker = tempAllocator->getMarker();
+
   // Choose extensions:
   {
     uint32_t numInstanceExtensions;
     vkEnumerateInstanceExtensionProperties(nullptr, &numInstanceExtensions, nullptr);
     VkExtensionProperties* extensions = (VkExtensionProperties*)FRAMEWORK_ALLOCA(
-        sizeof(VkExtensionProperties) * numInstanceExtensions, m_Allocator);
+        sizeof(VkExtensionProperties) * numInstanceExtensions, tempAllocator);
     vkEnumerateInstanceExtensionProperties(nullptr, &numInstanceExtensions, extensions);
     for (size_t i = 0; i < numInstanceExtensions; i++)
     {
@@ -971,13 +887,13 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     CHECKRES(result);
 
     VkPhysicalDevice* gpus = (VkPhysicalDevice*)FRAMEWORK_ALLOCA(
-        sizeof(VkPhysicalDevice) * numPhysicalDevice, m_Allocator);
+        sizeof(VkPhysicalDevice) * numPhysicalDevice, tempAllocator);
     result = vkEnumeratePhysicalDevices(m_VulkanInstance, &numPhysicalDevice, gpus);
     CHECKRES(result);
 
     // TODO: improve - choose the first gpu.
     m_VulkanPhysicalDevice = gpus[0];
-    FRAMEWORK_FREE(gpus, m_Allocator);
+    tempAllocator->freeMarker(initialTempAllocatorMarker);
 
     vkGetPhysicalDeviceProperties(m_VulkanPhysicalDevice, &m_VulkanPhysicalDeviceProps);
 
@@ -1012,32 +928,66 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     vkGetPhysicalDeviceQueueFamilyProperties(m_VulkanPhysicalDevice, &queueFamilyCount, nullptr);
 
     VkQueueFamilyProperties* queueFamilies = (VkQueueFamilyProperties*)FRAMEWORK_ALLOCA(
-        sizeof(VkQueueFamilyProperties) * queueFamilyCount, m_Allocator);
+        sizeof(VkQueueFamilyProperties) * queueFamilyCount, tempAllocator);
     vkGetPhysicalDeviceQueueFamilyProperties(
         m_VulkanPhysicalDevice, &queueFamilyCount, queueFamilies);
 
-    uint32_t familyIndex = 0;
-    for (; familyIndex < queueFamilyCount; ++familyIndex)
+    uint32_t mainQueueIndex = UINT_MAX, transferQueueIndex = UINT_MAX, computeQueueIndex = UINT_MAX,
+             presentQueueIndex = UINT_MAX;
+    for (uint32_t fi = 0; fi < queueFamilyCount; ++fi)
     {
-      VkQueueFamilyProperties queue_family = queueFamilies[familyIndex];
-      if (queue_family.queueCount > 0 &&
-          queue_family.queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
+      VkQueueFamilyProperties queueFamily = queueFamilies[fi];
+
+      if (queueFamily.queueCount == 0)
       {
-        // indices.graphicsFamily = i;
-        break;
+        continue;
+      }
+#if defined(_DEBUG)
+      printf(
+          "Family %u, flags %u queue count %u\n",
+          fi,
+          queueFamily.queueFlags,
+          queueFamily.queueCount);
+#endif // DEBUG
+
+      // Search for main queue that should be able to do all work (graphics, compute and transfer)
+      if ((queueFamily.queueFlags &
+           (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT)) ==
+          (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT))
+      {
+        mainQueueIndex = fi;
+      }
+      // Search for transfer queue
+      if ((queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) == 0 &&
+          (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT))
+      {
+        transferQueueIndex = fi;
       }
     }
 
-    FRAMEWORK_FREE(queueFamilies, m_Allocator);
+    // Cache family indices
+    m_VulkanMainQueueFamily = mainQueueIndex;
+    m_VulkanTransferQueueFamily = transferQueueIndex;
 
     uint32_t deviceExtensionCount = 1;
     const char* deviceExtensions[] = {"VK_KHR_swapchain"};
     const float queuePriority[] = {1.0f};
-    VkDeviceQueueCreateInfo queueInfo[1] = {};
-    queueInfo[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueInfo[0].queueFamilyIndex = familyIndex;
-    queueInfo[0].queueCount = 1;
-    queueInfo[0].pQueuePriorities = queuePriority;
+    VkDeviceQueueCreateInfo queueInfo[2] = {};
+
+    VkDeviceQueueCreateInfo& mainQueueCi = queueInfo[0];
+    mainQueueCi.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    mainQueueCi.queueFamilyIndex = mainQueueIndex;
+    mainQueueCi.queueCount = 1;
+    mainQueueCi.pQueuePriorities = queuePriority;
+
+    if (m_VulkanTransferQueueFamily < queueFamilyCount)
+    {
+      VkDeviceQueueCreateInfo& transferQueueCi = queueInfo[1];
+      transferQueueCi.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+      transferQueueCi.queueFamilyIndex = transferQueueIndex;
+      transferQueueCi.queueCount = 1;
+      transferQueueCi.pQueuePriorities = queuePriority;
+    }
 
     // Enable all features: just pass the physical features 2 struct.
     VkPhysicalDeviceFeatures2 physicalFeatures2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
@@ -1045,7 +995,7 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
 
     VkDeviceCreateInfo deviceCi = {};
     deviceCi.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceCi.queueCreateInfoCount = sizeof(queueInfo) / sizeof(queueInfo[0]);
+    deviceCi.queueCreateInfoCount = m_VulkanTransferQueueFamily < queueFamilyCount ? 2 : 1;
     deviceCi.pQueueCreateInfos = queueInfo;
     deviceCi.enabledExtensionCount = deviceExtensionCount;
     deviceCi.ppEnabledExtensionNames = deviceExtensions;
@@ -1059,8 +1009,9 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
         vkCreateDevice(m_VulkanPhysicalDevice, &deviceCi, m_VulkanAllocCallbacks, &m_VulkanDevice);
     CHECKRES(result);
 
-    vkGetDeviceQueue(m_VulkanDevice, familyIndex, 0, &m_VulkanQueue);
-    m_VulkanQueueFamily = familyIndex;
+    vkGetDeviceQueue(m_VulkanDevice, mainQueueIndex, 0, &m_VulkanMainQueue);
+    if (m_VulkanTransferQueueFamily < queueFamilyCount)
+      vkGetDeviceQueue(m_VulkanDevice, transferQueueIndex, 0, &m_VulkanTransferQueue);
   }
 
   //  Get the function pointers to Debug Utils functions.
@@ -1097,7 +1048,7 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     vkGetPhysicalDeviceSurfaceFormatsKHR(
         m_VulkanPhysicalDevice, m_VulkanWindowSurface, &supportedCount, NULL);
     VkSurfaceFormatKHR* supportedFormats = (VkSurfaceFormatKHR*)FRAMEWORK_ALLOCA(
-        sizeof(VkSurfaceFormatKHR) * supportedCount, m_Allocator);
+        sizeof(VkSurfaceFormatKHR) * supportedCount, tempAllocator);
     vkGetPhysicalDeviceSurfaceFormatsKHR(
         m_VulkanPhysicalDevice, m_VulkanWindowSurface, &supportedCount, supportedFormats);
 
@@ -1133,6 +1084,9 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       assert(false);
     }
     FRAMEWORK_FREE(supportedFormats, m_Allocator);
+
+    // Final use of temp allocator, free all temporary memory created here.
+    tempAllocator->freeMarker(initialTempAllocatorMarker);
 
     setPresentMode(m_PresentMode);
 
@@ -1254,7 +1208,7 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     m_QueuedCommandBuffers = (CommandBuffer**)(memory);
 
     // Init the command buffer ring:
-    g_CmdBufferRing.init(this);
+    g_CmdBufferRing.init(this, p_Creation.numThreads);
   }
 
   // Init pools
@@ -1597,7 +1551,7 @@ void GpuDevice::present()
   submit_info.signalSemaphoreCount = 1;
   submit_info.pSignalSemaphores = renderCompleteSemaphore;
 
-  vkQueueSubmit(m_VulkanQueue, 1, &submit_info, *renderCompleteFence);
+  vkQueueSubmit(m_VulkanMainQueue, 1, &submit_info, *renderCompleteFence);
 
   VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
   presentInfo.waitSemaphoreCount = 1;
@@ -1608,7 +1562,7 @@ void GpuDevice::present()
   presentInfo.pSwapchains = swap_chains;
   presentInfo.pImageIndices = &m_VulkanImageIndex;
   presentInfo.pResults = nullptr; // Optional
-  result = vkQueuePresentKHR(m_VulkanQueue, &presentInfo);
+  result = vkQueuePresentKHR(m_VulkanMainQueue, &presentInfo);
 
   m_NumQueuedCommandBuffers = 0;
 
@@ -1819,7 +1773,7 @@ TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation)
     VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    CommandBuffer* cmdBuffer = getCommandBuffer(false);
+    CommandBuffer* cmdBuffer = getCommandBuffer(0, false);
     vkBeginCommandBuffer(cmdBuffer->m_VulkanCmdBuffer, &beginInfo);
 
     VkBufferImageCopy region = {};
@@ -1865,8 +1819,8 @@ TextureHandle GpuDevice::createTexture(const TextureCreation& p_Creation)
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmdBuffer->m_VulkanCmdBuffer;
 
-    vkQueueSubmit(m_VulkanQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(m_VulkanQueue);
+    vkQueueSubmit(m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_VulkanMainQueue);
 
     vmaDestroyBuffer(m_VmaAllocator, stagingBuffer, stagingAllocation);
 
@@ -2899,7 +2853,7 @@ void GpuDevice::createSwapchain()
   // Check if surface is supported
   VkBool32 surfaceSupported;
   vkGetPhysicalDeviceSurfaceSupportKHR(
-      m_VulkanPhysicalDevice, m_VulkanQueueFamily, m_VulkanWindowSurface, &surfaceSupported);
+      m_VulkanPhysicalDevice, m_VulkanMainQueueFamily, m_VulkanWindowSurface, &surfaceSupported);
   if (surfaceSupported != VK_TRUE)
   {
     OutputDebugStringA("Error no WSI support on physical device 0\n");
@@ -3015,9 +2969,17 @@ void GpuDevice::setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const
   pfnSetDebugUtilsObjectNameEXT(m_VulkanDevice, &nameInfo);
 }
 //---------------------------------------------------------------------------//
-CommandBuffer* GpuDevice::getCommandBuffer(bool p_Begin)
+CommandBuffer* GpuDevice::getCommandBuffer(uint32_t p_ThreadIndex, bool p_Begin)
 {
-  CommandBuffer* cmd = g_CmdBufferRing.getCmdBuffer(m_CurrentFrameIndex, p_Begin);
+  CommandBuffer* cmd =
+      g_CmdBufferRing.getCommandBuffer(m_CurrentFrameIndex, p_ThreadIndex, p_Begin);
+  return cmd;
+}
+//---------------------------------------------------------------------------//
+CommandBuffer* GpuDevice::getSecondaryCommandBuffer(uint32_t p_ThreadIndex)
+{
+  CommandBuffer* cmd =
+      g_CmdBufferRing.getSecondaryCommandBuffer(m_CurrentFrameIndex, p_ThreadIndex);
   return cmd;
 }
 //---------------------------------------------------------------------------//

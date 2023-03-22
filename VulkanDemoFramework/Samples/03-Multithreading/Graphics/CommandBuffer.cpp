@@ -2,11 +2,12 @@
 
 namespace Graphics
 {
+static const uint32_t g_SecondaryCommandBuffersCount = 2;
+
 //---------------------------------------------------------------------------//
-void CommandBuffer::init(QueueType::Enum p_Type, uint32_t p_BufferSize, uint32_t p_SubmitSize)
+void CommandBuffer::init(Graphics::GpuDevice* p_GpuDevice)
 {
-  this->m_Type = p_Type;
-  this->m_BufferSize = p_BufferSize;
+  this->m_GpuDevice = p_GpuDevice;
 
   static const uint32_t kGlobalPoolElements = 128;
   VkDescriptorPoolSize poolSizes[] = {
@@ -129,7 +130,7 @@ void CommandBuffer::bindLocalDescriptorSet(
   }
 }
 //---------------------------------------------------------------------------//
-void CommandBuffer::bindPass(RenderPassHandle p_Passhandle)
+void CommandBuffer::bindPass(RenderPassHandle p_Passhandle, bool p_UseSecondary)
 {
   m_IsRecording = true;
 
@@ -159,7 +160,11 @@ void CommandBuffer::bindPass(RenderPassHandle p_Passhandle)
     renderPassBegin.clearValueCount = 2;
     renderPassBegin.pClearValues = m_Clears;
 
-    vkCmdBeginRenderPass(m_VulkanCmdBuffer, &renderPassBegin, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(
+        m_VulkanCmdBuffer,
+        &renderPassBegin,
+        p_UseSecondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
+                       : VK_SUBPASS_CONTENTS_INLINE);
   }
 
   // Cache render pass
@@ -411,6 +416,172 @@ DescriptorSetHandle CommandBuffer::createDescriptorSet(const DescriptorSetCreati
   vkUpdateDescriptorSets(m_GpuDevice->m_VulkanDevice, numResources, descriptorWrite, 0, nullptr);
 
   return handle;
+}
+//---------------------------------------------------------------------------//
+void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
+{
+
+  m_GpuDevice = p_GpuDevice;
+  m_NumPoolsPerFrame = p_NumThreads;
+
+  // Create pools: num frames * num threads;
+  const uint32_t totalPools = m_NumPoolsPerFrame * m_GpuDevice->kMaxFrames;
+  m_VulkanCommandPools.init(m_GpuDevice->m_Allocator, totalPools, totalPools);
+  // Init per thread-frame used buffers
+  m_UsedBuffers.init(m_GpuDevice->m_Allocator, totalPools, totalPools);
+  m_UsedSecondaryCommandBuffers.init(m_GpuDevice->m_Allocator, totalPools, totalPools);
+
+  for (uint32_t i = 0; i < totalPools; i++)
+  {
+    VkCommandPoolCreateInfo cmdPoolCi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
+    cmdPoolCi.queueFamilyIndex = m_GpuDevice->m_VulkanMainQueueFamily;
+    cmdPoolCi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    vkCreateCommandPool(
+        m_GpuDevice->m_VulkanDevice,
+        &cmdPoolCi,
+        m_GpuDevice->m_VulkanAllocCallbacks,
+        &m_VulkanCommandPools[i]);
+
+    m_UsedBuffers[i] = 0;
+    m_UsedSecondaryCommandBuffers[i] = 0;
+  }
+
+  // Create command buffers: pools * buffers per pool
+  const uint32_t totalBuffers = totalPools * m_NumCommandBuffersPerThread;
+  m_CommandBuffers.init(m_GpuDevice->m_Allocator, totalBuffers, totalBuffers);
+
+  const uint32_t totalSecondaryBuffers = totalPools * g_SecondaryCommandBuffersCount;
+  m_SecondaryCommandBuffers.init(m_GpuDevice->m_Allocator, totalSecondaryBuffers);
+
+  for (uint32_t i = 0; i < totalBuffers; i++)
+  {
+    VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
+
+    const uint32_t frameIndex = i / (m_NumCommandBuffersPerThread * m_NumPoolsPerFrame);
+    const uint32_t threadIndex = (i / m_NumCommandBuffersPerThread) % m_NumPoolsPerFrame;
+    const uint32_t poolIndex = poolFromIndices(frameIndex, threadIndex);
+    // printf( "Indices i:%u f:%u t:%u p:%u\n", i, frameIndex, threadIndex, poolIndex );
+    cmd.commandPool = m_VulkanCommandPools[poolIndex];
+    cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmd.commandBufferCount = 1;
+
+    CommandBuffer& currentCommandBuffer = m_CommandBuffers[i];
+    vkAllocateCommandBuffers(
+        m_GpuDevice->m_VulkanDevice, &cmd, &currentCommandBuffer.m_VulkanCmdBuffer);
+
+    // TODO: move to have a ring per queue per thread
+    currentCommandBuffer.m_Handle = i;
+    currentCommandBuffer.init(m_GpuDevice);
+  }
+
+  uint32_t handle = totalBuffers;
+  for (uint32_t poolIndex = 0; poolIndex < totalPools; ++poolIndex)
+  {
+    VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
+
+    cmd.commandPool = m_VulkanCommandPools[poolIndex];
+    cmd.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+    cmd.commandBufferCount = g_SecondaryCommandBuffersCount;
+
+    VkCommandBuffer secondaryBuffers[g_SecondaryCommandBuffersCount];
+    vkAllocateCommandBuffers(m_GpuDevice->m_VulkanDevice, &cmd, secondaryBuffers);
+
+    for (uint32_t cmdIndex = 0; cmdIndex < g_SecondaryCommandBuffersCount; ++cmdIndex)
+    {
+      CommandBuffer cmdBuf{};
+      cmdBuf.m_VulkanCmdBuffer = secondaryBuffers[cmdIndex];
+
+      cmdBuf.m_Handle = handle++;
+      cmdBuf.init(m_GpuDevice);
+
+      // NOTE: access to the descriptor pool has to be synchronized
+      // across theads. Don't allow for now
+
+      m_SecondaryCommandBuffers.push(cmdBuf);
+    }
+  }
+
+  // printf( "Done\n" );
+}
+//---------------------------------------------------------------------------//
+void CommandBufferManager::shutdown()
+{
+  const uint32_t totalPools = m_NumPoolsPerFrame * m_GpuDevice->kMaxFrames;
+  for (uint32_t i = 0; i < totalPools; i++)
+  {
+    vkDestroyCommandPool(
+        m_GpuDevice->m_VulkanDevice, m_VulkanCommandPools[i], m_GpuDevice->m_VulkanAllocCallbacks);
+  }
+
+  for (uint32_t i = 0; i < m_CommandBuffers.m_Size; i++)
+  {
+    m_CommandBuffers[i].shutdown();
+  }
+
+  for (uint32_t i = 0; i < m_SecondaryCommandBuffers.m_Size; ++i)
+  {
+    m_SecondaryCommandBuffers[i].shutdown();
+  }
+
+  m_VulkanCommandPools.shutdown();
+  m_SecondaryCommandBuffers.shutdown();
+  m_CommandBuffers.shutdown();
+  m_UsedBuffers.shutdown();
+  m_UsedSecondaryCommandBuffers.shutdown();
+}
+//---------------------------------------------------------------------------//
+void CommandBufferManager::resetPools(uint32_t p_FrameIndex)
+{
+
+  for (uint32_t i = 0; i < m_NumPoolsPerFrame; i++)
+  {
+    const uint32_t poolIndex = poolFromIndices(p_FrameIndex, i);
+    vkResetCommandPool(m_GpuDevice->m_VulkanDevice, m_VulkanCommandPools[poolIndex], 0);
+
+    m_UsedBuffers[poolIndex] = 0;
+    m_UsedSecondaryCommandBuffers[poolIndex] = 0;
+  }
+}
+//---------------------------------------------------------------------------//
+CommandBuffer*
+CommandBufferManager::getCommandBuffer(uint32_t p_Frame, uint32_t p_ThreadIndex, bool begin)
+{
+  const uint32_t poolIndex = poolFromIndices(p_Frame, p_ThreadIndex);
+  uint32_t currentUsedBuffer = m_UsedBuffers[poolIndex];
+  // TODO: how to handle fire-and-forget command buffers ?
+  // m_UsedBuffers[ poolIndex ] = currentUsedBuffer + 1;
+  assert(currentUsedBuffer < m_NumCommandBuffersPerThread);
+
+  CommandBuffer* cmdBuf =
+      &m_CommandBuffers[(poolIndex * m_NumCommandBuffersPerThread) + currentUsedBuffer];
+  if (begin)
+  {
+    cmdBuf->reset();
+    VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmdBuf->m_VulkanCmdBuffer, &beginInfo);
+  }
+  return cmdBuf;
+}
+//---------------------------------------------------------------------------//
+CommandBuffer*
+CommandBufferManager::getSecondaryCommandBuffer(uint32_t p_Frame, uint32_t p_ThreadIndex)
+{
+  const uint32_t poolIndex = poolFromIndices(p_Frame, p_ThreadIndex);
+  uint32_t currentUsedBuffer = m_UsedSecondaryCommandBuffers[poolIndex];
+  m_UsedSecondaryCommandBuffers[poolIndex] = currentUsedBuffer + 1;
+
+  assert(currentUsedBuffer < g_SecondaryCommandBuffersCount);
+
+  CommandBuffer* cmdBuf =
+      &m_SecondaryCommandBuffers[(poolIndex * g_SecondaryCommandBuffersCount) + currentUsedBuffer];
+  return cmdBuf;
+}
+//---------------------------------------------------------------------------//
+uint32_t CommandBufferManager::poolFromIndices(uint32_t p_FrameIndex, uint32_t p_ThreadIndex)
+{
+  return (p_FrameIndex * m_NumPoolsPerFrame) + p_ThreadIndex;
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics
