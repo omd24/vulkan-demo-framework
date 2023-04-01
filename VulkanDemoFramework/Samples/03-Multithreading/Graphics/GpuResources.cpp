@@ -65,28 +65,41 @@ BufferCreation& BufferCreation::reset()
 }
 
 BufferCreation&
-BufferCreation::set(VkBufferUsageFlags flags, ResourceUsageType::Enum usage_, uint32_t size_)
+BufferCreation::set(VkBufferUsageFlags p_Flags, ResourceUsageType::Enum p_Usage, uint32_t p_Size)
 {
-  typeFlags = flags;
-  usage = usage_;
-  size = size_;
+  typeFlags = p_Flags;
+  usage = p_Usage;
+  size = p_Size;
 
   return *this;
 }
 
-BufferCreation& BufferCreation::setData(void* data_)
+BufferCreation& BufferCreation::setData(void* p_Data)
 {
-  initialData = data_;
+  initialData = p_Data;
 
   return *this;
 }
 
-BufferCreation& BufferCreation::setName(const char* name_)
+BufferCreation& BufferCreation::setName(const char* p_Name)
 {
-  name = name_;
+  name = p_Name;
 
   return *this;
 }
+
+BufferCreation& BufferCreation::setPersistent(bool value)
+{
+  persistent = value ? 1 : 0;
+  return *this;
+}
+
+BufferCreation& BufferCreation::setDeviceOnly(bool value)
+{
+  deviceOnly = value ? 1 : 0;
+  return *this;
+}
+
 //---------------------------------------------------------------------------//
 /// TextureCreation
 TextureCreation& TextureCreation::setSize(uint16_t width_, uint16_t height_, uint16_t depth_)

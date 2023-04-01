@@ -197,6 +197,8 @@ struct BufferCreation
   ResourceUsageType::Enum usage = ResourceUsageType::kImmutable;
   uint32_t size = 0;
   void* initialData = nullptr;
+  uint32_t persistent = 0;
+  uint32_t deviceOnly = 0;
 
   const char* name = nullptr;
 
@@ -204,6 +206,8 @@ struct BufferCreation
   BufferCreation& set(VkBufferUsageFlags flags, ResourceUsageType::Enum usage, uint32_t size);
   BufferCreation& setData(void* data);
   BufferCreation& setName(const char* name);
+  BufferCreation& setPersistent(bool value);
+  BufferCreation& setDeviceOnly(bool value);
 
 }; // struct BufferCreation
 
@@ -629,6 +633,7 @@ struct Buffer
   BufferHandle handle;
   BufferHandle parentBuffer;
 
+  uint8_t* mappedData = nullptr;
   const char* name = nullptr;
 
 }; // struct BufferVulkan
@@ -768,7 +773,7 @@ struct RenderPass
 //---------------------------------------------------------------------------//
 // Enum translations. Use tables or switches depending on the case.
 //---------------------------------------------------------------------------//
-static const char* toCompilerExtension(VkShaderStageFlagBits value)
+inline const char* toCompilerExtension(VkShaderStageFlagBits value)
 {
   switch (value)
   {
@@ -784,7 +789,7 @@ static const char* toCompilerExtension(VkShaderStageFlagBits value)
 }
 
 //
-static const char* toStageDefines(VkShaderStageFlagBits value)
+inline const char* toStageDefines(VkShaderStageFlagBits value)
 {
   switch (value)
   {
@@ -799,7 +804,7 @@ static const char* toStageDefines(VkShaderStageFlagBits value)
   }
 }
 
-static VkImageType toVkImageType(TextureType::Enum type)
+inline VkImageType toVkImageType(TextureType::Enum type)
 {
   static VkImageType kVkTarget[TextureType::kCount] = {
       VK_IMAGE_TYPE_1D,
@@ -811,7 +816,7 @@ static VkImageType toVkImageType(TextureType::Enum type)
   return kVkTarget[type];
 }
 
-static VkImageViewType toVkImageViewType(TextureType::Enum type)
+inline VkImageViewType toVkImageViewType(TextureType::Enum type)
 {
   static VkImageViewType kVkData[] = {
       VK_IMAGE_VIEW_TYPE_1D,
@@ -823,7 +828,7 @@ static VkImageViewType toVkImageViewType(TextureType::Enum type)
   return kVkData[type];
 }
 
-static VkFormat toVkVertexFormat(VertexComponentFormat::Enum value)
+inline VkFormat toVkVertexFormat(VertexComponentFormat::Enum value)
 {
   // Float, Float2, Float3, Float4, Mat4, Byte, Byte4N, UByte, UByte4N, Short2, Short2N, Short4,
   // Short4N, Uint, Uint2, Uint4, Count
@@ -848,7 +853,7 @@ static VkFormat toVkVertexFormat(VertexComponentFormat::Enum value)
   return kVkVertexFormats[value];
 }
 
-static VkPipelineStageFlags toVkPipelineStage(PipelineStage::Enum value)
+inline VkPipelineStageFlags toVkPipelineStage(PipelineStage::Enum value)
 {
   static VkPipelineStageFlags kVkValues[] = {
       VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
@@ -861,7 +866,7 @@ static VkPipelineStageFlags toVkPipelineStage(PipelineStage::Enum value)
   return kVkValues[value];
 }
 
-static VkAccessFlags utilToVkAccessFlags(ResourceState state)
+inline VkAccessFlags utilToVkAccessFlags(ResourceState state)
 {
   VkAccessFlags ret = 0;
   if (state & RESOURCE_STATE_COPY_SOURCE)
@@ -909,7 +914,7 @@ static VkAccessFlags utilToVkAccessFlags(ResourceState state)
   return ret;
 }
 
-static VkImageLayout utilToVkImageLayout(ResourceState usage)
+inline VkImageLayout utilToVkImageLayout(ResourceState usage)
 {
   if (usage & RESOURCE_STATE_COPY_SOURCE)
     return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -942,7 +947,7 @@ static VkImageLayout utilToVkImageLayout(ResourceState usage)
 }
 
 // Determines pipeline stages involved for given accesses
-static VkPipelineStageFlags
+inline VkPipelineStageFlags
 utilDeterminePipelineStageFlags(VkAccessFlags accessFlags, QueueType::Enum queueType)
 {
   VkPipelineStageFlags flags = 0;
@@ -1012,4 +1017,39 @@ utilDeterminePipelineStageFlags(VkAccessFlags accessFlags, QueueType::Enum queue
   return flags;
 }
 //---------------------------------------------------------------------------//
+inline void utilAddImageBarrier(
+    VkCommandBuffer p_CmdBuf,
+    VkImage p_Image,
+    ResourceState p_OldState,
+    ResourceState p_NewState,
+    uint32_t p_BaseMipLevel,
+    uint32_t p_MipCount,
+    bool p_IsDepth)
+{
+  VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+  barrier.image = p_Image;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.subresourceRange.aspectMask =
+      p_IsDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.subresourceRange.levelCount = p_MipCount;
+
+  barrier.subresourceRange.baseMipLevel = p_BaseMipLevel;
+  barrier.oldLayout = utilToVkImageLayout(p_OldState);
+  barrier.newLayout = utilToVkImageLayout(p_NewState);
+  barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
+  barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
+
+  const VkPipelineStageFlags sourceStageMask =
+      utilDeterminePipelineStageFlags(barrier.srcAccessMask, QueueType::kGraphics);
+  const VkPipelineStageFlags destinationStageMask =
+      utilDeterminePipelineStageFlags(barrier.dstAccessMask, QueueType::kGraphics);
+
+  vkCmdPipelineBarrier(
+      p_CmdBuf, sourceStageMask, destinationStageMask, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+//---------------------------------------------------------------------------//
+
 } // namespace Graphics

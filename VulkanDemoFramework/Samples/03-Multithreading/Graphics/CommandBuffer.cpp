@@ -418,6 +418,59 @@ DescriptorSetHandle CommandBuffer::createDescriptorSet(const DescriptorSetCreati
   return handle;
 }
 //---------------------------------------------------------------------------//
+void CommandBuffer::begin()
+{
+  if (!m_IsRecording)
+  {
+    VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(m_VulkanCmdBuffer, &beginInfo);
+
+    m_IsRecording = true;
+  }
+}
+//---------------------------------------------------------------------------//
+void CommandBuffer::beginSecondary(RenderPass* p_CurrRenderPass)
+{
+  if (!m_IsRecording)
+  {
+    VkCommandBufferInheritanceInfo inheritance{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO};
+    inheritance.renderPass = p_CurrRenderPass->vkRenderPass;
+    inheritance.subpass = 0;
+    inheritance.framebuffer = p_CurrRenderPass->vkFrameBuffer;
+
+    VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                      VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+    beginInfo.pInheritanceInfo = &inheritance;
+
+    vkBeginCommandBuffer(m_VulkanCmdBuffer, &beginInfo);
+
+    m_IsRecording = true;
+
+    m_CurrentRenderPass = p_CurrRenderPass;
+  }
+}
+//---------------------------------------------------------------------------//
+void CommandBuffer::end()
+{
+  if (m_IsRecording)
+  {
+    vkEndCommandBuffer(m_VulkanCmdBuffer);
+    m_IsRecording = false;
+  }
+}
+//---------------------------------------------------------------------------//
+void CommandBuffer::endCurrentRenderPass()
+{
+  if (m_IsRecording && m_CurrentRenderPass != nullptr)
+  {
+    vkEndCommandBuffer(m_VulkanCmdBuffer);
+    m_CurrentRenderPass = nullptr;
+  }
+}
+//---------------------------------------------------------------------------//
 void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
 {
 

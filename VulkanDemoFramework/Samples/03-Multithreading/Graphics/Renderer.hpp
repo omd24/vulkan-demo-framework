@@ -178,6 +178,12 @@ struct Renderer : public Framework::Service
     m_GpuDevice->queueCommandBuffer(p_CommandBuffer);
   }
 
+  void addTextureToUpdate(Graphics::TextureHandle p_Texture);
+  void addTextureUpdateCommands(uint32_t p_ThreadId);
+  std::mutex m_TextureUpdateMutex;
+  TextureHandle m_TexturesToUpdate[128];
+  uint32_t m_NumTexturesToUpdate = 0;
+
   Framework::ResourcePoolTyped<TextureResource> m_Textures;
   Framework::ResourcePoolTyped<BufferResource> m_Buffers;
   Framework::ResourcePoolTyped<SamplerResource> m_Samplers;

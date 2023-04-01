@@ -1702,9 +1702,18 @@ BufferHandle GpuDevice::createBuffer(const BufferCreation& p_Creation)
   bufferCi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | p_Creation.typeFlags;
   bufferCi.size = p_Creation.size > 0 ? p_Creation.size : 1; // 0 sized creations are not permitted.
 
+  // NOTE! Don't allow rebar
+  assert(!(p_Creation.persistent && p_Creation.deviceOnly));
+
   VmaAllocationCreateInfo memoryCi{};
   memoryCi.flags = VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT;
-  memoryCi.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+  if (p_Creation.persistent)
+    memoryCi.flags = memoryCi.flags | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  if (p_Creation.deviceOnly)
+    memoryCi.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+  else
+    memoryCi.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
 
   VmaAllocationInfo allocationInfo{};
   CHECKRES(vmaCreateBuffer(
@@ -1725,6 +1734,11 @@ BufferHandle GpuDevice::createBuffer(const BufferCreation& p_Creation)
     vmaMapMemory(m_VmaAllocator, buffer->vmaAllocation, &data);
     memcpy(data, p_Creation.initialData, (size_t)p_Creation.size);
     vmaUnmapMemory(m_VmaAllocator, buffer->vmaAllocation);
+  }
+
+  if (p_Creation.persistent)
+  {
+    buffer->mappedData = static_cast<uint8_t*>(allocationInfo.pMappedData);
   }
 
   return handle;

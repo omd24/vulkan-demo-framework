@@ -50,6 +50,11 @@ struct CommandBuffer
     m_Clears[1].depthStencil.stencil = p_Value;
   }
 
+  void begin();
+  void beginSecondary(RenderPass* p_CurrRenderPass);
+  void end();
+  void endCurrentRenderPass();
+
   VkCommandBuffer m_VulkanCmdBuffer;
   GpuDevice* m_GpuDevice;
   VkDescriptorSet m_VulkanDescriptorSets[16];

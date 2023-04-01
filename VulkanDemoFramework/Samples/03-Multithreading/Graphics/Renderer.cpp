@@ -223,6 +223,143 @@ uint64_t RendererUtil::SamplerResource::ms_TypeHash = 0;
 
 static Renderer g_Renderer;
 //---------------------------------------------------------------------------//
+static VkImageLayout addImageBarrier2(
+    VkCommandBuffer p_CmdBuf,
+    VkImage p_Image,
+    Graphics::ResourceState p_OldState,
+    Graphics::ResourceState p_NewState,
+    uint32_t p_BaseMipLevel,
+    uint32_t p_MipCount,
+    bool p_IsDepth,
+    uint32_t p_SourceFamily,
+    uint32_t p_DestinationFamily)
+{
+  VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+  barrier.image = p_Image;
+  barrier.srcQueueFamilyIndex = p_SourceFamily;
+  barrier.dstQueueFamilyIndex = p_DestinationFamily;
+  barrier.subresourceRange.aspectMask =
+      p_IsDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.subresourceRange.levelCount = p_MipCount;
+
+  barrier.subresourceRange.baseMipLevel = p_BaseMipLevel;
+  barrier.oldLayout = utilToVkImageLayout(p_OldState);
+  barrier.newLayout = utilToVkImageLayout(p_NewState);
+  barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
+  barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
+
+  const VkPipelineStageFlags sourceStageMask =
+      utilDeterminePipelineStageFlags(barrier.srcAccessMask, QueueType::kGraphics);
+  const VkPipelineStageFlags destinationStageMask =
+      utilDeterminePipelineStageFlags(barrier.dstAccessMask, QueueType::kGraphics);
+
+  vkCmdPipelineBarrier(
+      p_CmdBuf, sourceStageMask, destinationStageMask, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+  return barrier.newLayout;
+}
+//---------------------------------------------------------------------------//
+static void generateMipmaps(
+    Graphics::Texture* p_Texture, Graphics::CommandBuffer* p_CmdBuf, bool p_FromTransferQueue)
+{
+  using namespace Graphics;
+
+  if (p_Texture->mipmaps > 1)
+  {
+    utilAddImageBarrier(
+        p_CmdBuf->m_VulkanCmdBuffer,
+        p_Texture->vkImage,
+        p_FromTransferQueue ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_SOURCE,
+        RESOURCE_STATE_COPY_SOURCE,
+        0,
+        1,
+        false);
+  }
+
+  int w = p_Texture->width;
+  int h = p_Texture->height;
+
+  for (int mipIndex = 1; mipIndex < p_Texture->mipmaps; ++mipIndex)
+  {
+    utilAddImageBarrier(
+        p_CmdBuf->m_VulkanCmdBuffer,
+        p_Texture->vkImage,
+        RESOURCE_STATE_UNDEFINED,
+        RESOURCE_STATE_COPY_DEST,
+        mipIndex,
+        1,
+        false);
+
+    VkImageBlit blit_region{};
+    blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit_region.srcSubresource.mipLevel = mipIndex - 1;
+    blit_region.srcSubresource.baseArrayLayer = 0;
+    blit_region.srcSubresource.layerCount = 1;
+
+    blit_region.srcOffsets[0] = {0, 0, 0};
+    blit_region.srcOffsets[1] = {w, h, 1};
+
+    w /= 2;
+    h /= 2;
+
+    blit_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit_region.dstSubresource.mipLevel = mipIndex;
+    blit_region.dstSubresource.baseArrayLayer = 0;
+    blit_region.dstSubresource.layerCount = 1;
+
+    blit_region.dstOffsets[0] = {0, 0, 0};
+    blit_region.dstOffsets[1] = {w, h, 1};
+
+    vkCmdBlitImage(
+        p_CmdBuf->m_VulkanCmdBuffer,
+        p_Texture->vkImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        p_Texture->vkImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &blit_region,
+        VK_FILTER_LINEAR);
+
+    // Prepare current mip for next level
+    utilAddImageBarrier(
+        p_CmdBuf->m_VulkanCmdBuffer,
+        p_Texture->vkImage,
+        RESOURCE_STATE_COPY_DEST,
+        RESOURCE_STATE_COPY_SOURCE,
+        mipIndex,
+        1,
+        false);
+  }
+
+  // Transition
+  if (p_FromTransferQueue && false)
+  {
+    utilAddImageBarrier(
+        p_CmdBuf->m_VulkanCmdBuffer,
+        p_Texture->vkImage,
+        (p_Texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST,
+        RESOURCE_STATE_SHADER_RESOURCE,
+        0,
+        p_Texture->mipmaps,
+        false);
+  }
+  else
+  {
+    utilAddImageBarrier(
+        p_CmdBuf->m_VulkanCmdBuffer,
+        p_Texture->vkImage,
+        RESOURCE_STATE_UNDEFINED,
+        RESOURCE_STATE_SHADER_RESOURCE,
+        0,
+        p_Texture->mipmaps,
+        false);
+  }
+
+  p_Texture->vkImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+//---------------------------------------------------------------------------//
 // Renderer:
 //---------------------------------------------------------------------------//
 Renderer* Renderer::instance()
@@ -599,6 +736,51 @@ void Renderer::unmapBuffer(BufferResource* p_Buffer)
     MapBufferParameters mapParams = {p_Buffer->m_Handle, 0, 0};
     m_GpuDevice->unmapBuffer(mapParams);
   }
+}
+//---------------------------------------------------------------------------//
+void Renderer::addTextureToUpdate(Graphics::TextureHandle p_Texture)
+{
+  std::lock_guard<std::mutex> guard(m_TextureUpdateMutex);
+
+  m_TexturesToUpdate[m_NumTexturesToUpdate++] = p_Texture;
+}
+//---------------------------------------------------------------------------//
+void Renderer::addTextureUpdateCommands(uint32_t p_ThreadId)
+{
+  std::lock_guard<std::mutex> guard(m_TextureUpdateMutex);
+
+  if (m_NumTexturesToUpdate == 0)
+  {
+    return;
+  }
+
+  CommandBuffer* cmdBuf = m_GpuDevice->getCommandBuffer(p_ThreadId, false);
+  cmdBuf->begin();
+
+  for (uint32_t i = 0; i < m_NumTexturesToUpdate; ++i)
+  {
+
+    Texture* texture =
+        (Texture*)m_GpuDevice->m_Textures.accessResource(m_TexturesToUpdate[i].index);
+
+    texture->vkImageLayout = addImageBarrier2(
+        cmdBuf->m_VulkanCmdBuffer,
+        texture->vkImage,
+        RESOURCE_STATE_COPY_DEST,
+        RESOURCE_STATE_COPY_SOURCE,
+        0,
+        1,
+        false,
+        m_GpuDevice->m_VulkanTransferQueueFamily,
+        m_GpuDevice->m_VulkanMainQueueFamily);
+
+    generateMipmaps(texture, cmdBuf, true);
+  }
+
+  // TODO: this is done before submitting to the queue in the device.
+  m_GpuDevice->queueCommandBuffer(cmdBuf);
+
+  m_NumTexturesToUpdate = 0;
 }
 //---------------------------------------------------------------------------//
 } // namespace RendererUtil
