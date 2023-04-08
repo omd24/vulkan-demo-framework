@@ -1840,12 +1840,325 @@ void ObjectScene::prepareDraws(
 // AsynchronousLoader impl:
 //---------------------------------------------------------------------------//
 
-//
-//
-//
-//
-//
+void AsynchronousLoader::init(
+    Graphics::RendererUtil::Renderer* p_Renderer,
+    enki::TaskScheduler* p_TaskScheduler,
+    Framework::Allocator* p_Allocator)
+{
+  m_Renderer = p_Renderer;
+  m_TaskScheduler = p_TaskScheduler;
+  m_Allocator = p_Allocator;
 
+  m_FileLoadRequests.init(m_Allocator, 16);
+  m_UploadRequests.init(m_Allocator, 16);
+
+  m_TextureReady.index = Graphics::kInvalidTexture.index;
+  m_CpuBufferReady.index = Graphics::kInvalidBuffer.index;
+  m_GpuBufferReady.index = Graphics::kInvalidBuffer.index;
+  m_Completed = nullptr;
+
+  using namespace Graphics;
+
+  // Create a persistently-mapped staging buffer
+  BufferCreation bufferCreation;
+  bufferCreation.reset()
+      .set(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, ResourceUsageType::kStream, FRAMEWORK_MEGA(64))
+      .setName("staging buffer")
+      .setPersistent(true);
+  BufferHandle stagingBufferHandle = m_Renderer->m_GpuDevice->createBuffer(bufferCreation);
+
+  m_StagingBuffer = static_cast<Buffer*>(
+      m_Renderer->m_GpuDevice->m_Buffers.accessResource(stagingBufferHandle.index));
+
+  m_StagingBufferOffset = 0;
+
+  for (uint32_t i = 0; i < GpuDevice::kMaxFrames; ++i)
+  {
+    VkCommandPoolCreateInfo cmdPoolCi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
+    cmdPoolCi.queueFamilyIndex = m_Renderer->m_GpuDevice->m_VulkanTransferQueueFamily;
+    cmdPoolCi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    vkCreateCommandPool(
+        m_Renderer->m_GpuDevice->m_VulkanDevice,
+        &cmdPoolCi,
+        m_Renderer->m_GpuDevice->m_VulkanAllocCallbacks,
+        &m_CommandPools[i]);
+
+    VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
+    cmd.commandPool = m_CommandPools[i];
+    cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmd.commandBufferCount = 1;
+
+    vkAllocateCommandBuffers(
+        m_Renderer->m_GpuDevice->m_VulkanDevice, &cmd, &m_CommandBuffers[i].m_VulkanCmdBuffer);
+
+    m_CommandBuffers[i].m_IsRecording = false;
+    m_CommandBuffers[i].m_GpuDevice = m_Renderer->m_GpuDevice;
+  }
+
+  VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+  vkCreateSemaphore(
+      m_Renderer->m_GpuDevice->m_VulkanDevice,
+      &semaphore_info,
+      m_Renderer->m_GpuDevice->m_VulkanAllocCallbacks,
+      &m_TransferCompleteSemaphore);
+
+  VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+  vkCreateFence(
+      m_Renderer->m_GpuDevice->m_VulkanDevice,
+      &fence_info,
+      m_Renderer->m_GpuDevice->m_VulkanAllocCallbacks,
+      &m_TransferFence);
+}
+//---------------------------------------------------------------------------//
+void AsynchronousLoader::shutdown()
+{
+
+  m_Renderer->m_GpuDevice->destroyBuffer(m_StagingBuffer->handle);
+
+  m_FileLoadRequests.shutdown();
+  m_UploadRequests.shutdown();
+
+  for (uint32_t i = 0; i < Graphics::GpuDevice::kMaxFrames; ++i)
+  {
+    vkDestroyCommandPool(
+        m_Renderer->m_GpuDevice->m_VulkanDevice,
+        m_CommandPools[i],
+        m_Renderer->m_GpuDevice->m_VulkanAllocCallbacks);
+    // Command buffers are destroyed with the pool associated.
+  }
+
+  vkDestroySemaphore(
+      m_Renderer->m_GpuDevice->m_VulkanDevice,
+      m_TransferCompleteSemaphore,
+      m_Renderer->m_GpuDevice->m_VulkanAllocCallbacks);
+  vkDestroyFence(
+      m_Renderer->m_GpuDevice->m_VulkanDevice,
+      m_TransferFence,
+      m_Renderer->m_GpuDevice->m_VulkanAllocCallbacks);
+}
+//---------------------------------------------------------------------------//
+void AsynchronousLoader::update(Framework::Allocator* scratch_allocator)
+{
+  using namespace Graphics;
+
+  // If a texture was processed in the previous commands, signal the renderer
+  if (m_TextureReady.index != kInvalidTexture.index)
+  {
+    // Add update request.
+    // This method is multithreaded_safe
+    m_Renderer->addTextureToUpdate(m_TextureReady);
+  }
+
+  if (m_CpuBufferReady.index != kInvalidBuffer.index &&
+      m_GpuBufferReady.index != kInvalidBuffer.index)
+  {
+    assert(m_Completed != nullptr);
+    (*m_Completed)++;
+
+    // TODO: free cpu buffer
+
+    m_GpuBufferReady.index = kInvalidBuffer.index;
+    m_CpuBufferReady.index = kInvalidBuffer.index;
+    m_Completed = nullptr;
+  }
+
+  m_TextureReady.index = kInvalidTexture.index;
+
+  // Process upload requests
+  if (m_UploadRequests.m_Size)
+  {
+    // Wait for transfer fence to be finished
+    if (vkGetFenceStatus(m_Renderer->m_GpuDevice->m_VulkanDevice, m_TransferFence) != VK_SUCCESS)
+    {
+      return;
+    }
+    // Reset if file requests are present.
+    vkResetFences(m_Renderer->m_GpuDevice->m_VulkanDevice, 1, &m_TransferFence);
+
+    // Get last request
+    UploadRequest request = m_UploadRequests.back();
+    m_UploadRequests.pop();
+
+    CommandBuffer* cmdbuf = &m_CommandBuffers[m_Renderer->m_GpuDevice->m_CurrentFrameIndex];
+    cmdbuf->begin();
+
+    if (request.texture.index != kInvalidTexture.index)
+    {
+      Texture* texture = static_cast<Texture*>(
+          m_Renderer->m_GpuDevice->m_Textures.accessResource(request.texture.index));
+      const uint32_t kTextureChannels = 4;
+      const uint32_t kTextureAlignment = 4;
+      const size_t alignedImageSize = Framework::memoryAlign(
+          texture->width * texture->height * kTextureChannels, kTextureAlignment);
+      // Request place in buffer
+      const size_t currentOffset = std::atomic_fetch_add(&m_StagingBufferOffset, alignedImageSize);
+
+      cmdbuf->uploadTextureData(
+          texture->handle, request.data, m_StagingBuffer->handle, currentOffset);
+
+      free(request.data);
+    }
+    else if (
+        request.cpuBuffer.index != kInvalidBuffer.index &&
+        request.gpuBuffer.index != kInvalidBuffer.index)
+    {
+      Buffer* src = static_cast<Buffer*>(
+          m_Renderer->m_GpuDevice->m_Buffers.accessResource(request.cpuBuffer.index));
+      Buffer* dst = static_cast<Buffer*>(
+          m_Renderer->m_GpuDevice->m_Buffers.accessResource(request.gpuBuffer.index));
+
+      cmdbuf->uploadBufferData(src->handle, dst->handle);
+    }
+    else if (request.cpuBuffer.index != kInvalidBuffer.index)
+    {
+      Buffer* buffer = static_cast<Buffer*>(
+          m_Renderer->m_GpuDevice->m_Buffers.accessResource(request.cpuBuffer.index));
+      // TODO: proper alignment
+      const size_t alignedImageSize = Framework::memoryAlign(buffer->size, 64);
+      const size_t currentOffset = std::atomic_fetch_add(&m_StagingBufferOffset, alignedImageSize);
+      cmdbuf->uploadBufferData(
+          buffer->handle, request.data, m_StagingBuffer->handle, currentOffset);
+
+      free(request.data);
+    }
+
+    cmdbuf->end();
+
+    VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdbuf->m_VulkanCmdBuffer;
+    VkPipelineStageFlags wait_flag[]{VK_PIPELINE_STAGE_TRANSFER_BIT};
+    VkSemaphore wait_semaphore[]{m_TransferCompleteSemaphore};
+    submitInfo.pWaitSemaphores = wait_semaphore;
+    submitInfo.pWaitDstStageMask = wait_flag;
+
+    VkQueue used_queue = m_Renderer->m_GpuDevice->m_VulkanTransferQueue;
+    vkQueueSubmit(used_queue, 1, &submitInfo, m_TransferFence);
+
+    // TODO: better management for state machine. We need to account for file -> buffer,
+    // buffer -> texture and buffer -> buffer. One the CPU buffer has been used it should be freed.
+    if (request.texture.index != kInvalidIndex)
+    {
+      assert(m_TextureReady.index == kInvalidTexture.index);
+      m_TextureReady = request.texture;
+    }
+    else if (
+        request.cpuBuffer.index != kInvalidBuffer.index &&
+        request.gpuBuffer.index != kInvalidBuffer.index)
+    {
+      assert(m_CpuBufferReady.index == kInvalidIndex);
+      assert(m_GpuBufferReady.index == kInvalidIndex);
+      assert(m_Completed == nullptr);
+      m_CpuBufferReady = request.cpuBuffer;
+      m_GpuBufferReady = request.gpuBuffer;
+      m_Completed = request.completed;
+    }
+    else if (request.cpuBuffer.index != kInvalidIndex)
+    {
+      assert(m_CpuBufferReady.index == kInvalidIndex);
+      m_CpuBufferReady = request.cpuBuffer;
+    }
+  }
+
+  // Process a file request
+  if (m_FileLoadRequests.m_Size)
+  {
+    FileLoadRequest loadRequest = m_FileLoadRequests.back();
+    m_FileLoadRequests.pop();
+
+    int64_t startReadingFile = Framework::Time::getCurrentTime();
+    // Process request
+    int x, y, comp;
+    uint8_t* textureData = stbi_load(loadRequest.path, &x, &y, &comp, 4);
+
+    if (textureData)
+    {
+      printf(
+          "File %s read in %f ms\n",
+          loadRequest.path,
+          Framework::Time::deltaFromStartMilliseconds(startReadingFile));
+
+      UploadRequest& uploadRequest = m_UploadRequests.pushUse();
+      uploadRequest.data = textureData;
+      uploadRequest.texture = loadRequest.texture;
+      uploadRequest.cpuBuffer = kInvalidBuffer;
+    }
+    else
+    {
+      printf("Error reading file %s\n", loadRequest.path);
+    }
+  }
+
+  m_StagingBufferOffset = 0;
+}
+//---------------------------------------------------------------------------//
+void AsynchronousLoader::requestTextureData(
+    const char* p_Filename, Graphics::TextureHandle p_Texture)
+{
+
+  FileLoadRequest& request = m_FileLoadRequests.pushUse();
+  strcpy(request.path, p_Filename);
+  request.texture = p_Texture;
+  request.buffer = Graphics::kInvalidBuffer;
+}
+//---------------------------------------------------------------------------//
+void AsynchronousLoader::requestBufferUpload(void* p_Data, Graphics::BufferHandle p_Buffer)
+{
+
+  UploadRequest& uploadRequest = m_UploadRequests.pushUse();
+  uploadRequest.data = p_Data;
+  uploadRequest.cpuBuffer = p_Buffer;
+  uploadRequest.texture = Graphics::kInvalidTexture;
+}
+//---------------------------------------------------------------------------//
+void AsynchronousLoader::requestBufferCopy(
+    Graphics::BufferHandle p_Src, Graphics::BufferHandle p_Dst, uint32_t* p_Completed)
+{
+
+  UploadRequest& uploadRequest = m_UploadRequests.pushUse();
+  uploadRequest.completed = p_Completed;
+  uploadRequest.data = nullptr;
+  uploadRequest.cpuBuffer = p_Src;
+  uploadRequest.gpuBuffer = p_Dst;
+  uploadRequest.texture = Graphics::kInvalidTexture;
+}
+//---------------------------------------------------------------------------//
+// IO Tasks
+//---------------------------------------------------------------------------//
+struct RunPinnedTaskLoopTask : enki::IPinnedTask
+{
+  void Execute() override
+  {
+    while (m_TaskScheduler->GetIsRunning() && m_Execute)
+    {
+      m_TaskScheduler
+          ->WaitForNewPinnedTasks(); // this thread will 'sleep' until there are new pinned tasks
+      m_TaskScheduler->RunPinnedTasks();
+    }
+  }
+
+  enki::TaskScheduler* m_TaskScheduler;
+  bool m_Execute = true;
+}; // struct RunPinnedTaskLoopTask
+//---------------------------------------------------------------------------//
+struct AsynchronousLoadTask : enki::IPinnedTask
+{
+
+  void Execute() override
+  {
+    // Do file IO
+    while (m_Execute)
+    {
+      m_AsyncLoader->update(nullptr);
+    }
+  }
+
+  AsynchronousLoader* m_AsyncLoader;
+  enki::TaskScheduler* m_TaskScheduler;
+  bool m_Execute = true;
+};
 //---------------------------------------------------------------------------//
 int main(int argc, char** argv)
 {

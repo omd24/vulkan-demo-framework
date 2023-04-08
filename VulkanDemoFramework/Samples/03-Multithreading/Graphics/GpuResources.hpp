@@ -1051,5 +1051,82 @@ inline void utilAddImageBarrier(
       p_CmdBuf, sourceStageMask, destinationStageMask, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 //---------------------------------------------------------------------------//
+inline void utilAddImageBarrierExt(
+    VkCommandBuffer p_CommandBuffer,
+    VkImage p_Image,
+    ResourceState p_OldState,
+    ResourceState p_NewState,
+    uint32_t p_BaseMipLevel,
+    uint32_t p_MipCount,
+    bool is_depth,
+    uint32_t p_SourceFamily,
+    uint32_t p_DestinationFamily,
+    QueueType::Enum p_SourceQueueType,
+    QueueType::Enum p_DestinationQueueType)
+{
 
+  VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+  barrier.image = p_Image;
+  barrier.srcQueueFamilyIndex = p_SourceFamily;
+  barrier.dstQueueFamilyIndex = p_DestinationFamily;
+  barrier.subresourceRange.aspectMask =
+      is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.subresourceRange.levelCount = p_MipCount;
+
+  barrier.subresourceRange.baseMipLevel = p_BaseMipLevel;
+  barrier.oldLayout = utilToVkImageLayout(p_OldState);
+  barrier.newLayout = utilToVkImageLayout(p_NewState);
+  barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
+  barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
+
+  const VkPipelineStageFlags sourceStageMask =
+      utilDeterminePipelineStageFlags(barrier.srcAccessMask, p_SourceQueueType);
+  const VkPipelineStageFlags destinationStageMask =
+      utilDeterminePipelineStageFlags(barrier.dstAccessMask, p_DestinationQueueType);
+
+  vkCmdPipelineBarrier(
+      p_CommandBuffer,
+      sourceStageMask,
+      destinationStageMask,
+      0,
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &barrier);
+}
+//---------------------------------------------------------------------------//
+inline void utilAddBufferBarrierExt(
+    VkCommandBuffer p_CmdBuffer,
+    VkBuffer p_Buffer,
+    ResourceState p_OldState,
+    ResourceState p_NewState,
+    uint32_t p_BufferSize,
+    uint32_t p_SourceFamily,
+    uint32_t p_DestinationFamily,
+    QueueType::Enum p_SourceQueueType,
+    QueueType::Enum p_DestinationQueueType)
+{
+
+  VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+  barrier.buffer = p_Buffer;
+  barrier.srcQueueFamilyIndex = p_SourceFamily;
+  barrier.dstQueueFamilyIndex = p_DestinationFamily;
+  barrier.offset = 0;
+  barrier.size = p_BufferSize;
+  barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
+  barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
+
+  const VkPipelineStageFlags sourceStageMask =
+      utilDeterminePipelineStageFlags(barrier.srcAccessMask, p_SourceQueueType);
+  const VkPipelineStageFlags destinationStageMask =
+      utilDeterminePipelineStageFlags(barrier.dstAccessMask, p_DestinationQueueType);
+
+  vkCmdPipelineBarrier(
+      p_CmdBuffer, sourceStageMask, destinationStageMask, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+}
+//---------------------------------------------------------------------------//
 } // namespace Graphics

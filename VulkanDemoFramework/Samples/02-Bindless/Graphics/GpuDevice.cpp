@@ -52,7 +52,7 @@ struct CommandBufferRing
       CHECKRES(vkAllocateCommandBuffers(
           m_Gpu->m_VulkanDevice, &cmd, &m_CmdBuffers[i].m_VulkanCmdBuffer));
 
-      // TODO(marco): move to have a ring per queue per thread
+      // TODO: move to have a ring per queue per thread
       m_CmdBuffers[i].m_GpuDevice = m_Gpu;
       m_CmdBuffers[i].init(QueueType::Enum::kGraphics, 0, 0);
       m_CmdBuffers[i].m_Handle = i;

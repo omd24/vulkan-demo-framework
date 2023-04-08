@@ -471,6 +471,124 @@ void CommandBuffer::endCurrentRenderPass()
   }
 }
 //---------------------------------------------------------------------------//
+void CommandBuffer::uploadTextureData(
+    TextureHandle p_Texture,
+    void* p_TextureData,
+    BufferHandle p_StagingBuffer,
+    size_t p_StagingBufferOffset)
+{
+  Texture* texture = static_cast<Texture*>(m_GpuDevice->m_Textures.accessResource(p_Texture.index));
+  Buffer* stagingBuffer =
+      static_cast<Buffer*>(m_GpuDevice->m_Buffers.accessResource(p_StagingBuffer.index));
+  uint32_t imageSize = texture->width * texture->height * 4;
+
+  // Copy buffer_data to staging buffer
+  memcpy(
+      stagingBuffer->mappedData + p_StagingBufferOffset,
+      p_TextureData,
+      static_cast<size_t>(imageSize));
+
+  VkBufferImageCopy region = {};
+  region.bufferOffset = p_StagingBufferOffset;
+  region.bufferRowLength = 0;
+  region.bufferImageHeight = 0;
+
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+
+  region.imageOffset = {0, 0, 0};
+  region.imageExtent = {texture->width, texture->height, texture->depth};
+
+  // Pre copy memory barrier to perform layout transition
+  utilAddImageBarrier(
+      m_VulkanCmdBuffer,
+      texture->vkImage,
+      RESOURCE_STATE_UNDEFINED,
+      RESOURCE_STATE_COPY_DEST,
+      0,
+      1,
+      false);
+  // Copy from the staging buffer to the image
+  vkCmdCopyBufferToImage(
+      m_VulkanCmdBuffer,
+      stagingBuffer->vkBuffer,
+      texture->vkImage,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      1,
+      &region);
+
+  // Post copy memory barrier
+  utilAddImageBarrierExt(
+      m_VulkanCmdBuffer,
+      texture->vkImage,
+      RESOURCE_STATE_COPY_DEST,
+      RESOURCE_STATE_COPY_SOURCE,
+      0,
+      1,
+      false,
+      m_GpuDevice->m_VulkanTransferQueueFamily,
+      m_GpuDevice->m_VulkanMainQueueFamily,
+      QueueType::kCopyTransfer,
+      QueueType::kGraphics);
+
+  texture->vkImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+}
+//---------------------------------------------------------------------------//
+void CommandBuffer::uploadBufferData(
+    BufferHandle p_Buffer,
+    void* p_BufferData,
+    BufferHandle p_StagingBuffer,
+    size_t p_StagingBufferOffset)
+{
+  Buffer* buffer = static_cast<Buffer*>(m_GpuDevice->m_Buffers.accessResource(p_Buffer.index));
+  Buffer* stagingBuffer =
+      static_cast<Buffer*>(m_GpuDevice->m_Buffers.accessResource(p_StagingBuffer.index));
+  uint32_t copySize = buffer->size;
+
+  // Copy buffer_data to staging buffer
+  memcpy(
+      stagingBuffer->mappedData + p_StagingBufferOffset,
+      p_BufferData,
+      static_cast<size_t>(copySize));
+
+  VkBufferCopy region{};
+  region.srcOffset = p_StagingBufferOffset;
+  region.dstOffset = 0;
+  region.size = copySize;
+
+  vkCmdCopyBuffer(m_VulkanCmdBuffer, stagingBuffer->vkBuffer, buffer->vkBuffer, 1, &region);
+
+  utilAddBufferBarrierExt(
+      m_VulkanCmdBuffer,
+      buffer->vkBuffer,
+      RESOURCE_STATE_COPY_DEST,
+      RESOURCE_STATE_UNDEFINED,
+      copySize,
+      m_GpuDevice->m_VulkanTransferQueueFamily,
+      m_GpuDevice->m_VulkanMainQueueFamily,
+      QueueType::kCopyTransfer,
+      QueueType::kGraphics);
+}
+//---------------------------------------------------------------------------//
+void CommandBuffer::uploadBufferData(BufferHandle p_Src, BufferHandle p_Dst)
+{
+  Buffer* src = static_cast<Buffer*>(m_GpuDevice->m_Buffers.accessResource(p_Src.index));
+  Buffer* dst = static_cast<Buffer*>(m_GpuDevice->m_Buffers.accessResource(p_Dst.index));
+
+  assert(src->size == dst->size);
+
+  uint32_t copySize = src->size;
+
+  VkBufferCopy region{};
+  region.srcOffset = 0;
+  region.dstOffset = 0;
+  region.size = copySize;
+
+  vkCmdCopyBuffer(m_VulkanCmdBuffer, src->vkBuffer, dst->vkBuffer, 1, &region);
+}
+//---------------------------------------------------------------------------//
 void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
 {
 

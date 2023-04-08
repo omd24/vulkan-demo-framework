@@ -55,6 +55,19 @@ struct CommandBuffer
   void end();
   void endCurrentRenderPass();
 
+  // Non-drawing methods
+  void uploadTextureData(
+      TextureHandle p_Texture,
+      void* p_TextureData,
+      BufferHandle p_StagingBuffer,
+      size_t p_StagingBufferOffset);
+  void uploadBufferData(
+      BufferHandle p_Buffer,
+      void* p_BufferData,
+      BufferHandle p_StagingBuffer,
+      size_t p_StagingBufferOffset);
+  void uploadBufferData(BufferHandle p_Src, BufferHandle p_Dst);
+
   VkCommandBuffer m_VulkanCmdBuffer;
   GpuDevice* m_GpuDevice;
   VkDescriptorSet m_VulkanDescriptorSets[16];
