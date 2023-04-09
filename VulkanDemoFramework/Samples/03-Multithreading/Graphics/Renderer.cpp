@@ -469,7 +469,7 @@ BufferResource* Renderer::createBuffer(
     void* p_Data,
     const char* p_Name)
 {
-  BufferCreation creation{p_Type, p_Usage, p_Size, p_Data, p_Name};
+  BufferCreation creation{p_Type, p_Usage, p_Size, 0, 0, p_Data, p_Name};
   return createBuffer(creation);
 }
 //---------------------------------------------------------------------------//

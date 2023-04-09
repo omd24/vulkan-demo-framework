@@ -114,7 +114,7 @@ struct GpuEffect
   Graphics::PipelineHandle pipelineNoCull;
 };
 
-struct ObjectMaterial
+struct ObjMaterial
 {
   vec4s diffuse;
   vec3s ambient;
@@ -127,7 +127,7 @@ struct ObjectMaterial
   uint16_t normalTextureIndex = INVALID_TEXTURE_INDEX;
 };
 
-struct ObjectDraw
+struct ObjDraw
 {
   Graphics::BufferHandle geometryBufferCpu;
   Graphics::BufferHandle geometryBufferGpu;
@@ -256,7 +256,7 @@ static void uploadMaterial(MeshData& p_MeshData, const MeshDraw& p_MeshDraw, con
 }
 //---------------------------------------------------------------------------//
 static void
-uploadMaterial(ObjectGpuData& p_MeshData, const ObjectDraw& p_MeshDraw, const float p_Scale)
+uploadMaterial(ObjectGpuData& p_MeshData, const ObjDraw& p_MeshDraw, const float p_Scale)
 {
   p_MeshData.textures[0] = p_MeshDraw.diffuseTextureIndex;
   p_MeshData.textures[1] = p_MeshDraw.normalTextureIndex;
@@ -306,7 +306,7 @@ static void drawMesh(
 static void drawMesh(
     Graphics::RendererUtil::Renderer& p_Renderer,
     Graphics::CommandBuffer* p_CommandBuffers,
-    ObjectDraw& p_MeshDraw)
+    ObjDraw& p_MeshDraw)
 {
   // Descriptor Set
   if (g_RecreatePerThreadDescriptors)
@@ -359,7 +359,7 @@ struct glTFScene : public Scene
       const char* p_Path,
       Framework::Allocator* p_ResidentAllocator,
       Framework::StackAllocator* p_TempAllocator,
-      AsynchronousLoader* p_AsyncLoader){};
+      AsynchronousLoader* p_AsyncLoader);
   void freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer);
   void unload(Graphics::RendererUtil::Renderer* p_Renderer);
 
@@ -382,14 +382,14 @@ struct glTFScene : public Scene
   Graphics::RendererUtil::Renderer* m_Renderer;
 }; // struct gltfScene
 //---------------------------------------------------------------------------//
-struct ObjectScene : public Scene
+struct ObjScene : public Scene
 {
   void load(
       const char* p_Filename,
       const char* p_Path,
       Framework::Allocator* p_ResidentAllocator,
       Framework::StackAllocator* p_TempAllocator,
-      AsynchronousLoader* p_AsyncLoader){};
+      AsynchronousLoader* p_AsyncLoader);
   void freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer);
   void unload(Graphics::RendererUtil::Renderer* p_Renderer);
 
@@ -403,17 +403,17 @@ struct ObjectScene : public Scene
   uint32_t loadTexture(
       const char* p_TexturePath, const char* p_Path, Framework::StackAllocator* p_TempAllocator);
 
-  Framework::Array<ObjectDraw> m_MeshDraws;
+  Framework::Array<ObjDraw> m_MeshDraws;
 
   // All graphics resources used by the scene
-  Framework::Array<ObjectMaterial> m_Materials;
+  Framework::Array<ObjMaterial> m_Materials;
   Framework::Array<Graphics::RendererUtil::TextureResource> m_Images;
   Graphics::RendererUtil::SamplerResource* m_Sampler;
 
   AsynchronousLoader* m_AsyncLoader;
 
   Graphics::RendererUtil::Renderer* m_Renderer;
-}; // struct ObjectScene
+}; // struct ObjScene
 //---------------------------------------------------------------------------//
 // Draw Tasks:
 //---------------------------------------------------------------------------//
@@ -480,14 +480,14 @@ struct SecondaryDrawTask : public enki::ITaskSet
 {
 
   Graphics::RendererUtil::Renderer* m_Renderer = nullptr;
-  ObjectScene* m_Scene = nullptr;
+  ObjScene* m_Scene = nullptr;
   Graphics::CommandBuffer* m_Parent = nullptr;
   Graphics::CommandBuffer* m_CmdBuf = nullptr;
   uint32_t m_Start = 0;
   uint32_t m_End = 0;
 
   void init(
-      ObjectScene* p_Scene,
+      ObjScene* p_Scene,
       Graphics::RendererUtil::Renderer* p_Renderer,
       Graphics::CommandBuffer* p_Parent,
       uint32_t p_Start,
@@ -515,7 +515,7 @@ struct SecondaryDrawTask : public enki::ITaskSet
     Graphics::RendererUtil::Material* lastMaterial = nullptr;
     for (uint32_t meshIndex = m_Start; meshIndex < m_End; ++meshIndex)
     {
-      ObjectDraw& meshDraw = m_Scene->m_MeshDraws[meshIndex];
+      ObjDraw& meshDraw = m_Scene->m_MeshDraws[meshIndex];
 
       if (meshDraw.uploadsQueued != meshDraw.uploadsCompleted)
       {
@@ -538,14 +538,14 @@ struct SecondaryDrawTask : public enki::ITaskSet
   }
 }; // SecondaryDrawTask
 //---------------------------------------------------------------------------//
-struct ObjectDrawTask : public enki::ITaskSet
+struct ObjDrawTask : public enki::ITaskSet
 {
 
   enki::TaskScheduler* m_TaskScheduler = nullptr;
   Graphics::GpuDevice* m_GpuDevice = nullptr;
   Graphics::RendererUtil::Renderer* m_Renderer = nullptr;
   Graphics::ImguiUtil::ImguiService* m_Imgui = nullptr;
-  ObjectScene* m_Scene = nullptr;
+  ObjScene* m_Scene = nullptr;
   uint32_t m_ThreadId = 0;
   bool m_UseSecondary = false;
 
@@ -554,7 +554,7 @@ struct ObjectDrawTask : public enki::ITaskSet
       Graphics::GpuDevice* p_GpuDevice,
       Graphics::RendererUtil::Renderer* p_Renderer,
       Graphics::ImguiUtil::ImguiService* p_Imgui,
-      ObjectScene* p_Scene,
+      ObjScene* p_Scene,
       bool p_UseSecondary)
   {
     m_TaskScheduler = p_TaskScheduler;
@@ -609,7 +609,7 @@ struct ObjectDrawTask : public enki::ITaskSet
       // TODO: loop by material so that we can deal with multiple passes
       for (uint32_t meshIndex = offset; meshIndex < m_Scene->m_MeshDraws.m_Size; ++meshIndex)
       {
-        ObjectDraw& meshDraw = m_Scene->m_MeshDraws[meshIndex];
+        ObjDraw& meshDraw = m_Scene->m_MeshDraws[meshIndex];
 
         if (meshDraw.uploadsQueued != meshDraw.uploadsCompleted)
         {
@@ -655,7 +655,7 @@ struct ObjectDrawTask : public enki::ITaskSet
       // TODO: loop by material so that we can deal with multiple passes
       for (uint32_t meshIndex = 0; meshIndex < m_Scene->m_MeshDraws.m_Size; ++meshIndex)
       {
-        ObjectDraw& meshDraw = m_Scene->m_MeshDraws[meshIndex];
+        ObjDraw& meshDraw = m_Scene->m_MeshDraws[meshIndex];
 
         if (meshDraw.uploadsQueued != meshDraw.uploadsCompleted)
         {
@@ -680,7 +680,7 @@ struct ObjectDrawTask : public enki::ITaskSet
     // Send commands to GPU
     m_GpuDevice->queueCommandBuffer(cmdBuf);
   }
-}; // struct ObjectDrawTask
+}; // struct ObjDrawTask
 //---------------------------------------------------------------------------//
 // Helper methods
 //---------------------------------------------------------------------------//
@@ -854,8 +854,8 @@ bool getMeshMaterial(
 }
 int objectMeshMaterialCompare(const void* a, const void* b)
 {
-  const ObjectDraw* meshA = (const ObjectDraw*)a;
-  const ObjectDraw* meshB = (const ObjectDraw*)b;
+  const ObjDraw* meshA = (const ObjDraw*)a;
+  const ObjDraw* meshB = (const ObjDraw*)b;
 
   if (meshA->material->m_RenderIndex < meshB->material->m_RenderIndex)
     return -1;
@@ -1179,8 +1179,8 @@ void glTFScene::prepareDraws(
       VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
 
   pipelineCreation.shaders.setName("main")
-      .addStage(vertCode.data, vertCode.size, VK_SHADER_STAGE_VERTEX_BIT)
-      .addStage(fragCode.data, fragCode.size, VK_SHADER_STAGE_FRAGMENT_BIT);
+      .addStage(vertCode.data, uint32_t(vertCode.size), VK_SHADER_STAGE_VERTEX_BIT)
+      .addStage(fragCode.data, uint32_t(fragCode.size), VK_SHADER_STAGE_FRAGMENT_BIT);
 
   // Constant buffer
   Graphics::BufferCreation bufferCreation;
@@ -1360,9 +1360,9 @@ void glTFScene::submitDrawTask(
       (drawTask.m_ThreadId + 1) % p_TaskScheduler->GetNumTaskThreads());
 }
 //---------------------------------------------------------------------------//
-// ObjectScene Impl:
+// ObjScene Impl:
 //---------------------------------------------------------------------------//
-void ObjectScene::load(
+void ObjScene::load(
     const char* p_Filename,
     const char* p_Path,
     Framework::Allocator* p_ResidentAllocator,
@@ -1404,7 +1404,7 @@ void ObjectScene::load(
   {
     aiMaterial* material = scene->mMaterials[materialIndex];
 
-    ObjectMaterial mat{};
+    ObjMaterial mat{};
 
     aiString texture_file;
 
@@ -1513,7 +1513,7 @@ void ObjectScene::load(
     VkBufferUsageFlags flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 
     Graphics::BufferCreation creation{};
-    creation.set(flags, Graphics::ResourceUsageType::kImmutable, bufferSize)
+    creation.set(flags, Graphics::ResourceUsageType::kImmutable, uint32_t(bufferSize))
         .setPersistent(true)
         .setName(nullptr);
 
@@ -1522,34 +1522,34 @@ void ObjectScene::load(
     Graphics::Buffer* buffer =
         (Graphics::Buffer*)m_Renderer->m_GpuDevice->m_Buffers.accessResource(buf.index);
 
-    ObjectDraw& objMesh = m_MeshDraws.pushUse();
-    memset(&objMesh, 0, sizeof(ObjectDraw));
+    ObjDraw& objMesh = m_MeshDraws.pushUse();
+    memset(&objMesh, 0, sizeof(ObjDraw));
 
     objMesh.geometryBufferCpu = buf;
 
     size_t offset = 0;
 
     memcpy(buffer->mappedData + offset, indices.m_Data, indices.m_Size * sizeof(uint32_t));
-    objMesh.indexOffset = offset;
+    objMesh.indexOffset = uint32_t(offset);
     offset += indices.m_Size * sizeof(uint32_t);
 
     memcpy(buffer->mappedData + offset, positions.m_Data, positions.m_Size * sizeof(vec3s));
-    objMesh.positionOffset = offset;
+    objMesh.positionOffset = uint32_t(offset);
     offset += positions.m_Size * sizeof(vec3s);
 
     memcpy(buffer->mappedData + offset, tangents.m_Data, tangents.m_Size * sizeof(vec4s));
-    objMesh.tangentOffset = offset;
+    objMesh.tangentOffset = uint32_t(offset);
     offset += tangents.m_Size * sizeof(vec4s);
 
     memcpy(buffer->mappedData + offset, normals.m_Data, normals.m_Size * sizeof(vec3s));
-    objMesh.normalOffset = offset;
+    objMesh.normalOffset = uint32_t(offset);
     offset += normals.m_Size * sizeof(vec3s);
 
     memcpy(buffer->mappedData + offset, uv_coords.m_Data, uv_coords.m_Size * sizeof(vec2s));
-    objMesh.texcoordOffset = offset;
+    objMesh.texcoordOffset = uint32_t(offset);
 
     creation.reset()
-        .set(flags, Graphics::ResourceUsageType::kImmutable, bufferSize)
+        .set(flags, Graphics::ResourceUsageType::kImmutable, uint32_t(bufferSize))
         .setDeviceOnly(true)
         .setName(nullptr);
     buf = m_Renderer->m_GpuDevice->createBuffer(creation);
@@ -1563,7 +1563,7 @@ void ObjectScene::load(
 
     objMesh.primitiveCount = mesh->mNumFaces * 3;
 
-    ObjectMaterial& material = m_Materials[mesh->mMaterialIndex];
+    ObjMaterial& material = m_Materials[mesh->mMaterialIndex];
 
     objMesh.diffuse = material.diffuse;
     objMesh.ambient = material.ambient;
@@ -1615,7 +1615,7 @@ void ObjectScene::load(
   aiReleaseImport(scene);
 }
 
-uint32_t ObjectScene::loadTexture(
+uint32_t ObjScene::loadTexture(
     const char* p_TexturePath, const char* p_Path, Framework::StackAllocator* p_TempAllocator)
 {
   using namespace Framework;
@@ -1664,13 +1664,13 @@ uint32_t ObjectScene::loadTexture(
   return texRes->m_Handle.index;
 }
 
-void ObjectScene::freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer)
+void ObjScene::freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer)
 {
   Graphics::GpuDevice& gpuDev = *m_Renderer->m_GpuDevice;
 
   for (uint32_t meshIndex = 0; meshIndex < m_MeshDraws.m_Size; ++meshIndex)
   {
-    ObjectDraw& meshDraw = m_MeshDraws[meshIndex];
+    ObjDraw& meshDraw = m_MeshDraws[meshIndex];
     gpuDev.destroyBuffer(meshDraw.geometryBufferCpu);
     gpuDev.destroyBuffer(meshDraw.geometryBufferGpu);
     gpuDev.destroyBuffer(meshDraw.meshBuffer);
@@ -1688,18 +1688,18 @@ void ObjectScene::freeGpuResources(Graphics::RendererUtil::Renderer* p_Renderer)
   m_MeshDraws.shutdown();
 }
 
-void ObjectScene::unload(Graphics::RendererUtil::Renderer* p_Renderer)
+void ObjScene::unload(Graphics::RendererUtil::Renderer* p_Renderer)
 {
   // Free scene buffers
   m_Images.shutdown();
 }
 
-void ObjectScene::uploadMaterials(float p_ModelScale)
+void ObjScene::uploadMaterials(float p_ModelScale)
 {
   // Update per mesh material buffer
   for (uint32_t meshIndex = 0; meshIndex < m_MeshDraws.m_Size; ++meshIndex)
   {
-    ObjectDraw& meshDraw = m_MeshDraws[meshIndex];
+    ObjDraw& meshDraw = m_MeshDraws[meshIndex];
 
     Graphics::MapBufferParameters cbMap = {meshDraw.meshBuffer, 0, 0};
     ObjectGpuData* meshData = (ObjectGpuData*)m_Renderer->m_GpuDevice->mapBuffer(cbMap);
@@ -1712,10 +1712,10 @@ void ObjectScene::uploadMaterials(float p_ModelScale)
   }
 }
 
-void ObjectScene::submitDrawTask(
+void ObjScene::submitDrawTask(
     Graphics::ImguiUtil::ImguiService* p_Imgui, enki::TaskScheduler* p_TaskScheduler)
 {
-  ObjectDrawTask drawTask;
+  ObjDrawTask drawTask;
   drawTask.init(
       p_TaskScheduler,
       m_Renderer->m_GpuDevice,
@@ -1731,7 +1731,7 @@ void ObjectScene::submitDrawTask(
       (drawTask.m_ThreadId + 1) % p_TaskScheduler->GetNumTaskThreads());
 }
 
-void ObjectScene::prepareDraws(
+void ObjScene::prepareDraws(
     Graphics::RendererUtil::Renderer* p_Renderer, Framework::StackAllocator* p_ScratchAllocator)
 {
   using namespace Framework;
@@ -1777,8 +1777,8 @@ void ObjectScene::prepareDraws(
   pipelineCreation.depthStencil.setDepth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
 
   pipelineCreation.shaders.setName("main")
-      .addStage(vertCode.data, vertCode.size, VK_SHADER_STAGE_VERTEX_BIT)
-      .addStage(fragCode.data, fragCode.size, VK_SHADER_STAGE_FRAGMENT_BIT);
+      .addStage(vertCode.data, uint32_t(vertCode.size), VK_SHADER_STAGE_VERTEX_BIT)
+      .addStage(fragCode.data, uint32_t(fragCode.size), VK_SHADER_STAGE_FRAGMENT_BIT);
 
   pipelineCreation.rasterization.cullMode = VK_CULL_MODE_BACK_BIT;
 
@@ -1816,7 +1816,7 @@ void ObjectScene::prepareDraws(
 
   for (uint32_t meshIndex = 0; meshIndex < m_MeshDraws.m_Size; ++meshIndex)
   {
-    ObjectDraw& meshDraw = m_MeshDraws[meshIndex];
+    ObjDraw& meshDraw = m_MeshDraws[meshIndex];
 
     if (meshDraw.transparency == 1.0f)
     {
@@ -1834,7 +1834,7 @@ void ObjectScene::prepareDraws(
     meshDraw.descriptorSet = m_Renderer->m_GpuDevice->createDescriptorSet(dsCreation);
   }
 
-  qsort(m_MeshDraws.m_Data, m_MeshDraws.m_Size, sizeof(ObjectDraw), objectMeshMaterialCompare);
+  qsort(m_MeshDraws.m_Data, m_MeshDraws.m_Size, sizeof(ObjDraw), objectMeshMaterialCompare);
 }
 //---------------------------------------------------------------------------//
 // AsynchronousLoader impl:
@@ -2162,7 +2162,6 @@ struct AsynchronousLoadTask : enki::IPinnedTask
 //---------------------------------------------------------------------------//
 int main(int argc, char** argv)
 {
-
   // if (argc < 2)
   //{
   //  printf("No model specified, using the default model\n");
@@ -2175,11 +2174,22 @@ int main(int argc, char** argv)
   using namespace Graphics;
 
   // Init services
-  MemoryService::instance()->init(nullptr);
+  MemoryServiceConfiguration memoryConfiguration;
+  memoryConfiguration.MaximumDynamicSize = FRAMEWORK_MEGA(500);
+  MemoryService::instance()->init(&memoryConfiguration);
   Allocator* allocator = &MemoryService::instance()->m_SystemAllocator;
 
   StackAllocator scratchAllocator;
   scratchAllocator.init(FRAMEWORK_MEGA(8));
+
+  // Task scheduler:
+  enki::TaskSchedulerConfig tsConfig;
+  // In this example we create more threads than the hardware can run,
+  // because the IO thread will spend most of it's time idle or blocked
+  // and therefore not scheduled for CPU time by the OS
+  tsConfig.numTaskThreadsToCreate += 1;
+  enki::TaskScheduler taskScheduler;
+  taskScheduler.Initialize(tsConfig);
 
   // window
   WindowConfiguration wconf{1280, 800, "Demo 03", &MemoryService::instance()->m_SystemAllocator};
@@ -2203,8 +2213,8 @@ int main(int argc, char** argv)
   ResourceManager rm;
   rm.init(allocator, nullptr);
 
-  RendererUtil::Renderer p_Renderer;
-  p_Renderer.init({&gpu, allocator});
+  RendererUtil::Renderer renderer;
+  renderer.init({&gpu, allocator});
   renderer.setLoaders(&rm);
 
   ImguiUtil::ImguiService* imgui = ImguiUtil::ImguiService::instance();
@@ -2216,6 +2226,10 @@ int main(int argc, char** argv)
   gameCamera.init(true, 20.f, 6.f, 0.1f);
 
   Time::serviceInit();
+
+  // init async loader:
+  AsynchronousLoader asyncLoader;
+  asyncLoader.init(&renderer, &taskScheduler, allocator);
 
   Directory cwd{};
   directoryCurrent(&cwd);
@@ -2230,190 +2244,50 @@ int main(int argc, char** argv)
   char gltfFile[512]{};
   // memcpy(gltfFile, argv[1], strlen(argv[1]));
   memcpy(gltfFile, modelPath, strlen(modelPath));
-  p_FilenameFromPath(gltfFile);
+  filenameFromPath(gltfFile);
 
-  Scene scene;
-  sceneLoadFromGltf(gltfFile, renderer, allocator, scene);
+  Scene* scene;
+
+  char* fileExtension = fileExtensionFromPath(gltfFile);
+  if (strcmp(fileExtension, "gltf") == 0)
+  {
+    scene = new glTFScene;
+  }
+  else if (strcmp(fileExtension, "obj") == 0)
+  {
+    // TODO
+    assert(false);
+    scene = new ObjScene;
+  }
+  else
+  {
+    assert(false);
+    return 0;
+  }
+
+  scene->load(gltfFile, gltfBasePath, allocator, &scratchAllocator, &asyncLoader);
 
   // NOTE: restore working directory
   directoryChange(cwd.path);
 
-  {
-    // Create pipeline state
-    PipelineCreation pipelineCreation;
+  scene->prepareDraws(&renderer, &scratchAllocator);
 
-    StringBuffer pathBuffer;
-    pathBuffer.init(1024, allocator);
+  // Start multithreading IO
+  // Create IO threads at the end
+  RunPinnedTaskLoopTask runPinnedTask;
+  runPinnedTask.threadNum = taskScheduler.GetNumTaskThreads() - 1;
+  runPinnedTask.m_TaskScheduler = &taskScheduler;
+  taskScheduler.AddPinnedTask(&runPinnedTask);
 
-    const char* vertFile = "main.vert.glsl";
-    char* vertPath = pathBuffer.appendUseFormatted("%s%s%s", cwd.path, SHADER_FOLDER, vertFile);
-    FileReadResult vertCode = fileReadText(vertPath, allocator);
-
-    const char* fragFile = "main.frag.glsl";
-    char* fragPath = pathBuffer.appendUseFormatted("%s%s%s", cwd.path, SHADER_FOLDER, fragFile);
-    FileReadResult fragCode = fileReadText(fragPath, allocator);
-
-    // Vertex input
-    // TODO: could these be inferred from SPIR-V?
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {0, 0, 0, Graphics::VertexComponentFormat::kFloat3}); // position
-    pipelineCreation.vertexInput.addVertexStream({0, 12, VertexInputRate::kPerVertex});
-
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {1, 1, 0, Graphics::VertexComponentFormat::kFloat4}); // tangent
-    pipelineCreation.vertexInput.addVertexStream({1, 16, VertexInputRate::kPerVertex});
-
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {2, 2, 0, Graphics::VertexComponentFormat::kFloat3}); // normal
-    pipelineCreation.vertexInput.addVertexStream({2, 12, VertexInputRate::kPerVertex});
-
-    pipelineCreation.vertexInput.addVertexAttribute(
-        {3, 3, 0, Graphics::VertexComponentFormat::kFloat2}); // texcoord
-    pipelineCreation.vertexInput.addVertexStream({3, 8, VertexInputRate::kPerVertex});
-
-    // Render pass
-    pipelineCreation.renderPass = gpu.m_SwapchainOutput;
-    // Depth
-    pipelineCreation.depthStencil.setDepth(true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-    // Blend
-    pipelineCreation.blendState.addBlendState().setColor(
-        VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD);
-
-    pipelineCreation.shaders.setName("main")
-        .addStage(vertCode.data, (uint32_t)vertCode.size, VK_SHADER_STAGE_VERTEX_BIT)
-        .addStage(fragCode.data, (uint32_t)fragCode.size, VK_SHADER_STAGE_FRAGMENT_BIT);
-
-    // Constant buffer
-    BufferCreation bufferCreation;
-    bufferCreation.reset()
-        .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::kDynamic, sizeof(UniformData))
-        .setName("sceneCb");
-    sceneCb = gpu.createBuffer(bufferCreation);
-
-    pipelineCreation.name = "main_no_cull";
-    RendererUtil::Program* programNoCull = renderer.createProgram({pipelineCreation});
-
-    pipelineCreation.rasterization.cullMode = VK_CULL_MODE_BACK_BIT;
-
-    pipelineCreation.name = "main_cull";
-    RendererUtil::Program* programCull = renderer.createProgram({pipelineCreation});
-
-    RendererUtil::MaterialCreation materialCreation;
-
-    materialCreation.setName("materialNoCullOpaque").setProgram(programNoCull).setRenderIndex(0);
-    RendererUtil::Material* materialNoCullOpaque = renderer.createMaterial(materialCreation);
-
-    materialCreation.setName("material_cull_opaque").setProgram(programCull).setRenderIndex(1);
-    RendererUtil::Material* material_cull_opaque = renderer.createMaterial(materialCreation);
-
-    materialCreation.setName("materialNoCullTransparent")
-        .setProgram(programNoCull)
-        .setRenderIndex(2);
-    RendererUtil::Material* materialNoCullTransparent = renderer.createMaterial(materialCreation);
-
-    materialCreation.setName("material_cull_transparent").setProgram(programCull).setRenderIndex(3);
-    RendererUtil::Material* material_cull_transparent = renderer.createMaterial(materialCreation);
-
-    pathBuffer.shutdown();
-    allocator->deallocate(vertCode.data);
-    allocator->deallocate(fragCode.data);
-
-    glTF::Scene& rootGltfScene = scene.gltfScene.scenes[scene.gltfScene.scene];
-
-    for (uint32_t i = 0; i < rootGltfScene.nodesCount; ++i)
-    {
-      glTF::Node& node = scene.gltfScene.nodes[rootGltfScene.nodes[i]];
-
-      if (node.mesh == glTF::INVALID_INT_VALUE)
-      {
-        continue;
-      }
-
-      // TODO: children
-
-      glTF::Mesh& mesh = scene.gltfScene.meshes[node.mesh];
-
-      vec3s nodeScale{1.0f, 1.0f, 1.0f};
-      if (node.scaleCount != 0)
-      {
-        assert(node.scaleCount == 3);
-        nodeScale = vec3s{node.scale[0], node.scale[1], node.scale[2]};
-      }
-
-      // Gltf primitives are conceptually submeshes.
-      for (uint32_t primitiveIndex = 0; primitiveIndex < mesh.primitivesCount; ++primitiveIndex)
-      {
-        MeshDraw meshDraw{};
-
-        meshDraw.scale = nodeScale;
-
-        glTF::MeshPrimitive& meshPrimitive = mesh.primitives[primitiveIndex];
-
-        const int positionAccessorIndex = gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "POSITION");
-        const int tangentAccessorIndex = gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "TANGENT");
-        const int normalAccessorIndex = gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "NORMAL");
-        const int texcoordAccessorIndex = gltfGetAttributeAccessorIndex(
-            meshPrimitive.attributes, meshPrimitive.attributeCount, "TEXCOORD_0");
-
-        getMeshVertexBuffer(
-            scene, positionAccessorIndex, meshDraw.positionBuffer, meshDraw.positionOffset);
-        getMeshVertexBuffer(
-            scene, tangentAccessorIndex, meshDraw.tangentBuffer, meshDraw.tangentOffset);
-        getMeshVertexBuffer(
-            scene, normalAccessorIndex, meshDraw.normalBuffer, meshDraw.normalOffset);
-        getMeshVertexBuffer(
-            scene, texcoordAccessorIndex, meshDraw.texcoordBuffer, meshDraw.texcoordOffset);
-
-        // Create index buffer
-        glTF::Accessor& indicesAccessor = scene.gltfScene.accessors[meshPrimitive.indices];
-        glTF::BufferView& indicesBufferView =
-            scene.gltfScene.bufferViews[indicesAccessor.bufferView];
-        RendererUtil::BufferResource& indicesBufferGpu = scene.buffers[indicesAccessor.bufferView];
-        meshDraw.indexBuffer = indicesBufferGpu.m_Handle;
-        meshDraw.indexOffset =
-            indicesAccessor.byteOffset == glTF::INVALID_INT_VALUE ? 0 : indicesAccessor.byteOffset;
-        meshDraw.primitiveCount = indicesAccessor.count;
-
-        // Create material
-        glTF::Material& material = scene.gltfScene.materials[meshPrimitive.material];
-
-        bool transparent = getMeshMaterial(renderer, scene, material, meshDraw);
-
-        if (transparent)
-        {
-          if (material.doubleSided)
-          {
-            meshDraw.material = materialNoCullTransparent;
-          }
-          else
-          {
-            meshDraw.material = material_cull_transparent;
-          }
-        }
-        else
-        {
-          if (material.doubleSided)
-          {
-            meshDraw.material = materialNoCullOpaque;
-          }
-          else
-          {
-            meshDraw.material = material_cull_opaque;
-          }
-        }
-
-        scene.m_MeshDraws.push(meshDraw);
-      }
-    }
-  }
-
-  qsort(scene.m_MeshDraws.m_Data, scene.m_MeshDraws.m_Size, sizeof(MeshDraw), meshMaterialCompare);
+  // Send async load task to external thread FILE_IO
+  AsynchronousLoadTask asyncLoadTask;
+  asyncLoadTask.threadNum = runPinnedTask.threadNum;
+  asyncLoadTask.m_TaskScheduler = &taskScheduler;
+  asyncLoadTask.m_AsyncLoader = &asyncLoader;
+  taskScheduler.AddPinnedTask(&asyncLoadTask);
 
   int64_t beginFrameTick = Time::getCurrentTime();
+  int64_t absolute_beginFrameTick = beginFrameTick;
 
   vec3s light = vec3s{0.0f, 4.0f, 0.0f};
 
@@ -2427,6 +2301,15 @@ int main(int argc, char** argv)
     if (!window.m_Minimized)
     {
       gpu.newFrame();
+
+      static bool checksz = true;
+      if (asyncLoader.m_FileLoadRequests.m_Size == 0 && checksz)
+      {
+        checksz = false;
+        printf(
+            "Finished uploading textures in %f seconds\n",
+            Time::deltaFromStartSeconds(absolute_beginFrameTick));
+      }
     }
 
     window.handleOSMessages();
@@ -2450,90 +2333,64 @@ int main(int argc, char** argv)
     gameCamera.update(&input, window.m_Width, window.m_Height, deltaTime);
     window.centerMouse(gameCamera.mouseDragging);
 
-    if (ImGui::Begin("Framework ImGui"))
     {
-      ImGui::InputFloat("Model scale", &modelScale, 0.001f);
-      ImGui::InputFloat3("Light position", light.raw);
-      ImGui::InputFloat("Light range", &lightRange);
-      ImGui::InputFloat("Light intensity", &lightIntensity);
-      ImGui::InputFloat3("Camera position", gameCamera.camera.position.raw);
-      ImGui::InputFloat3("Camera target movement", gameCamera.targetMovement.raw);
-    }
-    ImGui::End();
+      if (ImGui::Begin("Raptor ImGui"))
+      {
+        ImGui::InputFloat("Model scale", &modelScale, 0.001f);
+        ImGui::SliderFloat3("Light position", light.raw, -30.0f, 30.0f);
+        ImGui::InputFloat("Light range", &lightRange);
+        ImGui::InputFloat("Light intensity", &lightIntensity);
+        ImGui::InputFloat3("Camera position", gameCamera.camera.position.raw);
+        ImGui::InputFloat3("Camera target movement", gameCamera.targetMovement.raw);
+        ImGui::Separator();
+        ImGui::Checkbox("Dynamically recreate descriptor sets", &g_RecreatePerThreadDescriptors);
+        ImGui::Checkbox("Use secondary command buffers", &g_UseSecondaryCommandBuffers);
+      }
+      ImGui::End();
 
-    MemoryService::instance()->imguiDraw();
+      if (ImGui::Begin("GPU"))
+      {
+        // TODO:
+        // renderer.imguiDraw();
+
+        ImGui::Separator();
+      }
+      ImGui::End();
+
+      // MemoryService::instance()->imguiDraw();
+    }
 
     {
       // Update common constant buffer
-      MapBufferParameters cbMap = {sceneCb, 0, 0};
+      MapBufferParameters cbMap = {g_SceneCb, 0, 0};
       float* cbData = (float*)gpu.mapBuffer(cbMap);
       if (cbData)
       {
 
-        UniformData uniform_data{};
-        uniform_data.viewProj = gameCamera.camera.viewProjection;
-        uniform_data.eye = vec4s{
+        UniformData uniformData{};
+        uniformData.viewProj = gameCamera.camera.viewProjection;
+        uniformData.eye = vec4s{
             gameCamera.camera.position.x,
             gameCamera.camera.position.y,
             gameCamera.camera.position.z,
             1.0f};
-        uniform_data.light = vec4s{light.x, light.y, light.z, 1.0f};
-        uniform_data.lightRange = lightRange;
-        uniform_data.lightIntensity = lightIntensity;
+        uniformData.light = vec4s{light.x, light.y, light.z, 1.0f};
+        uniformData.lightRange = lightRange;
+        uniformData.lightIntensity = lightIntensity;
 
-        memcpy(cbData, &uniform_data, sizeof(UniformData));
+        memcpy(cbData, &uniformData, sizeof(UniformData));
 
         gpu.unmapBuffer(cbMap);
       }
 
-      // Update per mesh material buffer
-      for (uint32_t meshIndex = 0; meshIndex < scene.m_MeshDraws.m_Size; ++meshIndex)
-      {
-        MeshDraw& meshDraw = scene.m_MeshDraws[meshIndex];
-
-        cbMap.buffer = meshDraw.materialBuffer;
-        MeshData* meshData = (MeshData*)gpu.mapBuffer(cbMap);
-        if (meshData)
-        {
-          uploadMaterial(*meshData, meshDraw, modelScale);
-
-          gpu.unmapBuffer(cbMap);
-        }
-      }
+      scene->uploadMaterials(modelScale);
     }
 
     if (!window.m_Minimized)
     {
-      CommandBuffer* cmdBuf = gpu.getCommandBuffer(true);
 
-      cmdBuf->clear(0.3f, 0.3f, 0.3f, 1.0f);
-      cmdBuf->clearDepthStencil(1.0f, 0);
-      cmdBuf->bindPass(gpu.m_SwapchainPass);
-      cmdBuf->setScissor(nullptr);
-      cmdBuf->setViewport(nullptr);
+      scene->submitDrawTask(imgui, &taskScheduler);
 
-      RendererUtil::Material* lastMaterial = nullptr;
-      // TODO: loop by material so that we can deal with multiple passes
-      for (uint32_t meshIndex = 0; meshIndex < scene.m_MeshDraws.m_Size; ++meshIndex)
-      {
-        MeshDraw& meshDraw = scene.m_MeshDraws[meshIndex];
-
-        if (meshDraw.material != lastMaterial)
-        {
-          PipelineHandle pipeline = renderer.getPipeline(meshDraw.material);
-
-          cmdBuf->bindPipeline(pipeline);
-
-          lastMaterial = meshDraw.material;
-        }
-
-        drawMesh(renderer, cmdBuf, meshDraw);
-      }
-
-      imgui->render(*cmdBuf);
-
-      // Send commands to GPU
-      gpu.queueCommandBuffer(cmdBuf);
       gpu.present();
     }
     else
@@ -2542,21 +2399,33 @@ int main(int argc, char** argv)
     }
   }
 
-  gpu.destroyBuffer(sceneCb);
+  runPinnedTask.m_Execute = false;
+  asyncLoadTask.m_Execute = false;
+
+  taskScheduler.WaitforAllAndShutdown();
+
+  vkDeviceWaitIdle(gpu.m_VulkanDevice);
+
+  asyncLoader.shutdown();
+
+  gpu.destroyBuffer(g_SceneCb);
 
   imgui->shutdown();
 
-  sceneFreeGpuResources(scene, renderer);
+  scene->freeGpuResources(&renderer);
 
   rm.shutdown();
   renderer.shutdown();
 
-  sceneUnload(scene, renderer);
+  scene->unload(&renderer);
+
+  delete scene;
 
   input.shutdown();
   window.unregisterOSMessagesCallback(inputOSMessagesCallback);
   window.shutdown();
 
+  scratchAllocator.shutdown();
   MemoryService::instance()->shutdown();
 
   return 0;

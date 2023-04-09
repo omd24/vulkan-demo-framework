@@ -5,6 +5,8 @@
 
 #include "Foundation/ResourceManager.hpp"
 
+#include <mutex>
+
 namespace Graphics
 {
 //---------------------------------------------------------------------------//
@@ -168,10 +170,10 @@ struct Renderer : public Framework::Service
   void* mapBuffer(BufferResource* p_Buffer, uint32_t p_Offset = 0, uint32_t p_Size = 0);
   void unmapBuffer(BufferResource* p_Buffer);
 
-  CommandBuffer* getCommandBuffer(QueueType::Enum p_Type, bool p_Begin)
+  CommandBuffer* getCommandBuffer(uint32_t p_ThreadIndex, bool p_Begin)
   {
     // TODO: use queue type
-    return m_GpuDevice->getCommandBuffer(p_Begin);
+    return m_GpuDevice->getCommandBuffer(p_ThreadIndex, p_Begin);
   }
   void queueCommandBuffer(Graphics::CommandBuffer* p_CommandBuffer)
   {

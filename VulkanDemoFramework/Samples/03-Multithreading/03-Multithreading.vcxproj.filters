@@ -20,6 +20,7 @@
     <ClCompile Include="Graphics\SpirvParser.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Externals\enkiTS\TaskScheduler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Graphics">

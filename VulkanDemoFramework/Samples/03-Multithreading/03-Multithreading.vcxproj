@@ -141,6 +141,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\Externals\enkiTS\TaskScheduler.cpp" />
     <ClCompile Include="03-Multithreading.cpp" />
     <ClCompile Include="Graphics\CommandBuffer.cpp" />
     <ClCompile Include="Graphics\GpuDevice.cpp" />

@@ -196,9 +196,9 @@ struct BufferCreation
   VkBufferUsageFlags typeFlags = 0;
   ResourceUsageType::Enum usage = ResourceUsageType::kImmutable;
   uint32_t size = 0;
-  void* initialData = nullptr;
   uint32_t persistent = 0;
   uint32_t deviceOnly = 0;
+  void* initialData = nullptr;
 
   const char* name = nullptr;
 

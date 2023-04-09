@@ -1264,6 +1264,8 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
       ResourceUsageType::kImmutable,
       0,
+      0,
+      0,
       nullptr,
       "Fullscreen_vb"};
   m_FullscreenVertexBuffer = createBuffer(fullscreenVbCreation);
@@ -1299,6 +1301,8 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
       ResourceUsageType::kImmutable,
       16,
+      0,
+      0,
       nullptr,
       "Dummy Constant Buffer"};
   m_DummyConstantBuffer = createBuffer(dummyConstantBufferCreation);
