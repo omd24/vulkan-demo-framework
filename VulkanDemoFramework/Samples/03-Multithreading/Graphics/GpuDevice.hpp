@@ -35,6 +35,7 @@ struct DeviceCreation
   DeviceCreation& setWindow(uint32_t p_Width, uint32_t p_Height, void* p_Handle);
   DeviceCreation& setAllocator(Framework::Allocator* p_Allocator);
   DeviceCreation& setTemporaryAllocator(Framework::StackAllocator* p_Allocator);
+  DeviceCreation& setNumThreads(uint32_t p_NumThreads);
 };
 //---------------------------------------------------------------------------//
 struct GpuDevice : public Framework::Service

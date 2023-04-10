@@ -45,6 +45,11 @@ DeviceCreation& DeviceCreation::setTemporaryAllocator(Framework::StackAllocator*
   temporaryAllocator = p_Allocator;
   return *this;
 }
+DeviceCreation& DeviceCreation::setNumThreads(uint32_t p_NumThreads)
+{
+  numThreads = p_NumThreads;
+  return *this;
+}
 //---------------------------------------------------------------------------//
 // Debug helpers:
 //---------------------------------------------------------------------------//
@@ -569,7 +574,7 @@ static void _vulkanCreateTexture(
   }
   else
   {
-    imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT; // TODO
+    imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     imageInfo.usage |= isRenderTarget ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0;
   }
 
@@ -856,8 +861,6 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       }
     }
 
-    FRAMEWORK_FREE(extensions, m_Allocator);
-
     if (!m_DebugUtilsExtensionPresent)
     {
       char msg[256]{};
@@ -1083,7 +1086,6 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       m_VulkanSurfaceFormat = supportedFormats[0];
       assert(false);
     }
-    FRAMEWORK_FREE(supportedFormats, m_Allocator);
 
     // Final use of temp allocator, free all temporary memory created here.
     tempAllocator->freeMarker(initialTempAllocatorMarker);
@@ -1540,6 +1542,8 @@ void GpuDevice::present()
       vkCmdEndRenderPass(commandBuffer->m_VulkanCmdBuffer);
 
     vkEndCommandBuffer(commandBuffer->m_VulkanCmdBuffer);
+    commandBuffer->m_IsRecording = false;
+    commandBuffer->m_CurrentRenderPass = nullptr;
   }
 
   // Submit command buffers

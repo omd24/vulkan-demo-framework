@@ -90,7 +90,6 @@ struct CommandBuffer
 //---------------------------------------------------------------------------//
 struct CommandBufferManager
 {
-
   void init(GpuDevice* p_GpuDev, uint32_t p_NumThreads);
   void shutdown();
 

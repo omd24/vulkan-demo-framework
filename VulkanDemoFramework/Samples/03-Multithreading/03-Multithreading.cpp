@@ -290,7 +290,7 @@ static void drawMesh(
   }
   else
   {
-    p_CommandBuffers->bindLocalDescriptorSet(&p_MeshDraw.descriptorSet, 1, nullptr, 0);
+    p_CommandBuffers->bindDescriptorSet(&p_MeshDraw.descriptorSet, 1, nullptr, 0);
   }
 
   p_CommandBuffers->bindVertexBuffer(p_MeshDraw.positionBuffer, 0, p_MeshDraw.positionOffset);
@@ -1137,6 +1137,8 @@ void glTFScene::prepareDraws(
   // Create pipeline state
   Graphics::PipelineCreation pipelineCreation;
 
+  size_t cachedScratchSize = p_ScratchAllocator->getMarker();
+
   StringBuffer pathBuffer;
   pathBuffer.init(1024, p_ScratchAllocator);
 
@@ -1214,13 +1216,12 @@ void glTFScene::prepareDraws(
   Graphics::RendererUtil::Material* materialNoCullTransparent =
       p_Renderer->createMaterial(materialCreation);
 
-  materialCreation.setName("material_cull_transparent").setProgram(programCull).setRenderIndex(3);
+  materialCreation.setName("materialCullTransparent").setProgram(programCull).setRenderIndex(3);
   Graphics::RendererUtil::Material* materialCullTransparent =
       p_Renderer->createMaterial(materialCreation);
 
   pathBuffer.shutdown();
-  p_ScratchAllocator->deallocate(vertCode.data);
-  p_ScratchAllocator->deallocate(fragCode.data);
+  p_ScratchAllocator->freeMarker(cachedScratchSize);
 
   glTF::Scene& rootGltfScene = m_GltfScene.scenes[m_GltfScene.scene];
 
@@ -2206,6 +2207,7 @@ int main(int argc, char** argv)
   DeviceCreation dc;
   dc.setWindow(window.m_Width, window.m_Height, window.m_PlatformHandle)
       .setAllocator(allocator)
+      .setNumThreads(taskScheduler.GetNumTaskThreads())
       .setTemporaryAllocator(&scratchAllocator);
   GpuDevice gpu;
   gpu.init(dc);
@@ -2388,7 +2390,11 @@ int main(int argc, char** argv)
 
     if (!window.m_Minimized)
     {
-
+      static int counter = 0;
+      char msg[256]{};
+      sprintf(msg, "doing the thingy %d\n", counter);
+      OutputDebugStringA(msg);
+      ++counter;
       scene->submitDrawTask(imgui, &taskScheduler);
 
       gpu.present();

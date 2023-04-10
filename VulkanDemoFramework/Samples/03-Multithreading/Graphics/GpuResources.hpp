@@ -17,6 +17,16 @@ struct ParseResult;
 }
 
 static const uint32_t kInvalidIndex = 0xffffffff;
+
+static const uint32_t kBuffersPoolSize = 16384;
+static const uint32_t kTexturesPoolSize = 512;
+static const uint32_t kRenderPassesPoolSize = 256;
+static const uint32_t kDescriptorSetLayoutsPoolSize = 128;
+static const uint32_t kPipelinesPoolSize = 128;
+static const uint32_t kShadersPoolSize = 128;
+static const uint32_t kDescriptorSetsPoolSize = 4096;
+static const uint32_t kSamplersPoolSize = 32;
+
 typedef uint32_t ResourceHandle;
 
 struct BufferHandle

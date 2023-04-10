@@ -25,7 +25,7 @@ void CommandBuffer::init(Graphics::GpuDevice* p_GpuDevice)
   VkDescriptorPoolCreateInfo poolCi = {};
   poolCi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   poolCi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-  poolCi.maxSets = kGlobalPoolElements * arrayCount32(poolSizes);
+  poolCi.maxSets = kDescriptorSetsPoolSize;
   poolCi.poolSizeCount = arrayCount32(poolSizes);
   poolCi.pPoolSizes = poolSizes;
   VkResult result = vkCreateDescriptorPool(
@@ -591,7 +591,6 @@ void CommandBuffer::uploadBufferData(BufferHandle p_Src, BufferHandle p_Dst)
 //---------------------------------------------------------------------------//
 void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
 {
-
   m_GpuDevice = p_GpuDevice;
   m_NumPoolsPerFrame = p_NumThreads;
 
