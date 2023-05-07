@@ -154,6 +154,25 @@ struct SamplerLoader : public Framework::ResourceLoader
   Renderer* m_Renderer;
 };
 //---------------------------------------------------------------------------//
+GpuTechniqueCreation& GpuTechniqueCreation::reset()
+{
+  numCreations = 0;
+  name = nullptr;
+  return *this;
+}
+//---------------------------------------------------------------------------//
+GpuTechniqueCreation& GpuTechniqueCreation::addPipeline(const PipelineCreation& pipeline)
+{
+  creations[numCreations++] = pipeline;
+  return *this;
+}
+//---------------------------------------------------------------------------//
+GpuTechniqueCreation& GpuTechniqueCreation::setName(const char* p_Name)
+{
+  name = p_Name;
+  return *this;
+}
+//---------------------------------------------------------------------------//
 MaterialCreation& MaterialCreation::reset()
 {
   program = nullptr;

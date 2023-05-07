@@ -48,6 +48,36 @@ struct SamplerResource : public Framework::Resource
 //---------------------------------------------------------------------------//
 // Material and Shaders
 //---------------------------------------------------------------------------//
+struct GpuTechniqueCreation
+{
+
+  PipelineCreation creations[8];
+  uint32_t numCreations = 0;
+
+  const char* name = nullptr;
+
+  GpuTechniqueCreation& reset();
+  GpuTechniqueCreation& addPipeline(const PipelineCreation& pipeline);
+  GpuTechniqueCreation& setName(const char* name);
+};
+//---------------------------------------------------------------------------//
+struct GpuTechniquePass
+{
+
+  PipelineHandle pipeline;
+};
+//---------------------------------------------------------------------------//
+struct GpuTechnique : public Framework::Resource
+{
+
+  Framework::Array<GpuTechniquePass> passes;
+
+  uint32_t poolIndex;
+
+  static constexpr const char* kType = "gpu_technique_type";
+  static uint64_t kTypeHash;
+};
+//---------------------------------------------------------------------------//
 struct ProgramPass
 {
 

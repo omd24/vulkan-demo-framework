@@ -32,7 +32,7 @@ struct ResourcePool
 template <typename T> struct ResourcePoolTyped : public ResourcePool
 {
 
-  void init(Allocator* allocator, uint32_t pool_size);
+  void init(Allocator* allocator, uint32_t poolSize);
   void shutdown();
 
   T* obtain();

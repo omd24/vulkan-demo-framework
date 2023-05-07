@@ -68,6 +68,11 @@ struct RenderPassHandle
 {
   ResourceHandle index;
 }; // struct RenderPassHandle
+
+struct FramebufferHandle
+{
+  ResourceHandle index;
+};
 //---------------------------------------------------------------------------//
 /// Invalid handles:
 static BufferHandle kInvalidBuffer{kInvalidIndex};
@@ -78,6 +83,7 @@ static DescriptorSetLayoutHandle kInvalidLayout{kInvalidIndex};
 static DescriptorSetHandle kInvalidSet{kInvalidIndex};
 static PipelineHandle kInvalidPipeline{kInvalidIndex};
 static RenderPassHandle kInvalidPass{kInvalidIndex};
+static FramebufferHandle kInvalidFramebuffer{kInvalidIndex};
 //---------------------------------------------------------------------------//
 /// Consts:
 // Maximum number of Images/RenderTargets/FBO attachments usable.

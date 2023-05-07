@@ -27,6 +27,9 @@
     <ClCompile Include="Graphics\GltfScene.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="Graphics\FrameGraph.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Graphics">
@@ -59,6 +62,9 @@
       <Filter>Graphics</Filter>
     </ClInclude>
     <ClInclude Include="Graphics\GltfScene.hpp">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\FrameGraph.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
   </ItemGroup>

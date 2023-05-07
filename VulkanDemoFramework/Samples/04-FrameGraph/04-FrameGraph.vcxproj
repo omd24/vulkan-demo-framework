@@ -144,6 +144,7 @@
     <ClCompile Include="..\..\Externals\enkiTS\TaskScheduler.cpp" />
     <ClCompile Include="04-FrameGraph.cpp" />
     <ClCompile Include="Graphics\CommandBuffer.cpp" />
+    <ClCompile Include="Graphics\FrameGraph.cpp" />
     <ClCompile Include="Graphics\GltfScene.cpp" />
     <ClCompile Include="Graphics\GpuDevice.cpp" />
     <ClCompile Include="Graphics\GpuResources.cpp" />
@@ -154,6 +155,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Graphics\CommandBuffer.hpp" />
+    <ClInclude Include="Graphics\FrameGraph.hpp" />
     <ClInclude Include="Graphics\GltfScene.hpp" />
     <ClInclude Include="Graphics\GpuDevice.hpp" />
     <ClInclude Include="Graphics\GpuEnum.hpp" />
