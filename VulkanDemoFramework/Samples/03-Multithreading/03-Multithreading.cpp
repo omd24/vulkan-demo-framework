@@ -2390,11 +2390,6 @@ int main(int argc, char** argv)
 
     if (!window.m_Minimized)
     {
-      static int counter = 0;
-      char msg[256]{};
-      sprintf(msg, "doing the thingy %d\n", counter);
-      OutputDebugStringA(msg);
-      ++counter;
       scene->submitDrawTask(imgui, &taskScheduler);
 
       gpu.present();
