@@ -144,19 +144,23 @@
     <ClCompile Include="..\..\Externals\enkiTS\TaskScheduler.cpp" />
     <ClCompile Include="04-FrameGraph.cpp" />
     <ClCompile Include="Graphics\CommandBuffer.cpp" />
+    <ClCompile Include="Graphics\GltfScene.cpp" />
     <ClCompile Include="Graphics\GpuDevice.cpp" />
     <ClCompile Include="Graphics\GpuResources.cpp" />
     <ClCompile Include="Graphics\ImguiHelper.cpp" />
     <ClCompile Include="Graphics\Renderer.cpp" />
+    <ClCompile Include="Graphics\RenderSceneBase.cpp" />
     <ClCompile Include="Graphics\SpirvParser.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Graphics\CommandBuffer.hpp" />
+    <ClInclude Include="Graphics\GltfScene.hpp" />
     <ClInclude Include="Graphics\GpuDevice.hpp" />
     <ClInclude Include="Graphics\GpuEnum.hpp" />
     <ClInclude Include="Graphics\GpuResources.hpp" />
     <ClInclude Include="Graphics\ImguiHelper.hpp" />
     <ClInclude Include="Graphics\Renderer.hpp" />
+    <ClInclude Include="Graphics\RenderSceneBase.hpp" />
     <ClInclude Include="Graphics\SpirvParser.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
