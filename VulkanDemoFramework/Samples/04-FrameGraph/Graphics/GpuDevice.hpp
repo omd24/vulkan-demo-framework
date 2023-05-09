@@ -65,6 +65,7 @@ struct GpuDevice : public Framework::Service
   void destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout);
   void destroyDescriptorSet(DescriptorSetHandle p_Set);
   void destroyRenderPass(RenderPassHandle p_RenderPass);
+  void destroyFramebuffer(FramebufferHandle p_Framebuffer);
   void destroyShaderState(ShaderStateHandle p_Shader);
 
   void releaseResource(ResourceUpdate& p_ResourceDeletion);
@@ -187,6 +188,7 @@ struct GpuDevice : public Framework::Service
   Framework::ResourcePool m_DescriptorSetLayouts;
   Framework::ResourcePool m_DescriptorSets;
   Framework::ResourcePool m_RenderPasses;
+  Framework::ResourcePool m_Framebuffers;
   Framework::ResourcePool m_CommandBuffers;
   Framework::ResourcePool m_Shaders;
 

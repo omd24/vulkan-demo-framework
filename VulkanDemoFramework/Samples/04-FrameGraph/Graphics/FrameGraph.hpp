@@ -238,7 +238,7 @@ struct FrameGraph
   Framework::Array<FrameGraphNodeHandle> nodes;
 
   FrameGraphBuilder* builder;
-  Allocator* allocator;
+  Framework::Allocator* allocator;
 
   Framework::LinearAllocator localAllocator;
 

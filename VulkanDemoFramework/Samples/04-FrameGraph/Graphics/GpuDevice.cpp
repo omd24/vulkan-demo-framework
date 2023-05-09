@@ -627,7 +627,7 @@ static void _vulkanCreateTexture(
   if (p_GpuDevice.m_BindlessSupported)
   {
     ResourceUpdate resourceUpdate = {};
-    resourceUpdate.type = ResourceDeletionType::kTexture;
+    resourceUpdate.type = ResourceUpdateType::kTexture;
     resourceUpdate.handle = p_Texture->handle.index;
     resourceUpdate.currentFrame = p_GpuDevice.m_CurrentFrameIndex;
     p_GpuDevice.m_TextureToUpdateBindless.push(resourceUpdate);
@@ -2575,7 +2575,7 @@ void GpuDevice::destroyBuffer(BufferHandle p_Buffer)
   if (p_Buffer.index < m_Buffers.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kBuffer, p_Buffer.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kBuffer, p_Buffer.index, m_CurrentFrameIndex, 1});
   }
   else
   {
@@ -2590,9 +2590,9 @@ void GpuDevice::destroyTexture(TextureHandle p_Texture)
   if (p_Texture.index < m_Textures.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kTexture, p_Texture.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kTexture, p_Texture.index, m_CurrentFrameIndex, 1});
     m_TextureToUpdateBindless.push(
-        {ResourceDeletionType::kTexture, p_Texture.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kTexture, p_Texture.index, m_CurrentFrameIndex, 1});
   }
   else
   {
@@ -2605,7 +2605,7 @@ void GpuDevice::destroyPipeline(PipelineHandle p_Pipeline)
   if (p_Pipeline.index < m_Pipelines.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kPipeline, p_Pipeline.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kPipeline, p_Pipeline.index, m_CurrentFrameIndex, 1});
     // Shader state creation is handled internally when creating a pipeline, thus add this to track
     // correctly.
     Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(p_Pipeline.index);
@@ -2630,7 +2630,7 @@ void GpuDevice::destroySampler(SamplerHandle p_Sampler)
   if (p_Sampler.index < m_Samplers.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kSampler, p_Sampler.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kSampler, p_Sampler.index, m_CurrentFrameIndex, 1});
   }
   else
   {
@@ -2645,7 +2645,7 @@ void GpuDevice::destroyDescriptorSetLayout(DescriptorSetLayoutHandle p_Layout)
   if (p_Layout.index < m_DescriptorSetLayouts.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kDescriptorSetLayout, p_Layout.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kDescriptorSetLayout, p_Layout.index, m_CurrentFrameIndex, 1});
   }
   else
   {
@@ -2658,7 +2658,7 @@ void GpuDevice::destroyDescriptorSet(DescriptorSetHandle p_Set)
   if (p_Set.index < m_DescriptorSets.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kDescriptorSet, p_Set.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kDescriptorSet, p_Set.index, m_CurrentFrameIndex, 1});
   }
   else
   {
@@ -2671,11 +2671,24 @@ void GpuDevice::destroyRenderPass(RenderPassHandle p_RenderPass)
   if (p_RenderPass.index < m_RenderPasses.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kRenderPass, p_RenderPass.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kRenderPass, p_RenderPass.index, m_CurrentFrameIndex, 1});
   }
   else
   {
     OutputDebugStringA("Graphics error: trying to free invalid RenderPass\n");
+  }
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::destroyFramebuffer(FramebufferHandle p_Framebuffer)
+{
+  if (p_Framebuffer.index < m_Framebuffers.m_PoolSize)
+  {
+    m_ResourceDeletionQueue.push(
+        {ResourceUpdateType::kFramebuffer, p_Framebuffer.index, m_CurrentFrameIndex, 1});
+  }
+  else
+  {
+    printf("Graphics error: trying to free invalid Framebuffer %u\n", p_Framebuffer.index);
   }
 }
 //---------------------------------------------------------------------------//
@@ -2684,7 +2697,7 @@ void GpuDevice::destroyShaderState(ShaderStateHandle p_Shader)
   if (p_Shader.index < m_Shaders.m_PoolSize)
   {
     m_ResourceDeletionQueue.push(
-        {ResourceDeletionType::kShaderState, p_Shader.index, m_CurrentFrameIndex});
+        {ResourceUpdateType::kShaderState, p_Shader.index, m_CurrentFrameIndex, 1});
 
     ShaderState* state = (ShaderState*)m_Shaders.accessResource(p_Shader.index);
     m_Allocator->deallocate(state->parseResult);
@@ -2700,7 +2713,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
   switch (p_ResourceDeletion.type)
   {
 
-  case ResourceDeletionType::kBuffer: {
+  case ResourceUpdateType::kBuffer: {
     Buffer* buffer = (Buffer*)m_Buffers.accessResource(p_ResourceDeletion.handle);
     if (buffer && buffer->parentBuffer.index == kInvalidBuffer.index)
     {
@@ -2710,7 +2723,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
     break;
   }
 
-  case ResourceDeletionType::kPipeline: {
+  case ResourceUpdateType::kPipeline: {
     Pipeline* pipeline = (Pipeline*)m_Pipelines.accessResource(p_ResourceDeletion.handle);
     if (pipeline)
     {
@@ -2722,7 +2735,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
     break;
   }
 
-  case ResourceDeletionType::kRenderPass: {
+  case ResourceUpdateType::kRenderPass: {
     RenderPass* renderPass = (RenderPass*)m_RenderPasses.accessResource(p_ResourceDeletion.handle);
     if (renderPass)
     {
@@ -2733,7 +2746,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
     break;
   }
 
-  case ResourceDeletionType::kDescriptorSet: {
+  case ResourceUpdateType::kDescriptorSet: {
     DesciptorSet* descriptorSet =
         (DesciptorSet*)m_DescriptorSets.accessResource(p_ResourceDeletion.handle);
     if (descriptorSet)
@@ -2745,7 +2758,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
     break;
   }
 
-  case ResourceDeletionType::kDescriptorSetLayout: {
+  case ResourceUpdateType::kDescriptorSetLayout: {
     DesciptorSetLayout* descriptorSetLayout =
         (DesciptorSetLayout*)m_DescriptorSetLayouts.accessResource(p_ResourceDeletion.handle);
     if (descriptorSetLayout)
@@ -2760,7 +2773,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
     break;
   }
 
-  case ResourceDeletionType::kSampler: {
+  case ResourceUpdateType::kSampler: {
     Sampler* sampler = (Sampler*)m_Samplers.accessResource(p_ResourceDeletion.handle);
     if (sampler)
     {
@@ -2770,7 +2783,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
     break;
   }
 
-  case ResourceDeletionType::kShaderState: {
+  case ResourceUpdateType::kShaderState: {
     ShaderState* shaderState = (ShaderState*)m_Shaders.accessResource(p_ResourceDeletion.handle);
     if (shaderState)
     {
@@ -2784,7 +2797,7 @@ void GpuDevice::releaseResource(ResourceUpdate& p_ResourceDeletion)
     break;
   }
 
-  case ResourceDeletionType::kTexture: {
+  case ResourceUpdateType::kTexture: {
     Texture* texture = (Texture*)m_Textures.accessResource(p_ResourceDeletion.handle);
     if (texture)
     {

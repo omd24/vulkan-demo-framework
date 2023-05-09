@@ -623,9 +623,10 @@ struct ExecutionBarrier
 
 struct ResourceUpdate
 {
-  ResourceDeletionType::Enum type;
+  ResourceUpdateType::Enum type;
   ResourceHandle handle;
   uint32_t currentFrame;
+  uint32_t deleting;
 }; // struct ResourceUpdate
 //---------------------------------------------------------------------------//
 // Device Resources:

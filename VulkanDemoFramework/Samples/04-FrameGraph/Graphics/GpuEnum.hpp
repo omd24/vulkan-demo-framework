@@ -560,7 +560,7 @@ enum Enum
 };
 } // namespace RenderPassType
 //---------------------------------------------------------------------------//
-namespace ResourceDeletionType
+namespace ResourceUpdateType
 {
 enum Enum
 {
@@ -571,10 +571,11 @@ enum Enum
   kDescriptorSetLayout,
   kDescriptorSet,
   kRenderPass,
+  kFramebuffer,
   kShaderState,
   kCount
 };
-} // namespace ResourceDeletionType
+} // namespace ResourceUpdateType
 //---------------------------------------------------------------------------//
 namespace PresentMode
 {
