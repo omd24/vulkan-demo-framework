@@ -1146,4 +1146,6 @@ inline void utilAddBufferBarrierExt(
       p_CmdBuffer, sourceStageMask, destinationStageMask, 0, 0, nullptr, 1, &barrier, 0, nullptr);
 }
 //---------------------------------------------------------------------------//
+VkFormat utilStringToVkFormat(const char* p_Format);
+//---------------------------------------------------------------------------//
 } // namespace Graphics

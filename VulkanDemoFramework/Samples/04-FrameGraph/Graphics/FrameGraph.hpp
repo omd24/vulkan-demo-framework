@@ -63,7 +63,7 @@ struct FrameGraphResourceInfo
       VkFormat format;
       VkImageUsageFlags flags;
 
-      RenderPassOperation::Enum load_op;
+      RenderPassOperation::Enum loadOp;
 
       TextureHandle texture;
     } texture;

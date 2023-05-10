@@ -1,8 +1,12 @@
 #include "FrameGraph.hpp"
 
 #include "Foundation/Memory.hpp"
+#include "Foundation/File.hpp"
+#include "Foundation/String.hpp"
 
 #include "Graphics/GpuDevice.hpp"
+
+#include "Externals/json.hpp"
 
 namespace Graphics
 {
@@ -127,7 +131,121 @@ void FrameGraph::shutdown()
   localAllocator.shutdown();
 }
 //---------------------------------------------------------------------------//
-void FrameGraph::parse(const char* filePath, Framework::StackAllocator* tempAllocator);
+void FrameGraph::parse(const char* p_FilePath, Framework::StackAllocator* p_TempAllocator)
+{
+  using json = nlohmann::json;
+
+  if (!Framework::fileExists(p_FilePath))
+  {
+    printf("Cannot find file %s\n", p_FilePath);
+    return;
+  }
+
+  size_t currentAllocatorMarker = p_TempAllocator->getMarker();
+
+  Framework::FileReadResult readResult = Framework::fileReadText(p_FilePath, p_TempAllocator);
+
+  json graphData = json::parse(readResult.data);
+
+  Framework::StringBuffer stringBuffer;
+  stringBuffer.init(1024, &localAllocator);
+
+  std::string nameValue = graphData.value("name", "");
+  name = stringBuffer.appendUseFormatted("%s", nameValue.c_str());
+
+  json passes = graphData["passes"];
+  for (size_t i = 0; i < passes.size(); ++i)
+  {
+    json pass = passes[i];
+
+    json passInputs = pass["inputs"];
+    json passOutputs = pass["outputs"];
+
+    FrameGraphNodeCreation nodeCreation{};
+    nodeCreation.inputs.init(p_TempAllocator, passInputs.size());
+    nodeCreation.outputs.init(p_TempAllocator, passOutputs.size());
+
+    for (size_t ii = 0; ii < passInputs.size(); ++ii)
+    {
+      json passInput = passInputs[ii];
+
+      FrameGraphResourceInputCreation inputCreation{};
+
+      std::string inputType = passInput.value("type", "");
+      assert(!inputType.empty());
+
+      std::string inputName = passInput.value("name", "");
+      assert(!inputName.empty());
+
+      inputCreation.type = stringToResourceType(inputType.c_str());
+      inputCreation.resourceInfo.external = false;
+
+      inputCreation.name = stringBuffer.appendUseFormatted("%s", inputName.c_str());
+
+      nodeCreation.inputs.push(inputCreation);
+    }
+
+    for (size_t oi = 0; oi < passOutputs.size(); ++oi)
+    {
+      json passOutput = passOutputs[oi];
+
+      FrameGraphResourceOutputCreation outputCreation{};
+
+      std::string outputType = passOutput.value("type", "");
+      assert(!outputType.empty());
+
+      std::string output_name = passOutput.value("name", "");
+      assert(!output_name.empty());
+
+      outputCreation.type = stringToResourceType(outputType.c_str());
+
+      outputCreation.name = stringBuffer.appendUseFormatted("%s", output_name.c_str());
+
+      switch (outputCreation.type)
+      {
+      case kFrameGraphResourceTypeAttachment:
+      case kFrameGraphResourceTypeTexture: {
+        std::string format = passOutput.value("format", "");
+        assert(!format.empty());
+
+        outputCreation.resourceInfo.texture.format = utilStringToVkFormat(format.c_str());
+
+        std::string loadOp = passOutput.value("op", "");
+        assert(!loadOp.empty());
+
+        outputCreation.resourceInfo.texture.loadOp = stringToRenderPassOperation(loadOp.c_str());
+
+        json resolution = passOutput["resolution"];
+
+        outputCreation.resourceInfo.texture.width = resolution[0];
+        outputCreation.resourceInfo.texture.height = resolution[1];
+        outputCreation.resourceInfo.texture.depth = 1;
+      }
+      break;
+      case kFrameGraphResourceTypeBuffer: {
+        // TODO(marco)
+        assert(false);
+      }
+      break;
+      }
+
+      nodeCreation.outputs.push(outputCreation);
+    }
+
+    nameValue = pass.value("name", "");
+    assert(!nameValue.empty());
+
+    bool enabled = pass.value("enabled", true);
+
+    nodeCreation.name = stringBuffer.appendUseFormatted("%s", nameValue.c_str());
+    nodeCreation.enabled = enabled;
+
+    FrameGraphNodeHandle node_handle = builder->createNode(nodeCreation);
+    nodes.push(node_handle);
+  }
+
+  p_TempAllocator->freeMarker(currentAllocatorMarker);
+}
 //---------------------------------------------------------------------------//
 void FrameGraph::reset();
 //---------------------------------------------------------------------------//
