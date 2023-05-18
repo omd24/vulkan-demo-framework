@@ -11,7 +11,7 @@
 
 namespace Graphics
 {
-
+using namespace Framework;
 struct Allocator;
 struct CommandBuffer;
 struct FrameGraph;
@@ -143,7 +143,7 @@ struct FrameGraphNode
 
 struct FrameGraphRenderPassCache
 {
-  void init(Allocator* allocator);
+  void init(Framework::Allocator* allocator);
   void shutdown();
 
   Framework::FlatHashMap<uint64_t, FrameGraphRenderPass*> renderPassMap;
@@ -151,7 +151,7 @@ struct FrameGraphRenderPassCache
 
 struct FrameGraphResourceCache
 {
-  void init(Allocator* allocator, GpuDevice* device);
+  void init(Framework::Allocator* allocator, GpuDevice* device);
   void shutdown();
 
   GpuDevice* device;
@@ -162,7 +162,7 @@ struct FrameGraphResourceCache
 
 struct FrameGraphNodeCache
 {
-  void init(Allocator* allocator, GpuDevice* device);
+  void init(Framework::Allocator* allocator, GpuDevice* device);
   void shutdown();
 
   GpuDevice* device;
@@ -195,7 +195,7 @@ struct FrameGraphBuilder : public Framework::Service
   FrameGraphNodeCache nodeCache;
   FrameGraphRenderPassCache renderPassCache;
 
-  Allocator* allocator;
+  Framework::Allocator* allocator;
 
   GpuDevice* device;
 

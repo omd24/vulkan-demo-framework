@@ -13,7 +13,13 @@ struct CommandBuffer
 
   DescriptorSetHandle createDescriptorSet(const DescriptorSetCreation& p_Creation);
 
-  void bindPass(RenderPassHandle p_Passhandle, bool p_UseSecondary);
+  void begin();
+  void beginSecondary(RenderPass* p_CurrRenderPass, Framebuffer* p_CurrentFramebuffer);
+  void end();
+  void endCurrentRenderPass();
+
+  void
+  bindPass(RenderPassHandle p_Passhandle, FramebufferHandle p_Framebuffer, bool p_UseSecondary);
   void bindPipeline(PipelineHandle p_Handle);
   void bindVertexBuffer(BufferHandle p_Handle, uint32_t p_Binding, uint32_t p_Offset);
   void bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset);
@@ -31,14 +37,6 @@ struct CommandBuffer
   void setViewport(const Viewport* p_Viewport);
   void setScissor(const Rect2DInt* p_Rect);
 
-  void drawIndexed(
-      TopologyType::Enum p_Topology,
-      uint32_t p_IndexCount,
-      uint32_t p_InstanceCount,
-      uint32_t p_FirstIndex,
-      int p_VertexOffset,
-      uint32_t p_FirstInstance);
-
   void clear(float p_Red, float p_Green, float p_Blue, float p_Alpha)
   {
     m_Clears[0].color = {p_Red, p_Green, p_Blue, p_Alpha};
@@ -50,10 +48,30 @@ struct CommandBuffer
     m_Clears[1].depthStencil.stencil = p_Value;
   }
 
-  void begin();
-  void beginSecondary(RenderPass* p_CurrRenderPass);
-  void end();
-  void endCurrentRenderPass();
+  // Draw methods:
+  void draw(
+      TopologyType::Enum p_Topology,
+      uint32_t p_FirstVertex,
+      uint32_t p_VertexCount,
+      uint32_t p_FirstInstance,
+      uint32_t p_InstanceCount);
+  void drawIndexed(
+      TopologyType::Enum p_Topology,
+      uint32_t p_IndexCount,
+      uint32_t p_InstanceCount,
+      uint32_t p_FirstIndex,
+      int p_VertexOffset,
+      uint32_t p_FirstInstance);
+
+  void drawIndirect(BufferHandle p_Handle, uint32_t p_Offset, uint32_t p_Stride);
+  void drawIndexedIndirect(BufferHandle p_Handle, uint32_t p_Offset, uint32_t p_Stride);
+
+  void dispatch(uint32_t p_GroupX, uint32_t p_GroupY, uint32_t p_GroupZ);
+  void dispatchIndirect(BufferHandle p_Handle, uint32_t p_Offset);
+
+  void barrier(const ExecutionBarrier& p_Barrier);
+
+  void fillBuffer(BufferHandle p_Buffer, uint32_t p_Offset, uint32_t p_Size, uint32_t p_Data);
 
   // Non-drawing methods
   void uploadTextureData(
@@ -61,6 +79,9 @@ struct CommandBuffer
       void* p_TextureData,
       BufferHandle p_StagingBuffer,
       size_t p_StagingBufferOffset);
+  void copyTexture(
+      TextureHandle p_Src, ResourceState p_SrcState, TextureHandle p_Dst, ResourceState p_DstState);
+
   void uploadBufferData(
       BufferHandle p_Buffer,
       void* p_BufferData,
@@ -73,6 +94,7 @@ struct CommandBuffer
   VkDescriptorSet m_VulkanDescriptorSets[16];
 
   RenderPass* m_CurrentRenderPass;
+  Framebuffer* m_CurrentFramebuffer;
   Pipeline* m_CurrentPipeline;
   VkClearValue m_Clears[2]; // 0 = Color, 1 = Depth
   bool m_IsRecording;

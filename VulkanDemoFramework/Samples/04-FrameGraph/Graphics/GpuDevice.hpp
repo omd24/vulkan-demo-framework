@@ -56,6 +56,7 @@ struct GpuDevice : public Framework::Service
   createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creation);
   DescriptorSetHandle createDescriptorSet(const DescriptorSetCreation& p_Creation);
   RenderPassHandle createRenderPass(const RenderPassCreation& p_Creation);
+  FramebufferHandle createFramebuffer(const FramebufferCreation& p_Creation);
   ShaderStateHandle createShaderState(const ShaderStateCreation& p_Creation);
 
   void destroyBuffer(BufferHandle p_Buffer);
@@ -69,6 +70,19 @@ struct GpuDevice : public Framework::Service
   void destroyShaderState(ShaderStateHandle p_Shader);
 
   void releaseResource(ResourceUpdate& p_ResourceDeletion);
+
+  // Instant methods
+  void destroyBufferInstant(ResourceHandle buffer);
+  void destroyTextureInstant(ResourceHandle texture);
+  void destroyPipelineInstant(ResourceHandle pipeline);
+  void destroySamplerInstant(ResourceHandle sampler);
+  void destroyDescriptorSetLayoutInstant(ResourceHandle layout);
+  void destroyDescriptorSetInstant(ResourceHandle set);
+  void destroyRenderPassInstant(ResourceHandle p_RenderPass);
+  void destroyFramebufferInstant(ResourceHandle framebuffer);
+  void destroyShaderStateInstant(ResourceHandle shader);
+
+  void updateDescriptorSetInstant(const DescriptorSetUpdate& update);
 
   // Map/Unmap
   void* mapBuffer(const MapBufferParameters& p_Parameters);
@@ -106,8 +120,8 @@ struct GpuDevice : public Framework::Service
   }
 
   static void fillWriteDescriptorSets(
-      GpuDevice& p_GpuDevice,
-      const DesciptorSetLayout* p_DescriptorSetLayout,
+      GpuDevice& p_Gpu,
+      const DescriptorSetLayout* p_DescriptorSetLayout,
       VkDescriptorSet p_VkDescriptorSet,
       VkWriteDescriptorSet* p_DescriptorWrite,
       VkDescriptorBufferInfo* p_BufferInfo,
@@ -136,9 +150,9 @@ struct GpuDevice : public Framework::Service
   VkDescriptorPool m_VulkanDescriptorPool;
 
   // Swapchain
-  VkImage m_VulkanSwapchainImages[kMaxSwapchainImages];
-  VkImageView m_VulkanSwapchainImageViews[kMaxSwapchainImages];
-  VkFramebuffer m_VulkanSwapchainFramebuffers[kMaxSwapchainImages];
+  FramebufferHandle m_VulkanSwapchainFramebuffers[kMaxSwapchainImages]{
+      kInvalidIndex, kInvalidIndex, kInvalidIndex};
+
   uint16_t m_SwapchainWidth = 1;
   uint16_t m_SwapchainHeight = 1;
   bool m_Resized = false;
@@ -160,20 +174,23 @@ struct GpuDevice : public Framework::Service
   uint32_t m_PreviousFrameIndex;
   uint32_t m_AbsoluteFrameIndex;
 
-  Framework::Array<ResourceUpdate> m_ResourceDeletionQueue;
-  Framework::Array<DescriptorSetUpdate> m_DescriptorSetUpdates;
-
   // Fundamental resources
-  TextureHandle m_DepthTexture;
   BufferHandle m_FullscreenVertexBuffer;
   SamplerHandle m_DefaultSampler;
-  RenderPassHandle m_SwapchainPass;
+  RenderPassHandle m_SwapchainRenderPass{kInvalidIndex};
 
   // Dummy resources
   TextureHandle m_DummyTexture;
   BufferHandle m_DummyConstantBuffer;
 
   VmaAllocator m_VmaAllocator;
+
+  // Extension functions
+  PFN_vkCmdBeginRenderingKHR m_CmdBeginRendering;
+  PFN_vkCmdEndRenderingKHR m_CmdEndRendering;
+
+  Framework::Array<ResourceUpdate> m_ResourceDeletionQueue;
+  Framework::Array<DescriptorSetUpdate> m_DescriptorSetUpdates;
 
   // Per-frame synchronization
   VkSemaphore m_VulkanRenderCompleteSemaphore[kMaxSwapchainImages];
@@ -206,17 +223,21 @@ struct GpuDevice : public Framework::Service
   static constexpr const char* kName = "Gpu-Service";
 
   bool m_DebugUtilsExtensionPresent = false;
+  bool m_DynamicRenderingExtensionPresent = false;
+
+  size_t m_UboAlignment = 256;
+  size_t m_SboAlignment = 256;
+
   char m_VulkanBinariesPath[512];
 
   Framework::Directory m_Cwd;
 
   // Bindless stuff
   bool m_BindlessSupported = false;
-  static const uint32_t kMaxBindlessResources = 1024u;
-  static const uint32_t kBindlessTextureBinding = 10u;
   VkDescriptorPool m_VulkanBindlessDescriptorPool;
-  VkDescriptorSetLayout m_VulkanBindlessDescriptorSetLayout;
-  VkDescriptorSet m_VulkanBindlessDescriptorSet;
+  VkDescriptorSet m_VulkanBindlessDescriptorSetCached;
+  DescriptorSetHandle m_BindlessDescriptorSet;
+  DescriptorSetLayoutHandle m_BindlessDescriptorSetLayout;
   Framework::Array<ResourceUpdate> m_TextureToUpdateBindless;
 
   void linkTextureSampler(TextureHandle p_Texture, SamplerHandle p_Sampler);

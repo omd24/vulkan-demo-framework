@@ -102,42 +102,46 @@ BufferCreation& BufferCreation::setDeviceOnly(bool value)
 
 //---------------------------------------------------------------------------//
 /// TextureCreation
-TextureCreation& TextureCreation::setSize(uint16_t width_, uint16_t height_, uint16_t depth_)
+TextureCreation& TextureCreation::setSize(uint16_t p_Width, uint16_t p_Height, uint16_t p_Depth)
 {
-  width = width_;
-  height = height_;
-  depth = depth_;
+  width = p_Width;
+  height = p_Height;
+  depth = p_Depth;
 
   return *this;
 }
 
-TextureCreation& TextureCreation::setFlags(uint8_t mipmaps_, uint8_t flags_)
+TextureCreation& TextureCreation::setFlags(uint8_t p_Mipmaps, uint8_t p_Flags)
 {
-  mipmaps = mipmaps_;
-  flags = flags_;
+  mipmaps = p_Mipmaps;
+  flags = p_Flags;
 
   return *this;
 }
 
-TextureCreation& TextureCreation::setFormatType(VkFormat format_, TextureType::Enum type_)
+TextureCreation& TextureCreation::setFormatType(VkFormat p_Format, TextureType::Enum p_Type)
 {
-  format = format_;
-  type = type_;
+  format = p_Format;
+  type = p_Type;
 
   return *this;
 }
 
-TextureCreation& TextureCreation::setName(const char* name_)
+TextureCreation& TextureCreation::setName(const char* p_Name)
 {
-  name = name_;
-
+  name = p_Name;
   return *this;
 }
 
-TextureCreation& TextureCreation::setData(void* data_)
+TextureCreation& TextureCreation::setData(void* p_Data)
 {
-  initialData = data_;
+  initialData = p_Data;
+  return *this;
+}
 
+TextureCreation& TextureCreation::setAlias(TextureHandle p_Alias)
+{
+  alias = p_Alias;
   return *this;
 }
 //---------------------------------------------------------------------------//
@@ -318,32 +322,35 @@ RenderPassOutput& RenderPassOutput::reset()
   for (uint32_t i = 0; i < kMaxImageOutputs; ++i)
   {
     colorFormats[i] = VK_FORMAT_UNDEFINED;
+    colorFinalLayouts[i] = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorOperations[i] = RenderPassOperation::kDontCare;
   }
   depthStencilFormat = VK_FORMAT_UNDEFINED;
-  colorOperation = depthOperation = stencilOperation = RenderPassOperation::kDontCare;
+  depthOperation = stencilOperation = RenderPassOperation::kDontCare;
   return *this;
 }
 
-RenderPassOutput& RenderPassOutput::color(VkFormat format)
+RenderPassOutput&
+RenderPassOutput::color(VkFormat format, VkImageLayout layout, RenderPassOperation::Enum loadOp)
 {
-  colorFormats[numColorFormats++] = format;
+  colorFormats[numColorFormats] = format;
+  colorOperations[numColorFormats] = loadOp;
+  colorFinalLayouts[numColorFormats++] = layout;
   return *this;
 }
 
-RenderPassOutput& RenderPassOutput::depth(VkFormat format)
+RenderPassOutput& RenderPassOutput::depth(VkFormat format, VkImageLayout layout)
 {
   depthStencilFormat = format;
+  depthStencilFinalLayout = layout;
   return *this;
 }
 
-RenderPassOutput& RenderPassOutput::setOperations(
-    RenderPassOperation::Enum color_,
-    RenderPassOperation::Enum depth_,
-    RenderPassOperation::Enum stencil_)
+RenderPassOutput& RenderPassOutput::setDepthStencilOperations(
+    RenderPassOperation::Enum p_Depth, RenderPassOperation::Enum p_Stencil)
 {
-  colorOperation = color_;
-  depthOperation = depth_;
-  stencilOperation = stencil_;
+  depthOperation = p_Depth;
+  stencilOperation = p_Stencil;
 
   return *this;
 }
@@ -354,67 +361,94 @@ PipelineCreation& PipelineCreation::addDescriptorSetLayout(DescriptorSetLayoutHa
   descriptorSetLayouts[numActiveLayouts++] = handle;
   return *this;
 }
-
+//---------------------------------------------------------------------------//
 RenderPassOutput& PipelineCreation::renderPassOutput() { return renderPass; }
+//---------------------------------------------------------------------------//
+FramebufferCreation& FramebufferCreation::reset()
+{
+  numRenderTargets = 0;
+  name = nullptr;
+  depthStencilTexture.index = kInvalidIndex;
+
+  resize = 0;
+  scaleX = 1.f;
+  scaleY = 1.f;
+
+  return *this;
+}
+//---------------------------------------------------------------------------//
+FramebufferCreation& FramebufferCreation::addRenderTexture(TextureHandle p_Texture)
+{
+  outputTextures[numRenderTargets++] = p_Texture;
+
+  return *this;
+}
+//---------------------------------------------------------------------------//
+FramebufferCreation& FramebufferCreation::setDepthStencilTexture(TextureHandle p_Texture)
+{
+  depthStencilTexture = p_Texture;
+
+  return *this;
+}
+//---------------------------------------------------------------------------//
+FramebufferCreation&
+FramebufferCreation::setScaling(float p_ScaleX, float p_ScaleY, uint8_t p_Resize)
+{
+  scaleX = p_ScaleX;
+  scaleY = p_ScaleY;
+  resize = p_Resize;
+
+  return *this;
+}
+//---------------------------------------------------------------------------//
+FramebufferCreation& FramebufferCreation::setName(const char* p_Name)
+{
+  name = p_Name;
+
+  return *this;
+}
 //---------------------------------------------------------------------------//
 /// RenderPassCreation
 RenderPassCreation& RenderPassCreation::reset()
 {
   numRenderTargets = 0;
-  depthStencilTexture = kInvalidTexture;
-  resize = 0;
-  scaleX = 1.f;
-  scaleY = 1.f;
-  colorOperation = depthOperation = stencilOperation = RenderPassOperation::kDontCare;
+  depthStencilFormat = VK_FORMAT_UNDEFINED;
+  for (uint32_t i = 0; i < kMaxImageOutputs; ++i)
+  {
+    colorOperations[i] = RenderPassOperation::kDontCare;
+  }
+  depthOperation = stencilOperation = RenderPassOperation::kDontCare;
 
   return *this;
 }
-
-RenderPassCreation& RenderPassCreation::addRenderTexture(TextureHandle texture)
+RenderPassCreation& RenderPassCreation::addAttachment(
+    VkFormat format, VkImageLayout layout, RenderPassOperation::Enum loadOp)
 {
-  outputTextures[numRenderTargets++] = texture;
+  colorFormats[numRenderTargets] = format;
+  colorOperations[numRenderTargets] = loadOp;
+  colorFinalLayouts[numRenderTargets++] = layout;
 
   return *this;
 }
-
-RenderPassCreation& RenderPassCreation::setScaling(float scaleX_, float scaleY_, uint8_t resize_)
+RenderPassCreation&
+RenderPassCreation::setDepthStencilTexture(VkFormat format, VkImageLayout layout)
 {
-  scaleX = scaleX_;
-  scaleY = scaleY_;
-  resize = resize_;
+  depthStencilFormat = format;
+  depthStencilFinalLayout = layout;
 
   return *this;
 }
-
-RenderPassCreation& RenderPassCreation::setDepthStencilTexture(TextureHandle texture)
+RenderPassCreation& RenderPassCreation::setName(const char* p_Name)
 {
-  depthStencilTexture = texture;
+  name = p_Name;
 
   return *this;
 }
-
-RenderPassCreation& RenderPassCreation::setName(const char* name_)
+RenderPassCreation& RenderPassCreation::setDepthStencilOperations(
+    RenderPassOperation::Enum depth, RenderPassOperation::Enum stencil)
 {
-  name = name_;
-
-  return *this;
-}
-
-RenderPassCreation& RenderPassCreation::setType(RenderPassType::Enum type_)
-{
-  type = type_;
-
-  return *this;
-}
-
-RenderPassCreation& RenderPassCreation::setOperations(
-    RenderPassOperation::Enum color_,
-    RenderPassOperation::Enum depth_,
-    RenderPassOperation::Enum stencil_)
-{
-  colorOperation = color_;
-  depthOperation = depth_;
-  stencilOperation = stencil_;
+  depthOperation = depth;
+  stencilOperation = stencil;
 
   return *this;
 }
