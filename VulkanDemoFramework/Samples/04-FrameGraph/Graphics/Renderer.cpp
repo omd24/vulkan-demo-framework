@@ -49,20 +49,20 @@ void ResourceCache::shutdown(Renderer* p_Renderer)
     m_Materials.iteratorAdvance(it);
   }
 
-  it = m_Programs.iteratorBegin();
+  it = m_Techniques.iteratorBegin();
   while (it.isValid())
   {
-    Graphics::RendererUtil::Program* program = m_Programs.get(it);
-    p_Renderer->destroyProgram(program);
+    Graphics::RendererUtil::GpuTechnique* tech = m_Techniques.get(it);
+    p_Renderer->destroyTechnique(tech);
 
-    m_Programs.iteratorAdvance(it);
+    m_Techniques.iteratorAdvance(it);
   }
 
   m_Textures.shutdown();
   m_Buffers.shutdown();
   m_Samplers.shutdown();
   m_Materials.shutdown();
-  m_Programs.shutdown();
+  m_Techniques.shutdown();
 }
 //---------------------------------------------------------------------------//
 // Internals:
@@ -175,15 +175,15 @@ GpuTechniqueCreation& GpuTechniqueCreation::setName(const char* p_Name)
 //---------------------------------------------------------------------------//
 MaterialCreation& MaterialCreation::reset()
 {
-  program = nullptr;
+  technique = nullptr;
   name = nullptr;
   renderIndex = ~0u;
   return *this;
 }
 //---------------------------------------------------------------------------//
-MaterialCreation& MaterialCreation::setProgram(Program* p_Program)
+MaterialCreation& MaterialCreation::setTechnique(GpuTechnique* p_technique)
 {
-  program = p_Program;
+  technique = p_technique;
   return *this;
 }
 //---------------------------------------------------------------------------//
@@ -399,7 +399,7 @@ void Renderer::init(const RendererCreation& p_Creation)
   m_Textures.init(p_Creation.alloc, 512);
   m_Buffers.init(p_Creation.alloc, 512);
   m_Samplers.init(p_Creation.alloc, 128);
-  m_Programs.init(p_Creation.alloc, 128);
+  m_Techniques.init(p_Creation.alloc, 128);
   m_Materials.init(p_Creation.alloc, 128);
 
   m_ResourceCache.init(p_Creation.alloc);
@@ -556,52 +556,44 @@ SamplerResource* Renderer::createSampler(const SamplerCreation& p_Creation)
   return nullptr;
 }
 //---------------------------------------------------------------------------//
-Program* Renderer::createProgram(const ProgramCreation& creation)
+GpuTechnique* Renderer::createTechnique(const GpuTechniqueCreation& creation)
 {
-  Program* program = m_Programs.obtain();
-  if (program)
+  GpuTechnique* technique = m_Techniques.obtain();
+  if (technique)
   {
-    const uint32_t numPasses = 1;
-    // First create arrays
-    program->m_Passes.init(m_GpuDevice->m_Allocator, numPasses, numPasses);
-
-    program->m_Name = creation.pipelineCreation.name;
+    technique->passes.init(m_GpuDevice->m_Allocator, creation.numCreations, creation.numCreations);
+    technique->m_Name = creation.name;
 
     Framework::StringBuffer pipelineCachePath;
     pipelineCachePath.init(1024, m_GpuDevice->m_Allocator);
 
-    for (uint32_t i = 0; i < numPasses; ++i)
+    for (uint32_t i = 0; i < creation.numCreations; ++i)
     {
-      ProgramPass& pass = program->m_Passes[i];
-
-      if (creation.pipelineCreation.name != nullptr)
+      GpuTechniquePass& pass = technique->passes[i];
+      const PipelineCreation& passCreation = creation.creations[i];
+      if (passCreation.name != nullptr)
       {
         char* cachePath = pipelineCachePath.appendUseFormatted(
-            "%s%s%s.cache", m_GpuDevice->m_Cwd.path, SHADER_FOLDER, creation.pipelineCreation.name);
+            "%s%s%s.cache", m_GpuDevice->m_Cwd.path, SHADER_FOLDER, passCreation);
 
-        pass.pipeline = m_GpuDevice->createPipeline(creation.pipelineCreation, cachePath);
+        pass.pipeline = m_GpuDevice->createPipeline(passCreation, cachePath);
       }
       else
       {
-        pass.pipeline = m_GpuDevice->createPipeline(creation.pipelineCreation);
+        pass.pipeline = m_GpuDevice->createPipeline(passCreation);
       }
-
-      pass.descriptorSetLayout = m_GpuDevice->getDescriptorSetLayout(pass.pipeline, 0);
     }
 
     pipelineCachePath.shutdown();
 
-    if (creation.pipelineCreation.name != nullptr)
+    if (creation.name != nullptr)
     {
-      m_ResourceCache.m_Programs.insert(
-          Framework::hashCalculate(creation.pipelineCreation.name), program);
+      m_ResourceCache.m_Techniques.insert(Framework::hashCalculate(creation.name), technique);
     }
 
-    program->m_References = 1;
-
-    return program;
+    technique->m_References = 1;
   }
-  return nullptr;
+  return technique;
 }
 //---------------------------------------------------------------------------//
 Material* Renderer::createMaterial(const MaterialCreation& creation)
@@ -609,7 +601,7 @@ Material* Renderer::createMaterial(const MaterialCreation& creation)
   Material* material = m_Materials.obtain();
   if (material)
   {
-    material->m_Program = creation.program;
+    material->m_Technique = creation.technique;
     material->m_Name = creation.name;
     material->m_RenderIndex = creation.renderIndex;
 
@@ -625,17 +617,17 @@ Material* Renderer::createMaterial(const MaterialCreation& creation)
   return nullptr;
 }
 //---------------------------------------------------------------------------//
-Material* Renderer::createMaterial(Program* program, const char* name)
+Material* Renderer::createMaterial(GpuTechnique* technique, const char* name)
 {
-  MaterialCreation creation{program, name};
+  MaterialCreation creation{technique, name};
   return createMaterial(creation);
 }
 //---------------------------------------------------------------------------//
-PipelineHandle Renderer::getPipeline(Material* material)
+PipelineHandle Renderer::getPipeline(Material* material, uint32_t passIndex)
 {
   assert(material != nullptr);
 
-  return material->m_Program->m_Passes[0].pipeline;
+  return material->m_Technique->passes[passIndex].pipeline;
 }
 //---------------------------------------------------------------------------//
 DescriptorSetHandle Renderer::createDescriptorSet(
@@ -643,7 +635,8 @@ DescriptorSetHandle Renderer::createDescriptorSet(
 {
   assert(material != nullptr);
 
-  DescriptorSetLayoutHandle setLayout = material->m_Program->m_Passes[0].descriptorSetLayout;
+  DescriptorSetLayoutHandle setLayout =
+      m_GpuDevice->getDescriptorSetLayout(material->m_Technique->passes[0].pipeline, 1);
 
   dsCreation.setLayout(setLayout);
 
@@ -704,25 +697,25 @@ void Renderer::destroySampler(SamplerResource* p_Sampler)
   m_Samplers.release(p_Sampler);
 }
 //---------------------------------------------------------------------------//
-void Renderer::destroyProgram(Program* p_Program)
+void Renderer::destroyTechnique(GpuTechnique* p_Technique)
 {
-  if (!p_Program)
+  if (!p_Technique)
   {
     return;
   }
 
-  p_Program->removeReference();
-  if (p_Program->m_References)
+  p_Technique->removeReference();
+  if (p_Technique->m_References)
   {
     return;
   }
 
-  m_ResourceCache.m_Programs.remove(Framework::hashCalculate(p_Program->m_Name));
+  m_ResourceCache.m_Techniques.remove(Framework::hashCalculate(p_Technique->m_Name));
 
-  m_GpuDevice->destroyPipeline(p_Program->m_Passes[0].pipeline);
-  p_Program->m_Passes.shutdown();
+  m_GpuDevice->destroyPipeline(p_Technique->passes[0].pipeline);
+  p_Technique->passes.shutdown();
 
-  m_Programs.release(p_Program);
+  m_Techniques.release(p_Technique);
 }
 //---------------------------------------------------------------------------//
 void Renderer::destroyMaterial(Material* p_Material)

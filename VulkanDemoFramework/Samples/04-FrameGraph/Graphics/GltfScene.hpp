@@ -14,12 +14,10 @@ namespace Graphics
 struct glTFScene;
 struct Material;
 
-//
-//
+//---------------------------------------------------------------------------//
 struct PBRMaterial
 {
-
-  Material* material;
+  RendererUtil::Material* material;
 
   BufferHandle materialBuffer;
   DescriptorSetHandle descriptorSet;
@@ -36,12 +34,9 @@ struct PBRMaterial
   float alphaCutoff;
   uint32_t flags;
 }; // struct PBRMaterial
-
-//
-//
+//---------------------------------------------------------------------------//
 struct Mesh
 {
-
   PBRMaterial pbrMaterial;
 
   BufferHandle indexBuffer;
@@ -70,9 +65,7 @@ struct Mesh
     return (pbrMaterial.flags & kDrawFlagsDoubleSided) == kDrawFlagsDoubleSided;
   }
 }; // struct Mesh
-
-//
-//
+//---------------------------------------------------------------------------//
 struct MeshInstance
 {
 
@@ -80,9 +73,7 @@ struct MeshInstance
   uint32_t materialPassIndex;
 
 }; // struct MeshInstance
-
-//
-//
+//---------------------------------------------------------------------------//
 struct GpuMeshData
 {
   mat4s world;
@@ -97,11 +88,9 @@ struct GpuMeshData
   uint32_t flags;
   uint32_t padding1[3];
 }; // struct GpuMeshData
-
+//---------------------------------------------------------------------------//
 // Render Passes //
-
-//
-//
+//---------------------------------------------------------------------------//
 struct DepthPrePass : public FrameGraphRenderPass
 {
   void render(CommandBuffer* gpuCommands, RenderScene* renderScene) override;
@@ -116,9 +105,7 @@ struct DepthPrePass : public FrameGraphRenderPass
   Framework::Array<MeshInstance> meshInstances;
   Renderer* renderer;
 }; // struct DepthPrePass
-
-//
-//
+//---------------------------------------------------------------------------//
 struct GBufferPass : public FrameGraphRenderPass
 {
   void render(CommandBuffer* gpuCommands, RenderScene* renderScene) override;
@@ -131,12 +118,10 @@ struct GBufferPass : public FrameGraphRenderPass
   void freeGpuResources();
 
   Framework::Array<MeshInstance> meshInstances;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct GBufferPass
-
-//
-//
-struct LighPass : public FrameGraphRenderPass
+//---------------------------------------------------------------------------//
+struct LightPass : public FrameGraphRenderPass
 {
   void render(CommandBuffer* gpuCommands, RenderScene* renderScene) override;
 
@@ -149,11 +134,9 @@ struct LighPass : public FrameGraphRenderPass
   void freeGpuResources();
 
   Mesh mesh;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct LighPass
-
-//
-//
+//---------------------------------------------------------------------------//
 struct TransparentPass : public FrameGraphRenderPass
 {
   void render(CommandBuffer* gpuCommands, RenderScene* renderScene) override;
@@ -166,11 +149,9 @@ struct TransparentPass : public FrameGraphRenderPass
   void freeGpuResources();
 
   Framework::Array<MeshInstance> meshInstances;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct TransparentPass
-
-//
-//
+//---------------------------------------------------------------------------//
 struct DoFPass : public FrameGraphRenderPass
 {
 
@@ -198,7 +179,7 @@ struct DoFPass : public FrameGraphRenderPass
   void freeGpuResources();
 
   Mesh mesh;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 
   RendererUtil::TextureResource* scene_mips;
 
@@ -208,25 +189,24 @@ struct DoFPass : public FrameGraphRenderPass
   float plane_in_focus;
   float aperture;
 }; // struct DoFPass
-
-//
-//
+//---------------------------------------------------------------------------//
 struct glTFScene : public RenderScene
 {
-
   void init(
       const char* filename,
       const char* path,
       Allocator* residentAllocator,
       StackAllocator* tempAllocator,
       AsynchronousLoader* asyncLoader) override;
-  void shutdown(Renderer* renderer) override;
+  void shutdown(RendererUtil::Renderer* renderer) override;
 
   void registerRenderPasses(FrameGraph* frameGraph) override;
   void prepareDraws(
-      Renderer* renderer, StackAllocator* scratchAllocator, SceneGraph* sceneGraph) override;
+      RendererUtil::Renderer* renderer,
+      StackAllocator* scratchAllocator,
+      SceneGraph* sceneGraph) override;
   void uploadMaterials() override;
-  void submitDrawTask(ImGuiService* imgui, enki::TaskScheduler* taskScheduler) override;
+  void submitDrawTask(ImguiUtil::ImGuiService* imgui, enki::TaskScheduler* taskScheduler) override;
 
   void drawMesh(CommandBuffer* gpuCommands, Mesh& mesh);
 
@@ -242,7 +222,7 @@ struct glTFScene : public RenderScene
 
   DepthPrePass depthPrePass;
   GBufferPass gbufferPass;
-  LighPass lightPass;
+  LightPass lightPass;
   TransparentPass transparentPass;
   DoFPass dofPass;
 
@@ -258,35 +238,30 @@ struct glTFScene : public RenderScene
 
   Framework::glTF::glTF gltfScene; // Source gltf scene
 
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
   FrameGraph* frameGraph;
 
 }; // struct GltfScene
-
+//---------------------------------------------------------------------------//
 // glTFDrawTask
-
-//
-//
 struct glTFDrawTask : public enki::ITaskSet
 {
 
   GpuDevice* gpu = nullptr;
   FrameGraph* frameGraph = nullptr;
-  Renderer* renderer = nullptr;
-  ImGuiService* imgui = nullptr;
-  GPUProfiler* gpu_profiler = nullptr;
+  RendererUtil::Renderer* renderer = nullptr;
+  ImguiUtil::ImguiService* imgui = nullptr;
   glTFScene* scene = nullptr;
-  uint32_t thread_id = 0;
+  uint32_t threadId = 0;
 
   void init(
-      GpuDevice* gpu_,
-      FrameGraph* frameGraph_,
-      Renderer* renderer_,
-      ImGuiService* imgui_,
-      GPUProfiler* gpu_profiler_,
-      glTFScene* scene_);
+      GpuDevice* p_Gpu,
+      FrameGraph* p_FrameGraph,
+      RendererUtil::Renderer* p_Renderer,
+      ImguiUtil::ImguiService* p_Imgui,
+      glTFScene* p_Scene);
 
-  void ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override;
-
+  void ExecuteRange(enki::TaskSetPartition p_Range, uint32_t p_ThreadNum) override;
 }; // struct glTFDrawTask
+//---------------------------------------------------------------------------//
 } // namespace Graphics

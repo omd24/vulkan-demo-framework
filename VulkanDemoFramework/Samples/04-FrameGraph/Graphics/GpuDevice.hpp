@@ -132,6 +132,11 @@ struct GpuDevice : public Framework::Service
       const SamplerHandle* p_Samplers,
       const uint16_t* p_Bindings);
 
+  FramebufferHandle getCurrentFramebuffer() const
+  {
+    return m_VulkanSwapchainFramebuffers[m_VulkanImageIndex];
+  }
+
   // Common members
   Framework::StringBuffer m_StringBuffer;
   Framework::Allocator* m_Allocator;

@@ -22,7 +22,6 @@ namespace Graphics
 struct Allocator;
 struct AsynchronousLoader;
 struct FrameGraph;
-struct GPUProfiler;
 struct ImGuiService;
 struct Renderer;
 struct SceneGraph;
