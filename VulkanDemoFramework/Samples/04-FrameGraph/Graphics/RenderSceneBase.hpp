@@ -22,7 +22,7 @@ namespace Graphics
 struct Allocator;
 struct AsynchronousLoader;
 struct FrameGraph;
-struct ImGuiService;
+struct ImguiService;
 struct Renderer;
 struct SceneGraph;
 struct StackAllocator;
@@ -63,17 +63,19 @@ struct RenderScene
   virtual void init(
       const char* filename,
       const char* path,
-      Allocator* residentAllocator,
-      StackAllocator* tempAllocator,
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* tempAllocator,
       AsynchronousLoader* asyncLoader){};
-  virtual void shutdown(Renderer* renderer){};
+  virtual void shutdown(RendererUtil::Renderer* renderer){};
 
   virtual void registerRenderPasses(FrameGraph* frameGraph){};
-  virtual void
-  prepareDraws(Renderer* renderer, StackAllocator* scratchAllocator, SceneGraph* sceneGraph){};
+  virtual void prepareDraws(
+      RendererUtil::Renderer* renderer,
+      Framework::StackAllocator* scratchAllocator,
+      SceneGraph* sceneGraph){};
 
   virtual void uploadMaterials(){};
-  virtual void submitDrawTask(ImGuiService* imgui, enki::TaskScheduler* taskScheduler){};
+  virtual void submitDrawTask(ImguiUtil::ImguiService* imgui, enki::TaskScheduler* taskScheduler){};
 
   SceneGraph* sceneGraph;
   BufferHandle sceneCb;

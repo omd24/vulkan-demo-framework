@@ -6,6 +6,7 @@
 #include "Graphics/Renderer.hpp"
 #include "Graphics/RenderSceneBase.hpp"
 #include "Graphics/FrameGraph.hpp"
+#include "Graphics/ImguiHelper.hpp"
 
 #include "Externals/enkiTS/TaskScheduler.h"
 
@@ -98,12 +99,12 @@ struct DepthPrePass : public FrameGraphRenderPass
   void prepareDraws(
       glTFScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void freeGpuResources();
 
   Framework::Array<MeshInstance> meshInstances;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct DepthPrePass
 //---------------------------------------------------------------------------//
 struct GBufferPass : public FrameGraphRenderPass
@@ -113,8 +114,8 @@ struct GBufferPass : public FrameGraphRenderPass
   void prepareDraws(
       glTFScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void freeGpuResources();
 
   Framework::Array<MeshInstance> meshInstances;
@@ -128,8 +129,8 @@ struct LightPass : public FrameGraphRenderPass
   void prepareDraws(
       glTFScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void uploadMaterials();
   void freeGpuResources();
 
@@ -144,8 +145,8 @@ struct TransparentPass : public FrameGraphRenderPass
   void prepareDraws(
       glTFScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void freeGpuResources();
 
   Framework::Array<MeshInstance> meshInstances;
@@ -160,15 +161,15 @@ struct DoFPass : public FrameGraphRenderPass
     uint32_t textures[4]; // diffuse, depth
     float znear;
     float zfar;
-    float focal_length;
-    float plane_in_focus;
+    float focalLength;
+    float planeInFocus;
     float aperture;
   }; // struct DoFData
 
   void addUi() override;
   void preRender(CommandBuffer* gpuCommands, RenderScene* renderScene) override;
   void render(CommandBuffer* gpuCommands, RenderScene* renderScene) override;
-  void onResize(GpuDevice& gpu, uint32_t new_width, uint32_t new_height) override;
+  void onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight) override;
 
   void prepareDraws(
       glTFScene& scene,
@@ -181,12 +182,12 @@ struct DoFPass : public FrameGraphRenderPass
   Mesh mesh;
   RendererUtil::Renderer* renderer;
 
-  RendererUtil::TextureResource* scene_mips;
+  RendererUtil::TextureResource* sceneMips;
 
   float znear;
   float zfar;
-  float focal_length;
-  float plane_in_focus;
+  float focalLength;
+  float planeInFocus;
   float aperture;
 }; // struct DoFPass
 //---------------------------------------------------------------------------//
@@ -195,18 +196,18 @@ struct glTFScene : public RenderScene
   void init(
       const char* filename,
       const char* path,
-      Allocator* residentAllocator,
-      StackAllocator* tempAllocator,
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* tempAllocator,
       AsynchronousLoader* asyncLoader) override;
   void shutdown(RendererUtil::Renderer* renderer) override;
 
   void registerRenderPasses(FrameGraph* frameGraph) override;
   void prepareDraws(
       RendererUtil::Renderer* renderer,
-      StackAllocator* scratchAllocator,
+      Framework::StackAllocator* scratchAllocator,
       SceneGraph* sceneGraph) override;
   void uploadMaterials() override;
-  void submitDrawTask(ImguiUtil::ImGuiService* imgui, enki::TaskScheduler* taskScheduler) override;
+  void submitDrawTask(ImguiUtil::ImguiService* imgui, enki::TaskScheduler* taskScheduler) override;
 
   void drawMesh(CommandBuffer* gpuCommands, Mesh& mesh);
 

@@ -143,6 +143,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\Externals\enkiTS\TaskScheduler.cpp" />
     <ClCompile Include="04-FrameGraph.cpp" />
+    <ClCompile Include="Graphics\AsynchronousLoader.cpp" />
     <ClCompile Include="Graphics\CommandBuffer.cpp" />
     <ClCompile Include="Graphics\FrameGraph.cpp" />
     <ClCompile Include="Graphics\GltfScene.cpp" />
@@ -151,9 +152,11 @@
     <ClCompile Include="Graphics\ImguiHelper.cpp" />
     <ClCompile Include="Graphics\Renderer.cpp" />
     <ClCompile Include="Graphics\RenderSceneBase.cpp" />
+    <ClCompile Include="Graphics\SceneGraph.cpp" />
     <ClCompile Include="Graphics\SpirvParser.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Graphics\AsynchronousLoader.hpp" />
     <ClInclude Include="Graphics\CommandBuffer.hpp" />
     <ClInclude Include="Graphics\FrameGraph.hpp" />
     <ClInclude Include="Graphics\GltfScene.hpp" />
@@ -163,6 +166,7 @@
     <ClInclude Include="Graphics\ImguiHelper.hpp" />
     <ClInclude Include="Graphics\Renderer.hpp" />
     <ClInclude Include="Graphics\RenderSceneBase.hpp" />
+    <ClInclude Include="Graphics\SceneGraph.hpp" />
     <ClInclude Include="Graphics\SpirvParser.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
