@@ -12,6 +12,7 @@
 #include "Externals/cglm/struct/quat.h"
 
 #include "Externals/imgui/imgui.h"
+#include "Externals/stb_image.h"
 
 namespace Graphics
 {
@@ -55,9 +56,9 @@ static void copyGpuMeshMatrix(
   {
     // Apply global scale matrix
     // NOTE: for left-handed systems (as defined in cglm) need to invert positive and negative Z.
-    const mat4s scale_matrix = glms_scale_make({p_GlobalScale, p_GlobalScale, -p_GlobalScale});
+    const mat4s scaleMatrix = glms_scale_make({p_GlobalScale, p_GlobalScale, -p_GlobalScale});
     p_GpuMeshData.world =
-        glms_mat4_mul(scale_matrix, p_SceneGraph->worldMatrices[p_Mesh.sceneGraphNodeIndex]);
+        glms_mat4_mul(scaleMatrix, p_SceneGraph->worldMatrices[p_Mesh.sceneGraphNodeIndex]);
 
     p_GpuMeshData.inverseWorld = glms_mat4_inv(glms_mat4_transpose(p_GpuMeshData.world));
   }
@@ -466,8 +467,8 @@ void DoFPass::onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight)
 void DoFPass::prepareDraws(
     glTFScene& scene,
     FrameGraph* frameGraph,
-    Allocator* residentAllocator,
-    StackAllocator* scratchAllocator)
+    Framework::Allocator* residentAllocator,
+    Framework::StackAllocator* scratchAllocator)
 {
   using namespace RendererUtil;
 
@@ -578,243 +579,695 @@ void glTFScene::init(
 {
   renderer = asyncLoader->renderer;
   enki::TaskScheduler* taskScheduler = asyncLoader->taskScheduler;
-  size_t tempAllocatorInitialMarker = tempAllocator->get_marker();
+  size_t tempAllocatorInitialMarker = tempAllocator->getMarker();
 
   // Time statistics
-  i64 start_scene_loading = time_now();
+  int64_t startSceneLoading = Time::getCurrentTime();
 
-  gltf_scene = gltf_load_file(filename);
+  gltfScene = gltfLoadFile(filename);
 
-  i64 end_loading_file = time_now();
+  int64_t endLoadingFile = Time::getCurrentTime();
 
   // Load all textures
-  images.init(resident_allocator, gltf_scene.images_count);
+  images.init(residentAllocator, gltfScene.imagesCount);
 
   Array<TextureCreation> tcs;
-  tcs.init(tempAllocator, gltf_scene.images_count, gltf_scene.images_count);
+  tcs.init(tempAllocator, gltfScene.imagesCount, gltfScene.imagesCount);
 
-  StringBuffer name_buffer;
-  name_buffer.init(4096, tempAllocator);
+  StringBuffer nameBuffer;
+  nameBuffer.init(4096, tempAllocator);
 
-  for (u32 image_index = 0; image_index < gltf_scene.images_count; ++image_index)
+  for (uint32_t imageIndex = 0; imageIndex < gltfScene.imagesCount; ++imageIndex)
   {
-    glTF::Image& image = gltf_scene.images[image_index];
+    glTF::Image& image = gltfScene.images[imageIndex];
 
     int comp, width, height;
 
-    stbi_info(image.uri.data, &width, &height, &comp);
+    stbi_info(image.uri.m_Data, &width, &height, &comp);
 
-    u32 mip_levels = 1;
+    uint32_t mipLevels = 1;
     if (true)
     {
-      u32 w = width;
-      u32 h = height;
+      uint32_t w = width;
+      uint32_t h = height;
 
       while (w > 1 && h > 1)
       {
         w /= 2;
         h /= 2;
 
-        ++mip_levels;
+        ++mipLevels;
       }
     }
 
     TextureCreation tc;
-    tc.set_data(nullptr)
-        .set_format_type(VK_FORMAT_R8G8B8A8_UNORM, TextureType::Texture2D)
-        .set_flags(mip_levels, 0)
-        .set_size((u16)width, (u16)height, 1)
-        .set_name(image.uri.data);
-    TextureResource* tr = renderer->create_texture(tc);
-    RASSERT(tr != nullptr);
+    tc.setData(nullptr)
+        .setFormatType(VK_FORMAT_R8G8B8A8_UNORM, TextureType::kTexture2D)
+        .setFlags(mipLevels, 0)
+        .setSize((uint16_t)width, (uint16_t)height, 1)
+        .setName(image.uri.m_Data);
+    RendererUtil::TextureResource* tr = renderer->createTexture(tc);
+    assert(tr != nullptr);
 
     images.push(*tr);
 
     // Reconstruct file path
-    char* full_filename = name_buffer.append_use_f("%s%s", path, image.uri.data);
-    asyncLoader->request_texture_data(full_filename, tr->handle);
+    char* fullFilename = nameBuffer.appendUseFormatted("%s%s", path, image.uri.m_Data);
+    asyncLoader->requestTextureData(fullFilename, tr->m_Handle);
     // Reset name buffer
-    name_buffer.clear();
+    nameBuffer.clear();
   }
 
-  i64 end_loading_textures_files = time_now();
+  int64_t endLoadingTexturesFiles = Time::getCurrentTime();
 
-  i64 end_creating_textures = time_now();
+  int64_t endCreatingTextures = Time::getCurrentTime();
 
   // Load all samplers
-  samplers.init(resident_allocator, gltf_scene.samplers_count);
+  samplers.init(residentAllocator, gltfScene.samplersCount);
 
-  for (u32 sampler_index = 0; sampler_index < gltf_scene.samplers_count; ++sampler_index)
+  for (uint32_t samplerIndex = 0; samplerIndex < gltfScene.samplersCount; ++samplerIndex)
   {
-    glTF::Sampler& sampler = gltf_scene.samplers[sampler_index];
+    glTF::Sampler& sampler = gltfScene.samplers[samplerIndex];
 
-    char* sampler_name = name_buffer.append_use_f("sampler_%u", sampler_index);
+    char* samplerName = nameBuffer.appendUseFormatted("sampler_%u", samplerIndex);
 
     SamplerCreation creation;
-    switch (sampler.min_filter)
+    switch (sampler.minFilter)
     {
     case glTF::Sampler::NEAREST:
-      creation.min_filter = VK_FILTER_NEAREST;
+      creation.minFilter = VK_FILTER_NEAREST;
       break;
     case glTF::Sampler::LINEAR:
-      creation.min_filter = VK_FILTER_LINEAR;
+      creation.minFilter = VK_FILTER_LINEAR;
       break;
     case glTF::Sampler::LINEAR_MIPMAP_NEAREST:
-      creation.min_filter = VK_FILTER_LINEAR;
-      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+      creation.minFilter = VK_FILTER_LINEAR;
+      creation.mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
       break;
     case glTF::Sampler::LINEAR_MIPMAP_LINEAR:
-      creation.min_filter = VK_FILTER_LINEAR;
-      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+      creation.minFilter = VK_FILTER_LINEAR;
+      creation.mipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
       break;
     case glTF::Sampler::NEAREST_MIPMAP_NEAREST:
-      creation.min_filter = VK_FILTER_NEAREST;
-      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+      creation.minFilter = VK_FILTER_NEAREST;
+      creation.mipFilter = VK_SAMPLER_MIPMAP_MODE_NEAREST;
       break;
     case glTF::Sampler::NEAREST_MIPMAP_LINEAR:
-      creation.min_filter = VK_FILTER_NEAREST;
-      creation.mip_filter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+      creation.minFilter = VK_FILTER_NEAREST;
+      creation.mipFilter = VK_SAMPLER_MIPMAP_MODE_LINEAR;
       break;
     }
 
-    creation.mag_filter =
-        sampler.mag_filter == glTF::Sampler::Filter::LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+    creation.magFilter =
+        sampler.magFilter == glTF::Sampler::Filter::LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
 
-    switch (sampler.wrap_s)
+    switch (sampler.wrapS)
     {
     case glTF::Sampler::CLAMP_TO_EDGE:
-      creation.address_mode_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+      creation.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
       break;
     case glTF::Sampler::MIRRORED_REPEAT:
-      creation.address_mode_u = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+      creation.addressModeU = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
       break;
     case glTF::Sampler::REPEAT:
-      creation.address_mode_u = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+      creation.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
       break;
     }
 
-    switch (sampler.wrap_t)
+    switch (sampler.wrapT)
     {
     case glTF::Sampler::CLAMP_TO_EDGE:
-      creation.address_mode_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+      creation.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
       break;
     case glTF::Sampler::MIRRORED_REPEAT:
-      creation.address_mode_v = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+      creation.addressModeV = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
       break;
     case glTF::Sampler::REPEAT:
-      creation.address_mode_v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+      creation.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
       break;
     }
 
-    creation.name = sampler_name;
+    creation.name = samplerName;
 
-    SamplerResource* sr = renderer->create_sampler(creation);
-    RASSERT(sr != nullptr);
+    RendererUtil::SamplerResource* sr = renderer->createSampler(creation);
+    assert(sr != nullptr);
 
     samplers.push(*sr);
   }
 
-  i64 end_creating_samplers = time_now();
+  int64_t endCreatingSamplers = Time::getCurrentTime();
 
   // Temporary array of buffer data
-  Array<void*> buffers_data;
-  buffers_data.init(resident_allocator, gltf_scene.buffers_count);
+  Array<void*> buffersData;
+  buffersData.init(residentAllocator, gltfScene.buffersCount);
 
-  for (u32 buffer_index = 0; buffer_index < gltf_scene.buffers_count; ++buffer_index)
+  for (uint32_t bufferIndex = 0; bufferIndex < gltfScene.buffersCount; ++bufferIndex)
   {
-    glTF::Buffer& buffer = gltf_scene.buffers[buffer_index];
+    glTF::Buffer& buffer = gltfScene.buffers[bufferIndex];
 
-    FileReadResult buffer_data = file_read_binary(buffer.uri.data, resident_allocator);
-    buffers_data.push(buffer_data.data);
+    FileReadResult bufferData = fileReadBinary(buffer.uri.m_Data, residentAllocator);
+    buffersData.push(bufferData.data);
   }
 
-  i64 end_reading_buffers_data = time_now();
+  int64_t endReadingBuffersData = Time::getCurrentTime();
 
   // Load all buffers and initialize them with buffer data
-  buffers.init(resident_allocator, gltf_scene.buffer_views_count);
+  buffers.init(residentAllocator, gltfScene.bufferViewsCount);
 
-  for (u32 buffer_index = 0; buffer_index < gltf_scene.buffer_views_count; ++buffer_index)
+  for (uint32_t bufferIndex = 0; bufferIndex < gltfScene.bufferViewsCount; ++bufferIndex)
   {
-    glTF::BufferView& buffer = gltf_scene.buffer_views[buffer_index];
+    glTF::BufferView& buffer = gltfScene.bufferViews[bufferIndex];
 
-    i32 offset = buffer.byte_offset;
+    int offset = buffer.byteOffset;
     if (offset == glTF::INVALID_INT_VALUE)
     {
       offset = 0;
     }
 
-    u8* buffer_data = (u8*)buffers_data[buffer.buffer] + offset;
+    uint8_t* bufferData = (uint8_t*)buffersData[buffer.buffer] + offset;
 
-    // NOTE(marco): the target attribute of a BufferView is not mandatory, so we prepare for both
+    // NOTE: the target attribute of a BufferView is not mandatory, so we prepare for both
     // uses
     VkBufferUsageFlags flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 
-    char* buffer_name = buffer.name.data;
-    if (buffer_name == nullptr)
+    char* bufferName = buffer.name.m_Data;
+    if (bufferName == nullptr)
     {
-      buffer_name = name_buffer.append_use_f("buffer_%u", buffer_index);
+      bufferName = nameBuffer.appendUseFormatted("buffer_%u", bufferIndex);
     }
 
-    BufferResource* br = renderer->create_buffer(
-        flags, ResourceUsageType::Immutable, buffer.byte_length, buffer_data, buffer_name);
-    RASSERT(br != nullptr);
+    RendererUtil::BufferResource* br = renderer->createBuffer(
+        flags, ResourceUsageType::kImmutable, buffer.byteLength, bufferData, bufferName);
+    assert(br != nullptr);
 
     buffers.push(*br);
   }
 
-  for (u32 buffer_index = 0; buffer_index < gltf_scene.buffers_count; ++buffer_index)
+  for (uint32_t bufferIndex = 0; bufferIndex < gltfScene.buffersCount; ++bufferIndex)
   {
-    void* buffer = buffers_data[buffer_index];
-    resident_allocator->deallocate(buffer);
+    void* buffer = buffersData[bufferIndex];
+    residentAllocator->deallocate(buffer);
   }
-  buffers_data.shutdown();
+  buffersData.shutdown();
 
-  i64 end_creating_buffers = time_now();
+  int64_t endCreatingBuffers = Time::getCurrentTime();
 
   // This is not needed anymore, free all temp memory after.
-  // resource_name_buffer.shutdown();
-  tempAllocator->free_marker(tempAllocatorInitialMarker);
+  // resourceNameBuffer.shutdown();
+  tempAllocator->freeMarker(tempAllocatorInitialMarker);
 
   // Init runtime meshes
-  meshes.init(resident_allocator, gltf_scene.meshes_count);
+  meshes.init(residentAllocator, gltfScene.meshesCount);
 
-  i64 end_loading = time_now();
+  int64_t endLoading = Time::getCurrentTime();
 
-  rprint(
+  printf(
       "Loaded scene %s in %f seconds.\nStats:\n\tReading GLTF file %f seconds\n\tTextures Creating "
       "%f seconds\n\tCreating Samplers %f seconds\n\tReading Buffers Data %f seconds\n\tCreating "
       "Buffers %f seconds\n",
       filename,
-      time_delta_seconds(start_scene_loading, end_loading),
-      time_delta_seconds(start_scene_loading, end_loading_file),
-      time_delta_seconds(end_loading_file, end_creating_textures),
-      time_delta_seconds(end_creating_textures, end_creating_samplers),
-      time_delta_seconds(end_creating_samplers, end_reading_buffers_data),
-      time_delta_seconds(end_reading_buffers_data, end_creating_buffers));
+      Time::deltaSeconds(startSceneLoading, endLoading),
+      Time::deltaSeconds(startSceneLoading, endLoadingFile),
+      Time::deltaSeconds(endLoadingFile, endCreatingTextures),
+      Time::deltaSeconds(endCreatingTextures, endCreatingSamplers),
+      Time::deltaSeconds(endCreatingSamplers, endReadingBuffersData),
+      Time::deltaSeconds(endReadingBuffersData, endCreatingBuffers));
 }
 //---------------------------------------------------------------------------//
-void glTFScene::shutdown(Renderer* renderer);
+void glTFScene::shutdown(RendererUtil::Renderer* p_Renderer)
+{
+  GpuDevice& gpu = *p_Renderer->m_GpuDevice;
+
+  for (uint32_t meshIndex = 0; meshIndex < meshes.m_Size; ++meshIndex)
+  {
+    Mesh& mesh = meshes[meshIndex];
+
+    gpu.destroyBuffer(mesh.pbrMaterial.materialBuffer);
+    gpu.destroyDescriptorSet(mesh.pbrMaterial.descriptorSet);
+  }
+
+  gpu.destroyDescriptorSet(fullscreenDS);
+  gpu.destroyBuffer(sceneCb);
+
+  for (uint32_t i = 0; i < images.m_Size; ++i)
+  {
+    p_Renderer->destroyTexture(&images[i]);
+  }
+
+  for (uint32_t i = 0; i < samplers.m_Size; ++i)
+  {
+    p_Renderer->destroySampler(&samplers[i]);
+  }
+
+  for (uint32_t i = 0; i < buffers.m_Size; ++i)
+  {
+    p_Renderer->destroyBuffer(&buffers[i]);
+  }
+
+  meshes.shutdown();
+
+  depthPrePass.freeGpuResources();
+  gbufferPass.freeGpuResources();
+  lightPass.freeGpuResources();
+  transparentPass.freeGpuResources();
+  dofPass.freeGpuResources();
+
+  // Free scene buffers
+  samplers.shutdown();
+  images.shutdown();
+  buffers.shutdown();
+
+  // NOTE: we can't destroy this sooner as textures and buffers
+  // hold a pointer to the names stored here
+  gltfFree(gltfScene);
+}
 //---------------------------------------------------------------------------//
-void glTFScene::registerRenderPasses(FrameGraph* frameGraph);
+void glTFScene::registerRenderPasses(FrameGraph* p_FrameGraph)
+{
+  frameGraph = p_FrameGraph;
+
+  frameGraph->builder->registerRenderPass("depth_pre_pass", &depthPrePass);
+  frameGraph->builder->registerRenderPass("gbuffer_pass", &gbufferPass);
+  frameGraph->builder->registerRenderPass("lighting_pass", &lightPass);
+  frameGraph->builder->registerRenderPass("transparent_pass", &transparentPass);
+  frameGraph->builder->registerRenderPass("depth_of_field_pass", &dofPass);
+}
 //---------------------------------------------------------------------------//
 void glTFScene::prepareDraws(
-    Renderer* renderer, StackAllocator* scratchAllocator, SceneGraph* sceneGraph);
+    RendererUtil::Renderer* p_Renderer,
+    Framework::StackAllocator* p_ScratchAllocator,
+    SceneGraph* p_SceneGraph)
+{
+  using namespace RendererUtil;
+
+  sceneGraph = p_SceneGraph;
+
+  size_t cachedScratchSize = p_ScratchAllocator->getMarker();
+
+  // Scene constant buffer
+  BufferCreation bufferCreation;
+  bufferCreation.reset()
+      .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::kDynamic, sizeof(GpuSceneData))
+      .setName("scene_cb");
+  sceneCb = p_Renderer->m_GpuDevice->createBuffer(bufferCreation);
+
+  // Create material
+  const uint64_t hashedName = Framework::hashCalculate("main");
+  GpuTechnique* mainTechnique = p_Renderer->m_ResourceCache.m_Techniques.get(hashedName);
+
+  MaterialCreation materialCreation;
+  materialCreation.setName("material_no_cull_opaque").setTechnique(mainTechnique).setRenderIndex(0);
+
+  RendererUtil::Material* pbrMaterial = p_Renderer->createMaterial(materialCreation);
+
+  glTF::Scene& rootGltfScene = gltfScene.scenes[gltfScene.scene];
+
+  //
+  Array<int> nodesToVisit;
+  nodesToVisit.init(p_ScratchAllocator, 4);
+
+  // Calculate total node count: add first the root nodes.
+  uint32_t totalNodeCount = rootGltfScene.nodesCount;
+
+  // Add initial nodes
+  for (uint32_t nodeIndex = 0; nodeIndex < rootGltfScene.nodesCount; ++nodeIndex)
+  {
+    const int node = rootGltfScene.nodes[nodeIndex];
+    nodesToVisit.push(node);
+  }
+  // Visit nodes
+  while (nodesToVisit.m_Size)
+  {
+    int nodeIndex = nodesToVisit.front();
+    nodesToVisit.deleteSwap(0);
+
+    glTF::Node& node = gltfScene.nodes[nodeIndex];
+    for (uint32_t ch = 0; ch < node.childrenCount; ++ch)
+    {
+      const int childrenIndex = node.children[ch];
+      nodesToVisit.push(childrenIndex);
+    }
+
+    // Add only children nodes to the count, as the current node is
+    // already calculated when inserting it.
+    totalNodeCount += node.childrenCount;
+  }
+
+  sceneGraph->resize(totalNodeCount);
+
+  // Populate scene graph: visit again
+  nodesToVisit.clear();
+  // Add initial nodes
+  for (uint32_t nodeIndex = 0; nodeIndex < rootGltfScene.nodesCount; ++nodeIndex)
+  {
+    const int node = rootGltfScene.nodes[nodeIndex];
+    nodesToVisit.push(node);
+  }
+
+  while (nodesToVisit.m_Size)
+  {
+    int nodeIndex = nodesToVisit.front();
+    nodesToVisit.deleteSwap(0);
+
+    glTF::Node& node = gltfScene.nodes[nodeIndex];
+
+    // Compute local transform: read either raw matrix or individual Scale/Rotation/Translation
+    // components
+    if (node.matrixCount)
+    {
+      // CGLM and glTF have the same matrix layout, just memcopy it
+      memcpy(&sceneGraph->localMatrices[nodeIndex], node.matrix, sizeof(mat4s));
+      sceneGraph->updatedNodes.setBit(nodeIndex);
+    }
+    else
+    {
+      // Handle individual transform components: SRT (scale, rotation, translation)
+      vec3s nodeScale{1.0f, 1.0f, 1.0f};
+      if (node.scaleCount)
+      {
+        assert(node.scaleCount == 3);
+        nodeScale = vec3s{node.scale[0], node.scale[1], node.scale[2]};
+      }
+      mat4s scaleMatrix = glms_scale_make(nodeScale);
+
+      vec3s translation{0.f, 0.f, 0.f};
+      if (node.translationCount)
+      {
+        assert(node.translationCount == 3);
+        translation = vec3s{node.translation[0], node.translation[1], node.translation[2]};
+      }
+      mat4s translation_matrix = glms_translate_make(translation);
+      // Rotation is written as a plain quaternion
+      versors rotation = glms_quat_identity();
+      if (node.rotationCount)
+      {
+        assert(node.rotationCount == 4);
+        rotation =
+            glms_quat_init(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]);
+      }
+      // Final SRT composition
+      const mat4s localMatrix =
+          glms_mat4_mul(glms_mat4_mul(scaleMatrix, glms_quat_mat4(rotation)), translation_matrix);
+      sceneGraph->setLocalMatrix(nodeIndex, localMatrix);
+    }
+
+    // Handle parent-relationship
+    if (node.childrenCount)
+    {
+      const Hierarchy& nodeHierarchy = sceneGraph->nodesHierarchy[nodeIndex];
+
+      for (uint32_t ch = 0; ch < node.childrenCount; ++ch)
+      {
+        const int childrenIndex = node.children[ch];
+        Hierarchy& childrenHierarchy = sceneGraph->nodesHierarchy[childrenIndex];
+        sceneGraph->setHierarchy(childrenIndex, nodeIndex, nodeHierarchy.level + 1);
+
+        nodesToVisit.push(childrenIndex);
+      }
+    }
+
+    if (node.mesh == glTF::INVALID_INT_VALUE)
+    {
+      continue;
+    }
+
+    glTF::Mesh& gltfMesh = gltfScene.meshes[node.mesh];
+
+    // Gltf primitives are conceptually submeshes.
+    for (uint32_t primitive_index = 0; primitive_index < gltfMesh.primitivesCount;
+         ++primitive_index)
+    {
+      Mesh mesh{};
+      // Assign scene graph node index
+      mesh.sceneGraphNodeIndex = nodeIndex;
+
+      glTF::MeshPrimitive& meshPrimitive = gltfMesh.primitives[primitive_index];
+
+      const int positionAccessorIndex = gltfGetAttributeAccessorIndex(
+          meshPrimitive.attributes, meshPrimitive.attributeCount, "POSITION");
+      const int tangentAccessorIndex = gltfGetAttributeAccessorIndex(
+          meshPrimitive.attributes, meshPrimitive.attributeCount, "TANGENT");
+      const int normalAccessorIndex = gltfGetAttributeAccessorIndex(
+          meshPrimitive.attributes, meshPrimitive.attributeCount, "NORMAL");
+      const int texcoordAccessorIndex = gltfGetAttributeAccessorIndex(
+          meshPrimitive.attributes, meshPrimitive.attributeCount, "TEXCOORD_0");
+
+      getMeshVertexBuffer(positionAccessorIndex, mesh.positionBuffer, mesh.positionOffset);
+      getMeshVertexBuffer(tangentAccessorIndex, mesh.tangentBuffer, mesh.tangentOffset);
+      getMeshVertexBuffer(normalAccessorIndex, mesh.normalBuffer, mesh.normalOffset);
+      getMeshVertexBuffer(texcoordAccessorIndex, mesh.texcoordBuffer, mesh.texcoordOffset);
+
+      // Create index buffer
+      glTF::Accessor& indicesAccessor = gltfScene.accessors[meshPrimitive.indices];
+      assert(
+          indicesAccessor.componentType == glTF::Accessor::ComponentType::UNSIGNED_SHORT ||
+          indicesAccessor.componentType == glTF::Accessor::ComponentType::UNSIGNED_INT);
+      mesh.indexType =
+          (indicesAccessor.componentType == glTF::Accessor::ComponentType::UNSIGNED_SHORT)
+              ? VK_INDEX_TYPE_UINT16
+              : VK_INDEX_TYPE_UINT32;
+
+      glTF::BufferView& indicesBufferView = gltfScene.bufferViews[indicesAccessor.bufferView];
+      RendererUtil::BufferResource& indicesBufferGpu = buffers[indicesAccessor.bufferView];
+      mesh.indexBuffer = indicesBufferGpu.m_Handle;
+      mesh.indexOffset =
+          indicesAccessor.byteOffset == glTF::INVALID_INT_VALUE ? 0 : indicesAccessor.byteOffset;
+      mesh.primitiveCount = indicesAccessor.count;
+
+      // Read pbr material data
+      glTF::Material& material = gltfScene.materials[meshPrimitive.material];
+      fillPbrMaterial(*p_Renderer, material, mesh.pbrMaterial);
+
+      // Create material buffer
+      BufferCreation bufferCreation;
+      bufferCreation.reset()
+          .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::kDynamic, sizeof(GpuMeshData))
+          .setName("mesh_data");
+      mesh.pbrMaterial.materialBuffer = p_Renderer->m_GpuDevice->createBuffer(bufferCreation);
+
+      DescriptorSetCreation dsCreation{};
+      DescriptorSetLayoutHandle layout = p_Renderer->m_GpuDevice->getDescriptorSetLayout(
+          mainTechnique->passes[3].pipeline, kMaterialDescriptorSetIndex);
+      dsCreation.buffer(sceneCb, 0).buffer(mesh.pbrMaterial.materialBuffer, 1).setLayout(layout);
+      mesh.pbrMaterial.descriptorSet = p_Renderer->m_GpuDevice->createDescriptorSet(dsCreation);
+
+      mesh.pbrMaterial.material = pbrMaterial;
+
+      meshes.push(mesh);
+    }
+  }
+
+  qsort(meshes.m_Data, meshes.m_Size, sizeof(Mesh), gltfMeshMaterialCompare);
+
+  p_ScratchAllocator->freeMarker(cachedScratchSize);
+
+  depthPrePass.prepareDraws(
+      *this, frameGraph, p_Renderer->m_GpuDevice->m_Allocator, p_ScratchAllocator);
+  gbufferPass.prepareDraws(
+      *this, frameGraph, p_Renderer->m_GpuDevice->m_Allocator, p_ScratchAllocator);
+  lightPass.prepareDraws(
+      *this, frameGraph, p_Renderer->m_GpuDevice->m_Allocator, p_ScratchAllocator);
+  transparentPass.prepareDraws(
+      *this, frameGraph, p_Renderer->m_GpuDevice->m_Allocator, p_ScratchAllocator);
+  dofPass.prepareDraws(*this, frameGraph, p_Renderer->m_GpuDevice->m_Allocator, p_ScratchAllocator);
+
+  // Handle fullscreen pass.
+  fullscreenTech =
+      p_Renderer->m_ResourceCache.m_Techniques.get(Framework::hashCalculate("fullscreen"));
+
+  DescriptorSetCreation dsc;
+  DescriptorSetLayoutHandle descriptorSetLayout = p_Renderer->m_GpuDevice->getDescriptorSetLayout(
+      fullscreenTech->passes[0].pipeline, kMaterialDescriptorSetIndex);
+  dsc.reset().buffer(sceneCb, 0).setLayout(descriptorSetLayout);
+  fullscreenDS = p_Renderer->m_GpuDevice->createDescriptorSet(dsc);
+
+  FrameGraphResource* texture = frameGraph->getResource("final");
+  if (texture != nullptr)
+  {
+    fullscreenInputRT = texture->resourceInfo.texture.texture.index;
+  }
+}
 //---------------------------------------------------------------------------//
-void glTFScene::uploadMaterials();
+void glTFScene::uploadMaterials()
+{
+  // Update per mesh material buffer
+  for (uint32_t meshIndex = 0; meshIndex < meshes.m_Size; ++meshIndex)
+  {
+    Mesh& mesh = meshes[meshIndex];
+
+    MapBufferParameters cbMap = {mesh.pbrMaterial.materialBuffer, 0, 0};
+    GpuMeshData* meshData = (GpuMeshData*)renderer->m_GpuDevice->mapBuffer(cbMap);
+    if (meshData)
+    {
+      copyGpuMaterialData(*meshData, mesh);
+      copyGpuMeshMatrix(*meshData, mesh, globalScale, sceneGraph);
+
+      renderer->m_GpuDevice->unmapBuffer(cbMap);
+    }
+  }
+
+  lightPass.uploadMaterials();
+  dofPass.uploadMaterials();
+}
 //---------------------------------------------------------------------------//
-void glTFScene::submitDrawTask(ImGuiService* imgui, enki::TaskScheduler* taskScheduler);
+void glTFScene::submitDrawTask(ImguiUtil::ImguiService* imgui, enki::TaskScheduler* taskScheduler)
+{
+  glTFDrawTask drawTask;
+  drawTask.init(renderer->m_GpuDevice, frameGraph, renderer, imgui, this);
+  taskScheduler->AddTaskSetToPipe(&drawTask);
+  taskScheduler->WaitforTaskSet(&drawTask);
+
+  // Avoid using the same command buffer
+  renderer->addTextureUpdateCommands((drawTask.threadId + 1) % taskScheduler->GetNumTaskThreads());
+}
 //---------------------------------------------------------------------------//
-void glTFScene::drawMesh(CommandBuffer* gpuCommands, Mesh& mesh);
+void glTFScene::drawMesh(CommandBuffer* gpuCommands, Mesh& mesh)
+{
+  gpuCommands->bindVertexBuffer(mesh.positionBuffer, 0, mesh.positionOffset);
+  gpuCommands->bindVertexBuffer(mesh.tangentBuffer, 1, mesh.tangentOffset);
+  gpuCommands->bindVertexBuffer(mesh.normalBuffer, 2, mesh.normalOffset);
+  gpuCommands->bindVertexBuffer(mesh.texcoordBuffer, 3, mesh.texcoordOffset);
+  gpuCommands->bindIndexBuffer(mesh.indexBuffer, mesh.indexOffset, mesh.indexType);
+
+  if (g_RecreatePerThreadDescriptors)
+  {
+    DescriptorSetCreation dsCreation{};
+    dsCreation.buffer(sceneCb, 0).buffer(mesh.pbrMaterial.materialBuffer, 1);
+    DescriptorSetHandle descriptorSet =
+        renderer->createDescriptorSet(gpuCommands, mesh.pbrMaterial.material, dsCreation);
+
+    gpuCommands->bindLocalDescriptorSet(&descriptorSet, 1, nullptr, 0);
+  }
+  else
+  {
+    gpuCommands->bindDescriptorSet(&mesh.pbrMaterial.descriptorSet, 1, nullptr, 0);
+  }
+
+  gpuCommands->drawIndexed(TopologyType::kTriangle, mesh.primitiveCount, 1, 0, 0, 0);
+}
 //---------------------------------------------------------------------------//
 void glTFScene::getMeshVertexBuffer(
-    int accessorIndex, BufferHandle& outBufferHandle, uint32_t& outBufferOffset);
+    int accessorIndex, BufferHandle& outBufferHandle, uint32_t& outBufferOffset)
+{
+  if (accessorIndex != -1)
+  {
+    glTF::Accessor& bufferAccessor = gltfScene.accessors[accessorIndex];
+    glTF::BufferView& bufferView = gltfScene.bufferViews[bufferAccessor.bufferView];
+    RendererUtil::BufferResource& bufferGpu = buffers[bufferAccessor.bufferView];
+
+    outBufferHandle = bufferGpu.m_Handle;
+    outBufferOffset =
+        bufferAccessor.byteOffset == glTF::INVALID_INT_VALUE ? 0 : bufferAccessor.byteOffset;
+  }
+}
 //---------------------------------------------------------------------------//
-uint16_t getMaterialTexture(GpuDevice& gpu, Framework::glTF::TextureInfo* textureInfo);
+uint16_t glTFScene::getMaterialTexture(GpuDevice& gpu, Framework::glTF::TextureInfo* textureInfo)
+{
+  if (textureInfo != nullptr)
+  {
+    glTF::Texture& gltfTexture = gltfScene.textures[textureInfo->index];
+    RendererUtil::TextureResource& textureGpu = images[gltfTexture.source];
+    RendererUtil::SamplerResource& samplerGpu = samplers[gltfTexture.sampler];
+
+    gpu.linkTextureSampler(textureGpu.m_Handle, samplerGpu.m_Handle);
+
+    return textureGpu.m_Handle.index;
+  }
+  else
+  {
+    return kInvalidSceneTextureIndex;
+  }
+}
 //---------------------------------------------------------------------------//
-uint16_t getMaterialTexture(GpuDevice& gpu, int gltfTextureIndex);
+uint16_t glTFScene::getMaterialTexture(GpuDevice& gpu, int gltfTextureIndex)
+{
+  if (gltfTextureIndex >= 0)
+  {
+    glTF::Texture& gltfTexture = gltfScene.textures[gltfTextureIndex];
+    RendererUtil::TextureResource& textureGpu = images[gltfTexture.source];
+    RendererUtil::SamplerResource& samplerGpu = samplers[gltfTexture.sampler];
+
+    gpu.linkTextureSampler(textureGpu.m_Handle, samplerGpu.m_Handle);
+
+    return textureGpu.m_Handle.index;
+  }
+  else
+  {
+    return kInvalidSceneTextureIndex;
+  }
+}
 //---------------------------------------------------------------------------//
 void glTFScene::fillPbrMaterial(
-    Renderer& renderer, Framework::glTF::Material& material, PBRMaterial& pbrMaterial);
+    RendererUtil::Renderer& p_Renderer,
+    Framework::glTF::Material& p_Material,
+    PBRMaterial& p_PbrMaterial)
+{
+  GpuDevice& gpu = *p_Renderer.m_GpuDevice;
+
+  // Handle flags
+  if (p_Material.alphaMode.m_Data != nullptr && strcmp(p_Material.alphaMode.m_Data, "MASK") == 0)
+  {
+    p_PbrMaterial.flags |= kDrawFlagsAlphaMask;
+  }
+  else if (
+      p_Material.alphaMode.m_Data != nullptr && strcmp(p_Material.alphaMode.m_Data, "BLEND") == 0)
+  {
+    p_PbrMaterial.flags |= kDrawFlagsTransparent;
+  }
+
+  p_PbrMaterial.flags |= p_Material.doubleSided ? kDrawFlagsDoubleSided : 0;
+  // Alpha cutoff
+  p_PbrMaterial.alphaCutoff =
+      p_Material.alphaCutoff != glTF::INVALID_FLOAT_VALUE ? p_Material.alphaCutoff : 1.f;
+
+  if (p_Material.pbrMetallicRoughness != nullptr)
+  {
+    if (p_Material.pbrMetallicRoughness->baseColorFactorCount != 0)
+    {
+      assert(p_Material.pbrMetallicRoughness->baseColorFactorCount == 4);
+
+      memcpy(
+          p_PbrMaterial.baseColorFactor.raw,
+          p_Material.pbrMetallicRoughness->baseColorFactor,
+          sizeof(vec4s));
+    }
+    else
+    {
+      p_PbrMaterial.baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f};
+    }
+
+    p_PbrMaterial.metallicRoughnessOcclusionFactor.x =
+        p_Material.pbrMetallicRoughness->roughnessFactor != glTF::INVALID_FLOAT_VALUE
+            ? p_Material.pbrMetallicRoughness->roughnessFactor
+            : 1.f;
+    p_PbrMaterial.metallicRoughnessOcclusionFactor.y =
+        p_Material.pbrMetallicRoughness->metallicFactor != glTF::INVALID_FLOAT_VALUE
+            ? p_Material.pbrMetallicRoughness->metallicFactor
+            : 1.f;
+
+    p_PbrMaterial.diffuseTextureIndex =
+        getMaterialTexture(gpu, p_Material.pbrMetallicRoughness->baseColorTexture);
+    p_PbrMaterial.roughnessTextureIndex =
+        getMaterialTexture(gpu, p_Material.pbrMetallicRoughness->metallicRoughnessTexture);
+  }
+
+  p_PbrMaterial.occlusionTextureIndex = getMaterialTexture(
+      gpu, (p_Material.occlusionTexture != nullptr) ? p_Material.occlusionTexture->index : -1);
+  p_PbrMaterial.normalTextureIndex = getMaterialTexture(
+      gpu, (p_Material.normalTexture != nullptr) ? p_Material.normalTexture->index : -1);
+
+  if (p_Material.occlusionTexture != nullptr)
+  {
+    if (p_Material.occlusionTexture->strength != glTF::INVALID_FLOAT_VALUE)
+    {
+      p_PbrMaterial.metallicRoughnessOcclusionFactor.z = p_Material.occlusionTexture->strength;
+    }
+    else
+    {
+      p_PbrMaterial.metallicRoughnessOcclusionFactor.z = 1.0f;
+    }
+  }
+}
 //---------------------------------------------------------------------------//
 // glTF draw task:
 //---------------------------------------------------------------------------//

@@ -22,7 +22,7 @@ struct CommandBuffer
   bindPass(RenderPassHandle p_Passhandle, FramebufferHandle p_Framebuffer, bool p_UseSecondary);
   void bindPipeline(PipelineHandle p_Handle);
   void bindVertexBuffer(BufferHandle p_Handle, uint32_t p_Binding, uint32_t p_Offset);
-  void bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset);
+  void bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset, VkIndexType p_IndexType);
   void bindDescriptorSet(
       DescriptorSetHandle* p_Handles,
       uint32_t p_NumLists,

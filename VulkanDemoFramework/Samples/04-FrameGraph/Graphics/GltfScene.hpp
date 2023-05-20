@@ -174,8 +174,8 @@ struct DoFPass : public FrameGraphRenderPass
   void prepareDraws(
       glTFScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void uploadMaterials();
   void freeGpuResources();
 
@@ -217,7 +217,9 @@ struct glTFScene : public RenderScene
   uint16_t getMaterialTexture(GpuDevice& gpu, int gltf_texture_index);
 
   void fillPbrMaterial(
-      Renderer& renderer, Framework::glTF::Material& material, PBRMaterial& pbrMaterial);
+      RendererUtil::Renderer& renderer,
+      Framework::glTF::Material& material,
+      PBRMaterial& pbrMaterial);
 
   Framework::Array<Mesh> meshes;
 

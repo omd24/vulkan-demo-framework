@@ -329,7 +329,8 @@ void CommandBuffer::bindVertexBuffer(BufferHandle p_Handle, uint32_t p_Binding, 
   vkCmdBindVertexBuffers(m_VulkanCmdBuffer, p_Binding, 1, &vkBuffer, offsets);
 }
 //---------------------------------------------------------------------------//
-void CommandBuffer::bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset)
+void CommandBuffer::bindIndexBuffer(
+    BufferHandle p_Handle, uint32_t p_Offset, VkIndexType p_IndexType)
 {
   Buffer* buffer = (Buffer*)m_GpuDevice->m_Buffers.accessResource(p_Handle.index);
 
@@ -342,7 +343,7 @@ void CommandBuffer::bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset)
     vkBuffer = parentBuffer->vkBuffer;
     offset = buffer->globalOffset;
   }
-  vkCmdBindIndexBuffer(m_VulkanCmdBuffer, vkBuffer, offset, VkIndexType::VK_INDEX_TYPE_UINT16);
+  vkCmdBindIndexBuffer(m_VulkanCmdBuffer, vkBuffer, offset, p_IndexType);
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::bindDescriptorSet(
