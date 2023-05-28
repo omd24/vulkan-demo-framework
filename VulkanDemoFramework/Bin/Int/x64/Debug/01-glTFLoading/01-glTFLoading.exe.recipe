@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>D:\Users\omidm\Desktop\vk_samples\vulkan-demo-framework\VulkanDemoFramework\Bin\Out\x64\Debug\01-glTFLoading.exe</FullPath>
+      <FullPath>C:\Users\Omid\Desktop\vk_samples\vulkan-demo-framework\VulkanDemoFramework\Bin\Out\x64\Debug\01-glTFLoading.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />
