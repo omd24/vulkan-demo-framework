@@ -85,7 +85,7 @@ struct FrameGraphResource
 
   int refCount = 0;
 
-  const char* name = nullptr;
+  const char* m_Name = nullptr;
 };
 
 struct FrameGraphResourceInputCreation

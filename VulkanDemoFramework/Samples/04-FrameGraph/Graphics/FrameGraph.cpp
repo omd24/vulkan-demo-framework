@@ -102,7 +102,7 @@ static void createFramebuffer(FrameGraph* frameGraph, FrameGraphNode* p_Node)
       continue;
     }
 
-    FrameGraphResource* resource = frameGraph->getResource(inputResource->name);
+    FrameGraphResource* resource = frameGraph->getResource(inputResource->m_Name);
 
     FrameGraphResourceInfo& info = resource->resourceInfo;
 
@@ -155,11 +155,11 @@ static void createRenderPass(FrameGraph* p_FrameGraph, FrameGraphNode* p_Node)
   // with the right handles
   for (size_t i = 0; i < p_Node->outputs.m_Size; ++i)
   {
-    FrameGraphResource* output_resource = p_FrameGraph->accessResource(p_Node->outputs[i]);
+    FrameGraphResource* outputResource = p_FrameGraph->accessResource(p_Node->outputs[i]);
 
-    FrameGraphResourceInfo& info = output_resource->resourceInfo;
+    FrameGraphResourceInfo& info = outputResource->resourceInfo;
 
-    if (output_resource->type == kFrameGraphResourceTypeAttachment)
+    if (outputResource->type == kFrameGraphResourceTypeAttachment)
     {
       if (info.texture.format == VK_FORMAT_D32_SFLOAT)
       {
@@ -178,11 +178,11 @@ static void createRenderPass(FrameGraph* p_FrameGraph, FrameGraphNode* p_Node)
 
   for (size_t i = 0; i < p_Node->inputs.m_Size; ++i)
   {
-    FrameGraphResource* input_resource = p_FrameGraph->accessResource(p_Node->inputs[i]);
+    FrameGraphResource* inputResource = p_FrameGraph->accessResource(p_Node->inputs[i]);
 
-    FrameGraphResourceInfo& info = input_resource->resourceInfo;
+    FrameGraphResourceInfo& info = inputResource->resourceInfo;
 
-    if (input_resource->type == kFrameGraphResourceTypeAttachment)
+    if (inputResource->type == kFrameGraphResourceTypeAttachment)
     {
       if (info.texture.format == VK_FORMAT_D32_SFLOAT)
       {
@@ -211,11 +211,11 @@ static void computeEdges(FrameGraph* p_FrameGraph, FrameGraphNode* p_Node, uint3
   {
     FrameGraphResource* resource = p_FrameGraph->accessResource(p_Node->inputs[r]);
 
-    FrameGraphResource* outputResource = p_FrameGraph->getResource(resource->name);
+    FrameGraphResource* outputResource = p_FrameGraph->getResource(resource->m_Name);
     if (outputResource == nullptr && !resource->resourceInfo.external)
     {
       // TODO: external resources
-      assert(false, "Requested resource is not produced by any node and is not external.");
+      assert(false && "Requested resource is not produced by any node and is not external.");
       continue;
     }
 
@@ -364,7 +364,7 @@ FrameGraphResourceHandle FrameGraphBuilder::createNodeOutput(
   }
 
   FrameGraphResource* resource = resourceCache.resources.get(resourceHandle.index);
-  resource->name = p_Creation.name;
+  resource->m_Name = p_Creation.name;
   resource->type = p_Creation.type;
 
   if (p_Creation.type != kFrameGraphResourceTypeReference)
@@ -375,7 +375,8 @@ FrameGraphResourceHandle FrameGraphBuilder::createNodeOutput(
     resource->refCount = 0;
 
     resourceCache.resourceMap.insert(
-        Framework::hashBytes((void*)resource->name, strlen(p_Creation.name)), resourceHandle.index);
+        Framework::hashBytes((void*)resource->m_Name, strlen(p_Creation.name)),
+        resourceHandle.index);
   }
 
   return resourceHandle;
@@ -399,7 +400,7 @@ FrameGraphBuilder::createNodeInput(const FrameGraphResourceInputCreation& creati
   resource->producer.index = kInvalidIndex;
   resource->outputHandle.index = kInvalidIndex;
   resource->type = creation.type;
-  resource->name = creation.name;
+  resource->m_Name = creation.name;
   resource->refCount = 0;
 
   return resourceHandle;
@@ -825,7 +826,7 @@ void FrameGraph::compile()
             TextureCreation textureCreation{};
             textureCreation.setData(nullptr)
                 .setAlias(aliasTexture)
-                .setName(resource->name)
+                .setName(resource->m_Name)
                 .setFormatType(info.texture.format, TextureType::Enum::kTexture2D)
                 .setSize(info.texture.width, info.texture.height, info.texture.depth)
                 .setFlags(1, TextureFlags::kRenderTargetMask);
@@ -837,7 +838,7 @@ void FrameGraph::compile()
           {
             TextureCreation textureCreation{};
             textureCreation.setData(nullptr)
-                .setName(resource->name)
+                .setName(resource->m_Name)
                 .setFormatType(info.texture.format, TextureType::Enum::kTexture2D)
                 .setSize(info.texture.width, info.texture.height, info.texture.depth)
                 .setFlags(1, TextureFlags::kRenderTargetMask);
@@ -847,7 +848,7 @@ void FrameGraph::compile()
           }
         }
 
-        printf("Output %s allocated on node %d\n", resource->name, nodes[i].index);
+        printf("Output %s allocated on node %d\n", resource->m_Name, nodes[i].index);
       }
     }
 
@@ -871,7 +872,7 @@ void FrameGraph::compile()
           freeList.push(resource->resourceInfo.texture.texture);
         }
 
-        printf("Output %s deallocated on node %d\n", resource->name, nodes[i].index);
+        printf("Output %s deallocated on node %d\n", resource->m_Name, nodes[i].index);
       }
     }
   }
@@ -1017,16 +1018,34 @@ void FrameGraph::render(CommandBuffer* p_GpuCommands, RenderScene* p_RenderScene
 }
 
 //---------------------------------------------------------------------------//
-void FrameGraph::onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight);
+void FrameGraph::onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight)
+{
+  for (uint32_t n = 0; n < nodes.m_Size; ++n)
+  {
+    FrameGraphNode* node = builder->accessNode(nodes[n]);
+    if (!node->enabled)
+    {
+      continue;
+    }
+
+    node->graphRenderPass->onResize(gpu, newWidth, newHeight);
+
+    gpu.resizeOutputTextures(node->framebuffer, newWidth, newHeight);
+  }
+}
 //---------------------------------------------------------------------------//
-FrameGraphNode* FrameGraph::getNode(const char* name);
+FrameGraphNode* FrameGraph::getNode(const char* name) { return builder->getNode(name); }
 //---------------------------------------------------------------------------//
-FrameGraphNode* FrameGraph::accessNode(FrameGraphNodeHandle handle);
+FrameGraphNode* FrameGraph::accessNode(FrameGraphNodeHandle handle)
+{
+  return builder->accessNode(handle);
+}
 //---------------------------------------------------------------------------//
-FrameGraphResource* FrameGraph::getResource(const char* name);
+FrameGraphResource* FrameGraph::getResource(const char* name) { return builder->getResource(name); }
 //---------------------------------------------------------------------------//
-FrameGraphResource* FrameGraph::accessResource(FrameGraphResourceHandle handle);
-//---------------------------------------------------------------------------//
-void FrameGraph::addNode(FrameGraphNodeCreation& node);
+FrameGraphResource* FrameGraph::accessResource(FrameGraphResourceHandle handle)
+{
+  return builder->accessResource(handle);
+}
 //---------------------------------------------------------------------------//
 } // namespace Graphics

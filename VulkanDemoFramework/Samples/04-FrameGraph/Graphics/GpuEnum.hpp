@@ -587,6 +587,14 @@ enum Enum
   kVSyncRelaxed,
   kCount
 }; // enum Enum
+
+static const char* sValueNames[] = {"Immediate", "VSync", "VSyncFast", "VSyncRelaxed", "Count"};
+
+static const char* toString(Enum e)
+{
+  return ((uint32_t)e < Enum::kCount ? sValueNames[(int)e] : "unsupported");
+}
+
 } // namespace PresentMode
 //---------------------------------------------------------------------------//
 namespace RenderPassOperation

@@ -785,7 +785,7 @@ struct Pipeline
 
   ShaderStateHandle shaderState;
 
-  const DesciptorSetLayout* descriptorSetLayout[kMaxDescriptorSetLayouts];
+  const DescriptorSetLayout* descriptorSetLayout[kMaxDescriptorSetLayouts];
   DescriptorSetLayoutHandle descriptorSetLayoutHandle[kMaxDescriptorSetLayouts];
   uint32_t numActiveLayouts = 0;
 

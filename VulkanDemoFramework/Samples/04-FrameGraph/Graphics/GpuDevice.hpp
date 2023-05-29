@@ -252,6 +252,12 @@ struct GpuDevice : public Framework::Service
     assert(pipeline != nullptr);
     return pipeline->descriptorSetLayoutHandle[layoutIndex];
   }
+
+  // Update/Reload resources
+  void resizeOutputTextures(FramebufferHandle framebuffer, uint32_t width, uint32_t height);
+  void resizeTexture(TextureHandle texture, uint32_t width, uint32_t height);
+
+  uint32_t getMemoryHeapCount();
 };
 //---------------------------------------------------------------------------//
 } // namespace Graphics

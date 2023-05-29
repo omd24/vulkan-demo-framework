@@ -72,7 +72,7 @@ struct GpuTechnique : public Framework::Resource
 
   Framework::Array<GpuTechniquePass> passes;
 
-  uint32_t poolIndex;
+  uint32_t m_PoolIndex;
 
   static constexpr const char* kType = "gpu_technique_type";
   static uint64_t kTypeHash;
@@ -142,6 +142,9 @@ struct Renderer : public Framework::Service
   void beginFrame();
   void endFrame();
 
+  void imguiDraw();
+
+  void setPresentationMode(PresentMode::Enum value);
   void resizeSwapchain(uint32_t width, uint32_t height);
 
   float aspectRatio() const;
@@ -155,7 +158,6 @@ struct Renderer : public Framework::Service
       const char* p_Name);
 
   TextureResource* createTexture(const TextureCreation& p_Creation);
-  TextureResource* createTexture(const char* p_Name, const char* p_Filename);
 
   GpuTechnique* createTechnique(const GpuTechniqueCreation& creation);
   Material* createMaterial(const MaterialCreation& creation);
@@ -201,6 +203,8 @@ struct Renderer : public Framework::Service
   ResourceCache m_ResourceCache;
 
   Graphics::GpuDevice* m_GpuDevice;
+
+  Framework::Array<VmaBudget> m_GpuHeapBudgets;
 
   uint16_t m_Width;
   uint16_t m_Height;

@@ -39,7 +39,7 @@ void SceneGraph::updateMatrices()
 {
   // TODO: per level update
   uint32_t maxLevel = 0;
-  for (uint32_t i = 0; i < nodesHierarchy.size; ++i)
+  for (uint32_t i = 0; i < nodesHierarchy.m_Size; ++i)
   {
     maxLevel = max(maxLevel, (uint32_t)nodesHierarchy[i].level);
   }

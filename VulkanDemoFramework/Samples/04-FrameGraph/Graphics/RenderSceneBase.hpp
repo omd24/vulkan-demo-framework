@@ -6,6 +6,7 @@
 #include "Graphics/CommandBuffer.hpp"
 #include "Graphics/GpuDevice.hpp"
 #include "Graphics/GpuResources.hpp"
+#include "Graphics/ImguiHelper.hpp"
 
 #include "Externals/cglm/types-struct.h"
 

@@ -408,7 +408,7 @@ void parseBinary(
         setLayout.setSetIndex(id.set);
 
         DescriptorSetLayoutCreation::Binding binding{};
-        binding.start = id.binding;
+        binding.index = id.binding;
         binding.count = 1;
 
         switch (uniform_type.op)

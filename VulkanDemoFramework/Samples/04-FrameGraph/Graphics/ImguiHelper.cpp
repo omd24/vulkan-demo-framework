@@ -283,10 +283,11 @@ void ImguiService::render(CommandBuffer& p_Commands, bool p_UseSecondary)
   }
 
   // todo: key
-  p_Commands.bindPass(m_GpuDevice->m_SwapchainPass, p_UseSecondary);
+  p_Commands.bindPass(
+      m_GpuDevice->m_SwapchainRenderPass, m_GpuDevice->getCurrentFramebuffer(), p_UseSecondary);
   p_Commands.bindPipeline(g_ImguiPipeline);
   p_Commands.bindVertexBuffer(g_Vb, 0, 0);
-  p_Commands.bindIndexBuffer(g_Ib, 0);
+  p_Commands.bindIndexBuffer(g_Ib, 0, VK_INDEX_TYPE_UINT16);
 
   const Viewport viewport = {0, 0, (uint16_t)fbWidth, (uint16_t)fbHeight, 0.0f, 1.0f};
   p_Commands.setViewport(&viewport);

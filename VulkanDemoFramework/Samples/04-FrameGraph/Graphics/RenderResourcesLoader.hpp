@@ -20,7 +20,7 @@ struct RenderResourcesLoader
 
   RendererUtil::Renderer* renderer;
   FrameGraph* frameGraph;
-  StackAllocator* tempAllocator;
+  Framework::StackAllocator* tempAllocator;
 };
 //---------------------------------------------------------------------------//
 } // namespace Graphics

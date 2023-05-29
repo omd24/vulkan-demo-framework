@@ -507,7 +507,7 @@ void DoFPass::prepareDraws(
   FrameGraphResource* colorTexture = frameGraph->accessResource(node->inputs[0]);
   FrameGraphResource* depthTextureReference = frameGraph->accessResource(node->inputs[1]);
 
-  FrameGraphResource* depthTexture = frameGraph->getResource(depthTextureReference->name);
+  FrameGraphResource* depthTexture = frameGraph->getResource(depthTextureReference->m_Name);
   assert(depthTexture != nullptr);
 
   FrameGraphResourceInfo& info = colorTexture->resourceInfo;

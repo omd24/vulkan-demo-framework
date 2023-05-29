@@ -36,6 +36,7 @@
     <ClCompile Include="Graphics\AsynchronousLoader.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="Graphics\RenderResourcesLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Graphics">
@@ -79,5 +80,6 @@
     <ClInclude Include="Graphics\AsynchronousLoader.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
+    <ClInclude Include="Graphics\RenderResourcesLoader.hpp" />
   </ItemGroup>
 </Project>

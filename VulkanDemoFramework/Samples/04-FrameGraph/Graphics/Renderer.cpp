@@ -2,8 +2,7 @@
 
 #include "Graphics/CommandBuffer.hpp"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "Externals/stb_image.h"
+#include "Externals/imgui/imgui.h"
 
 namespace Graphics
 {
@@ -65,95 +64,6 @@ void ResourceCache::shutdown(Renderer* p_Renderer)
   m_Techniques.shutdown();
 }
 //---------------------------------------------------------------------------//
-// Internals:
-//---------------------------------------------------------------------------//
-struct TextureLoader : public Framework::ResourceLoader
-{
-  Framework::Resource* get(const char* p_Name) override
-  {
-    const uint64_t hashedName = Framework::hashCalculate(p_Name);
-    return m_Renderer->m_ResourceCache.m_Textures.get(hashedName);
-  }
-  Framework::Resource* get(uint64_t p_HashedName) override
-  {
-    return m_Renderer->m_ResourceCache.m_Textures.get(p_HashedName);
-  }
-
-  Framework::Resource* unload(const char* p_Name) override
-  {
-    const uint64_t hashedName = Framework::hashCalculate(p_Name);
-    TextureResource* texture = m_Renderer->m_ResourceCache.m_Textures.get(hashedName);
-    if (texture)
-    {
-      m_Renderer->destroyTexture(texture);
-    }
-    return nullptr;
-  }
-
-  Framework::Resource* createFromFile(
-      const char* p_Name,
-      const char* p_Filename,
-      Framework::ResourceManager* p_ResourceManager) override
-  {
-    return m_Renderer->createTexture(p_Name, p_Filename);
-  }
-
-  Renderer* m_Renderer;
-};
-//---------------------------------------------------------------------------//
-struct BufferLoader : public Framework::ResourceLoader
-{
-  Framework::Resource* get(const char* p_Name) override
-  {
-    const uint64_t hashedName = Framework::hashCalculate(p_Name);
-    return m_Renderer->m_ResourceCache.m_Buffers.get(hashedName);
-  }
-  Framework::Resource* get(uint64_t p_HashedName) override
-  {
-    return m_Renderer->m_ResourceCache.m_Buffers.get(p_HashedName);
-  }
-
-  Framework::Resource* unload(const char* p_Name) override
-  {
-    const uint64_t hashedName = Framework::hashCalculate(p_Name);
-    BufferResource* buffer = m_Renderer->m_ResourceCache.m_Buffers.get(hashedName);
-    if (buffer)
-    {
-      m_Renderer->destroyBuffer(buffer);
-    }
-
-    return nullptr;
-  }
-
-  Renderer* m_Renderer;
-};
-//---------------------------------------------------------------------------//
-struct SamplerLoader : public Framework::ResourceLoader
-{
-  Framework::Resource* get(const char* p_Name) override
-  {
-    const uint64_t hashedName = Framework::hashCalculate(p_Name);
-    return m_Renderer->m_ResourceCache.m_Samplers.get(hashedName);
-  }
-  Framework::Resource* get(uint64_t p_HashedName) override
-  {
-    return m_Renderer->m_ResourceCache.m_Samplers.get(p_HashedName);
-  }
-
-  Framework::Resource* unload(const char* p_Name) override
-  {
-    const uint64_t hashedName = Framework::hashCalculate(p_Name);
-    SamplerResource* sampler = m_Renderer->m_ResourceCache.m_Samplers.get(hashedName);
-    if (sampler)
-    {
-      m_Renderer->destroySampler(sampler);
-    }
-    return nullptr;
-  }
-
-  Renderer* m_Renderer;
-};
-//---------------------------------------------------------------------------//
 GpuTechniqueCreation& GpuTechniqueCreation::reset()
 {
   numCreations = 0;
@@ -199,42 +109,6 @@ MaterialCreation& MaterialCreation::setName(const char* p_Name)
   return *this;
 }
 //---------------------------------------------------------------------------//
-static TextureHandle
-_createTextureFromFile(GpuDevice& p_GpuDevice, const char* p_Filename, const char* p_Name)
-{
-
-  if (p_Filename)
-  {
-    int comp, width, height;
-    uint8_t* imageData = stbi_load(p_Filename, &width, &height, &comp, 4);
-    if (!imageData)
-    {
-      OutputDebugStringA("Error loading texture\n");
-      return kInvalidTexture;
-    }
-
-    TextureCreation creation;
-    creation.setData(imageData)
-        .setFormatType(VK_FORMAT_R8G8B8A8_UNORM, TextureType::kTexture2D)
-        .setFlags(1, 0)
-        .setSize((uint16_t)width, (uint16_t)height, 1)
-        .setName(p_Name);
-
-    Graphics::TextureHandle newTexture = p_GpuDevice.createTexture(creation);
-
-    // IMPORTANT:
-    // Free memory loaded from file, it should not matter!
-    free(imageData);
-
-    return newTexture;
-  }
-
-  return kInvalidTexture;
-}
-//---------------------------------------------------------------------------//
-static TextureLoader g_TextureLoader;
-static BufferLoader g_BufferLoader;
-static SamplerLoader g_SamplerLoader;
 
 uint64_t RendererUtil::TextureResource::ms_TypeHash = 0;
 uint64_t RendererUtil::BufferResource::ms_TypeHash = 0;
@@ -408,10 +282,6 @@ void Renderer::init(const RendererCreation& p_Creation)
   TextureResource::ms_TypeHash = Framework::hashCalculate(TextureResource::ms_TypeName);
   BufferResource::ms_TypeHash = Framework::hashCalculate(BufferResource::ms_TypeName);
   SamplerResource::ms_TypeHash = Framework::hashCalculate(SamplerResource::ms_TypeName);
-
-  g_TextureLoader.m_Renderer = this;
-  g_BufferLoader.m_Renderer = this;
-  g_SamplerLoader.m_Renderer = this;
 }
 //---------------------------------------------------------------------------//
 void Renderer::shutdown()
@@ -429,9 +299,7 @@ void Renderer::shutdown()
 //---------------------------------------------------------------------------//
 void Renderer::setLoaders(Framework::ResourceManager* p_Manager)
 {
-  p_Manager->setLoader(TextureResource::ms_TypeName, &g_TextureLoader);
-  p_Manager->setLoader(BufferResource::ms_TypeName, &g_BufferLoader);
-  p_Manager->setLoader(SamplerResource::ms_TypeName, &g_SamplerLoader);
+  // Moved loaders to resources loader!
 }
 //---------------------------------------------------------------------------//
 void Renderer::beginFrame()
@@ -444,6 +312,26 @@ void Renderer::endFrame()
 {
   // Present
   m_GpuDevice->present();
+}
+//---------------------------------------------------------------------------//
+void Renderer::imguiDraw()
+{
+  // Print memory stats
+  vmaGetHeapBudgets(m_GpuDevice->m_VmaAllocator, m_GpuHeapBudgets.m_Data);
+
+  size_t totalMemoryUsed = 0;
+  for (uint32_t i = 0; i < m_GpuDevice->getMemoryHeapCount(); ++i)
+  {
+    totalMemoryUsed += m_GpuHeapBudgets[i].usage;
+  }
+
+  ImGui::Text("GPU Memory Total: %lluMB", totalMemoryUsed / (1024 * 1024));
+}
+//---------------------------------------------------------------------------//
+void Renderer::setPresentationMode(PresentMode::Enum value)
+{
+  m_GpuDevice->setPresentMode(value);
+  m_GpuDevice->resizeSwapchain();
 }
 //---------------------------------------------------------------------------//
 void Renderer::resizeSwapchain(uint32_t p_Width, uint32_t p_Height)
@@ -492,43 +380,22 @@ BufferResource* Renderer::createBuffer(
   return createBuffer(creation);
 }
 //---------------------------------------------------------------------------//
-TextureResource* Renderer::createTexture(const TextureCreation& p_Creation)
+TextureResource* Renderer::createTexture(const TextureCreation& creation)
 {
   TextureResource* texture = m_Textures.obtain();
 
   if (texture)
   {
-    TextureHandle handle = m_GpuDevice->createTexture(p_Creation);
-    texture->m_Handle = handle;
-    texture->m_Name = p_Creation.name;
-    m_GpuDevice->queryTexture(handle, texture->m_Desc);
-
-    if (p_Creation.name != nullptr)
-    {
-      m_ResourceCache.m_Textures.insert(Framework::hashCalculate(p_Creation.name), texture);
-    }
-
-    texture->m_References = 1;
-
-    return texture;
-  }
-  return nullptr;
-}
-//---------------------------------------------------------------------------//
-TextureResource* Renderer::createTexture(const char* p_Name, const char* p_Filename)
-{
-  TextureResource* texture = m_Textures.obtain();
-
-  if (texture)
-  {
-    TextureHandle handle = _createTextureFromFile(*m_GpuDevice, p_Filename, p_Name);
+    TextureHandle handle = m_GpuDevice->createTexture(creation);
     texture->m_Handle = handle;
     m_GpuDevice->queryTexture(handle, texture->m_Desc);
     texture->m_References = 1;
-    texture->m_Name = p_Name;
+    texture->m_Name = creation.name;
 
-    m_ResourceCache.m_Textures.insert(Framework::hashCalculate(p_Name), texture);
+    if (creation.name != nullptr)
+      m_ResourceCache.m_Textures.insert(Framework::hashCalculate(creation.name), texture);
 
+    texture->m_References = 1;
     return texture;
   }
   return nullptr;

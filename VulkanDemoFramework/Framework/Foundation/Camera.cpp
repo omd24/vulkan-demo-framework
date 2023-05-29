@@ -9,7 +9,7 @@ namespace Framework
 {
 // Camera ///////////////////////////////////////////////////////////////////////
 
-void Camera::initPerpective(float nearPlane_, float farPlane_, float fovY, float aspectRatio_)
+void Camera::initPerspective(float nearPlane_, float farPlane_, float fovY, float aspectRatio_)
 {
   perspective = true;
 

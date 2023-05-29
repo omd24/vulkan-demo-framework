@@ -12,7 +12,7 @@ namespace Framework
 struct Camera
 {
 
-  void initPerpective(float nearPlane, float farPlane, float fovY, float aspectRatio);
+  void initPerspective(float nearPlane, float farPlane, float fovY, float aspectRatio);
   void initOrthographic(
       float nearPlane, float farPlane, float viewportWidth, float viewportHeight, float zoom);
 

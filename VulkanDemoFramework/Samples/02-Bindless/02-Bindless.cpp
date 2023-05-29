@@ -581,7 +581,7 @@ int main(int argc, char** argv)
   imgui->init(&imguiConfig);
 
   GameCamera gameCamera{};
-  gameCamera.camera.initPerpective(0.1f, 4000.f, 60.f, wconf.m_Width * 1.f / wconf.m_Height);
+  gameCamera.camera.initPerspective(0.1f, 4000.f, 60.f, wconf.m_Width * 1.f / wconf.m_Height);
   gameCamera.init(true, 20.f, 6.f, 0.1f);
 
   Time::serviceInit();

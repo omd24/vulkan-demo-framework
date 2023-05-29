@@ -8,8 +8,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "Externals/stb_image.h"
 
-#define SHADER_FOLDER "\\Shaders\\"
-
 namespace Graphics
 {
 //---------------------------------------------------------------------------//

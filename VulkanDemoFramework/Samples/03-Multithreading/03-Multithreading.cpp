@@ -194,7 +194,6 @@ static bool g_RecreatePerThreadDescriptors = false;
 //---------------------------------------------------------------------------//
 struct AsynchronousLoader
 {
-
   void init(
       Graphics::RendererUtil::Renderer* p_Renderer,
       enki::TaskScheduler* p_TaskScheduler,
@@ -2224,7 +2223,7 @@ int main(int argc, char** argv)
   imgui->init(&imguiConfig);
 
   GameCamera gameCamera{};
-  gameCamera.camera.initPerpective(0.1f, 4000.f, 60.f, wconf.m_Width * 1.f / wconf.m_Height);
+  gameCamera.camera.initPerspective(0.1f, 4000.f, 60.f, wconf.m_Width * 1.f / wconf.m_Height);
   gameCamera.init(true, 20.f, 6.f, 0.1f);
 
   Time::serviceInit();
@@ -2336,7 +2335,7 @@ int main(int argc, char** argv)
     window.centerMouse(gameCamera.mouseDragging);
 
     {
-      if (ImGui::Begin("Raptor ImGui"))
+      if (ImGui::Begin("Framework ImGui"))
       {
         ImGui::InputFloat("Model scale", &modelScale, 0.001f);
         ImGui::SliderFloat3("Light position", light.raw, -30.0f, 30.0f);

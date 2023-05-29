@@ -3326,10 +3326,10 @@ void GpuDevice::destroySwapchain()
 
     for (uint32_t a = 0; a < vkFramebuffer->numColorAttachments; ++a)
     {
-      Texture* vk_texture =
+      Texture* vkTexture =
           (Texture*)m_Textures.accessResource(vkFramebuffer->colorAttachments[a].index);
 
-      vkDestroyImageView(m_VulkanDevice, vk_texture->vkImageView, m_VulkanAllocCallbacks);
+      vkDestroyImageView(m_VulkanDevice, vkTexture->vkImageView, m_VulkanAllocCallbacks);
 
       m_Textures.releaseResource(vkFramebuffer->colorAttachments[a].index);
     }
@@ -3553,5 +3553,94 @@ void GpuDevice::linkTextureSampler(TextureHandle p_Texture, SamplerHandle p_Samp
 
   texture->sampler = sampler;
 }
+//---------------------------------------------------------------------------//
+void GpuDevice::resizeOutputTextures(FramebufferHandle framebuffer, uint32_t width, uint32_t height)
+{
+  // For each texture, create a temporary pooled texture and cache the handles to delete.
+  // This is because we substitute just the Vulkan texture when resizing so that
+  // external users don't need to update the handle.
+
+  Framebuffer* vkFramebuffer = (Framebuffer*)m_Framebuffers.accessResource(framebuffer.index);
+  if (vkFramebuffer)
+  {
+    // No need to resize!
+    if (!vkFramebuffer->resize)
+    {
+      return;
+    }
+
+    // Calculate new width and height based on render pass sizing informations.
+    uint16_t newWidth = (uint16_t)(width * vkFramebuffer->scaleX);
+    uint16_t newHeight = (uint16_t)(height * vkFramebuffer->scaleY);
+
+    // Resize textures if needed
+    const uint32_t rts = vkFramebuffer->numColorAttachments;
+    for (uint32_t i = 0; i < rts; ++i)
+    {
+      resizeTexture(vkFramebuffer->colorAttachments[i], newWidth, newHeight);
+    }
+
+    if (vkFramebuffer->depthStencilAttachment.index != kInvalidIndex)
+    {
+      resizeTexture(vkFramebuffer->depthStencilAttachment, newWidth, newHeight);
+    }
+
+    // Again: create temporary resource to use the standard deferred deletion mechanism.
+    FramebufferHandle framebufferToDestroy = {m_Framebuffers.obtainResource()};
+    Framebuffer* vkFramebufferToDestroy =
+        (Framebuffer*)m_Framebuffers.accessResource(framebufferToDestroy.index);
+    // Cache framebuffer to be deleted
+    vkFramebufferToDestroy->vkFramebuffer = vkFramebuffer->vkFramebuffer;
+    // Textures are manually destroyed few lines above, so avoid doing it again.
+    vkFramebufferToDestroy->numColorAttachments = 0;
+    vkFramebufferToDestroy->depthStencilAttachment.index = kInvalidIndex;
+
+    destroyFramebuffer(framebufferToDestroy);
+
+    // Update render pass size
+    vkFramebuffer->width = newWidth;
+    vkFramebuffer->height = newHeight;
+
+    // Recreate framebuffer if present (mainly for dispatch only passes)
+    if (vkFramebuffer->vkFramebuffer)
+    {
+      _vulkanCreateFramebuffer(*this, vkFramebuffer);
+    }
+  }
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::resizeTexture(TextureHandle texture, uint32_t width, uint32_t height)
+{
+  Texture* vkTexture = (Texture*)m_Textures.accessResource(texture.index);
+
+  if (vkTexture->width == width && vkTexture->height == height)
+  {
+    return;
+  }
+
+  // Queue deletion of texture by creating a temporary one
+  TextureHandle textureToDelete = {m_Textures.obtainResource()};
+  Texture* vkTextureToDelete = (Texture*)m_Textures.accessResource(textureToDelete.index);
+
+  // Cache all informations (image, image view, flags, ...) into texture to delete.
+  // Missing even one information (like it is a texture view, sparse, ...)
+  // can lead to memory leaks.
+  Framework::memoryCopy(vkTextureToDelete, vkTexture, sizeof(Texture));
+  // Update handle so it can be used to update bindless to dummy texture
+  // and delete the old image and image view.
+  vkTextureToDelete->handle = textureToDelete;
+
+  // Re-create image in place.
+  TextureCreation tc;
+  tc.setFlags(vkTexture->mipmaps, vkTexture->flags)
+      .setFormatType(vkTexture->vkFormat, vkTexture->type)
+      .setName(vkTexture->name)
+      .setSize(width, height, vkTexture->depth);
+  _vulkanCreateTexture(*this, tc, vkTexture->handle, vkTexture);
+
+  destroyTexture(textureToDelete);
+}
+//---------------------------------------------------------------------------//
+uint32_t GpuDevice::getMemoryHeapCount() { return m_VmaAllocator->GetMemoryHeapCount(); }
 //---------------------------------------------------------------------------//
 } // namespace Graphics

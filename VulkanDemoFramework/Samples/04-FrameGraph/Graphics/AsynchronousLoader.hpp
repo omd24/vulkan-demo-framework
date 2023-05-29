@@ -4,6 +4,8 @@
 #include "Graphics/GpuDevice.hpp"
 #include "Graphics/CommandBuffer.hpp"
 
+#include <atomic>
+
 namespace enki
 {
 class TaskScheduler;

@@ -232,6 +232,13 @@ DescriptorSetLayoutCreation& DescriptorSetLayoutCreation::addBinding(const Bindi
   bindings[numBindings++] = binding;
   return *this;
 }
+DescriptorSetLayoutCreation& DescriptorSetLayoutCreation::addBinding(
+    VkDescriptorType type, uint32_t index, uint32_t count, const char* name)
+{
+  bindings[numBindings++] = {type, (uint16_t)index, (uint16_t)count, name};
+  return *this;
+}
+
 DescriptorSetLayoutCreation&
 DescriptorSetLayoutCreation::addBindingAtIndex(const Binding& binding, int index)
 {
