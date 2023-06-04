@@ -90,7 +90,12 @@ struct CommandBuffer
   void uploadBufferData(BufferHandle p_Src, BufferHandle p_Dst);
 
   VkCommandBuffer m_VulkanCmdBuffer;
+
+  VkDescriptorPool m_VulkanDescriptorPool;
+  Framework::ResourcePool m_DescriptorSets;
+
   GpuDevice* m_GpuDevice;
+
   VkDescriptorSet m_VulkanDescriptorSets[16];
 
   RenderPass* m_CurrentRenderPass;
@@ -103,11 +108,6 @@ struct CommandBuffer
 
   uint32_t m_CurrentCommand;
   ResourceHandle m_ResourceHandle;
-  QueueType::Enum m_Type = QueueType::kGraphics;
-  uint32_t m_BufferSize = 0;
-
-  VkDescriptorPool m_VulkanDescriptorPool;
-  Framework::ResourcePool m_DescriptorSets;
 };
 //---------------------------------------------------------------------------//
 struct CommandBufferManager

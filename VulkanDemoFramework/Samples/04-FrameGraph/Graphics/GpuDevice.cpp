@@ -1149,6 +1149,8 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
         vkCreateDevice(m_VulkanPhysicalDevice, &deviceCi, m_VulkanAllocCallbacks, &m_VulkanDevice);
     CHECKRES(result);
 
+    deviceExtensions.shutdown();
+
     if (m_DynamicRenderingExtensionPresent)
     {
       m_CmdBeginRendering =
@@ -1241,8 +1243,6 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     tempAllocator->freeMarker(initialTempAllocatorMarker);
 
     setPresentMode(m_PresentMode);
-
-    createSwapchain();
   }
 
   // Create VMA allocator:
@@ -1305,15 +1305,16 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   }
 
   // Init pools
-  m_Buffers.init(m_Allocator, 512, sizeof(Buffer));
-  m_Textures.init(m_Allocator, 512, sizeof(Texture));
-  m_RenderPasses.init(m_Allocator, 256, sizeof(RenderPass));
+  m_Buffers.init(m_Allocator, kBuffersPoolSize, sizeof(Buffer));
+  m_Textures.init(m_Allocator, kTexturesPoolSize, sizeof(Texture));
+  m_RenderPasses.init(m_Allocator, kRenderPassesPoolSize, sizeof(RenderPass));
   m_Framebuffers.init(m_Allocator, 256, sizeof(RenderPass));
-  m_DescriptorSetLayouts.init(m_Allocator, 128, sizeof(DescriptorSetLayout));
-  m_Pipelines.init(m_Allocator, 128, sizeof(Pipeline));
-  m_Shaders.init(m_Allocator, 128, sizeof(ShaderState));
-  m_DescriptorSets.init(m_Allocator, 128, sizeof(DescriptorSet));
-  m_Samplers.init(m_Allocator, 32, sizeof(Sampler));
+  m_DescriptorSetLayouts.init(
+      m_Allocator, kDescriptorSetLayoutsPoolSize, sizeof(DescriptorSetLayout));
+  m_Pipelines.init(m_Allocator, kPipelinesPoolSize, sizeof(Pipeline));
+  m_Shaders.init(m_Allocator, kShadersPoolSize, sizeof(ShaderState));
+  m_DescriptorSets.init(m_Allocator, kDescriptorSetsPoolSize, sizeof(DescriptorSet));
+  m_Samplers.init(m_Allocator, kSamplersPoolSize, sizeof(Sampler));
 
   // Create synchronization objects
   VkSemaphoreCreateInfo semaphoreCi{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
@@ -1332,14 +1333,14 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
         m_VulkanDevice, &fenceCi, m_VulkanAllocCallbacks, &m_VulkanCmdBufferExectuedFence[i]);
   }
 
-  // Init the command buffer ring:
-  g_CmdBufferRing.init(this, p_Creation.numThreads);
-
   // Allocate command buffers queue
   {
     uint8_t* memory = FRAMEWORK_ALLOCAM(sizeof(CommandBuffer*) * 128, m_Allocator);
     m_QueuedCommandBuffers = (CommandBuffer**)(memory);
   }
+
+  // Init the command buffer ring:
+  g_CmdBufferRing.init(this, p_Creation.numThreads);
 
   // Init frame counters
   m_VulkanImageIndex = 0;
@@ -1347,10 +1348,16 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   m_PreviousFrameIndex = 0;
   m_AbsoluteFrameIndex = 0;
 
-  // Init resource delection queue and descrptr set updates
+  // Init resource deletion queue and descriptor set updates
   m_ResourceDeletionQueue.init(m_Allocator, 16);
   m_DescriptorSetUpdates.init(m_Allocator, 16);
   m_TextureToUpdateBindless.init(m_Allocator, 16);
+
+  // Init render pass cache
+  g_RenderPassCache.init(m_Allocator, 16);
+
+  // This should be after initializing the command lists:
+  createSwapchain();
 
   // create sampler, depth images and other fundamentals
   SamplerCreation samplerCreation{};
@@ -1439,11 +1446,6 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
 
   MapBufferParameters mapParams = {m_DynamicBuffer, 0, 0};
   m_DynamicMappedMemory = (uint8_t*)mapBuffer(mapParams);
-
-  // Init render pass cache
-  g_RenderPassCache.init(m_Allocator, 16);
-
-  createSwapchain();
 
   // Cache working directory
   Framework::directoryCurrent(&m_Cwd);
@@ -2324,7 +2326,9 @@ GpuDevice::createDescriptorSetLayout(const DescriptorSetLayoutCreation& p_Creati
   // Create flattened binding list
   descriptorSetLayout->numBindings = (uint16_t)p_Creation.numBindings;
   uint8_t* memory = FRAMEWORK_ALLOCAM(
-      (sizeof(VkDescriptorSetLayoutBinding) + sizeof(DescriptorBinding)) * p_Creation.numBindings,
+      ((sizeof(VkDescriptorSetLayoutBinding) + sizeof(DescriptorBinding)) *
+       p_Creation.numBindings) +
+          (sizeof(uint8_t) * maxBinding),
       m_Allocator);
   descriptorSetLayout->bindings = (DescriptorBinding*)memory;
   descriptorSetLayout->vkBinding =
@@ -2432,7 +2436,8 @@ DescriptorSetHandle GpuDevice::createDescriptorSet(const DescriptorSetCreation& 
 
   // Allocate descriptor set
   VkDescriptorSetAllocateInfo allocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-  allocInfo.descriptorPool = m_VulkanDescriptorPool;
+  allocInfo.descriptorPool =
+      descriptorSetLayout->bindless ? m_VulkanBindlessDescriptorPool : m_VulkanDescriptorPool;
   allocInfo.descriptorSetCount = 1;
   allocInfo.pSetLayouts = &descriptorSetLayout->vkDescriptorSetLayout;
 

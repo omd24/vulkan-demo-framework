@@ -49,7 +49,7 @@ void CommandBuffer::init(Graphics::GpuDevice* p_GpuDevice)
       &m_VulkanDescriptorPool);
   assert(result == VK_SUCCESS);
 
-  m_DescriptorSets.init(m_GpuDevice->m_Allocator, 256, sizeof(DescriptorSet));
+  m_DescriptorSets.init(m_GpuDevice->m_Allocator, kDescriptorSetsPoolSize, sizeof(DescriptorSet));
 
   reset();
 }
