@@ -122,18 +122,16 @@ void ImguiService::init(void* p_Configuration)
   {
     descriptorSetLayoutCreation
         .addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"})
-        .addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, 1, "Texture"})
-        .setName("ImGui Descriptors");
+        .setName("ImGui Descriptors")
+        .setSetIndex(1);
   }
   else
   {
+    descriptorSetLayoutCreation.addBinding(
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, 1, "Texture"});
     descriptorSetLayoutCreation
         .addBinding({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, 1, "LocalConstants"})
         .setName("Descriptor Uniform ImGui");
-    // TODO: Check to see we still need this or not !?!
-    // descriptorSetLayoutCreation
-    //    .addBinding({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, 1, "LocalConstants"})
-    //    .setName("Descriptor Sampler ImGui");
   }
 
   g_DescriptorSetLayout = m_GpuDevice->createDescriptorSetLayout(descriptorSetLayoutCreation);
