@@ -10,7 +10,14 @@ namespace Graphics
 //---------------------------------------------------------------------------//
 namespace Spirv
 {
+static const uint32_t kBindlessSetIndex = 0;
 static const uint32_t kBindlessTextureBinding = 10;
+//---------------------------------------------------------------------------//
+template <class T> constexpr const T& _max(const T& a, const T& b)
+{
+  // TODO: move this somewhere else
+  return (a < b) ? b : a;
+}
 //---------------------------------------------------------------------------//
 struct Member
 {
@@ -43,6 +50,8 @@ struct Id
   // For structs
   Framework::StringView name;
   Framework::Array<Member> members;
+
+  bool structuredBuffer;
 };
 //---------------------------------------------------------------------------//
 VkShaderStageFlags parseExecutionModel(SpvExecutionModel model)
@@ -58,12 +67,33 @@ VkShaderStageFlags parseExecutionModel(SpvExecutionModel model)
   case (SpvExecutionModelFragment): {
     return VK_SHADER_STAGE_FRAGMENT_BIT;
   }
+  case (SpvExecutionModelGLCompute):
   case (SpvExecutionModelKernel): {
     return VK_SHADER_STAGE_COMPUTE_BIT;
   }
   }
 
   return 0;
+}
+//---------------------------------------------------------------------------//
+static void addBindingIfUnique(
+    DescriptorSetLayoutCreation& p_Creation, DescriptorSetLayoutCreation::Binding& p_Binding)
+{
+  bool found = false;
+  for (uint32_t i = 0; i < p_Creation.numBindings; ++i)
+  {
+    const DescriptorSetLayoutCreation::Binding& b = p_Creation.bindings[i];
+    if (b.type == p_Binding.type && b.index == p_Binding.index)
+    {
+      found = true;
+      break;
+    }
+  }
+
+  if (!found)
+  {
+    p_Creation.addBinding(p_Binding);
+  }
 }
 //---------------------------------------------------------------------------//
 void parseBinary(
@@ -108,6 +138,24 @@ void parseBinary(
       break;
     }
 
+    case (SpvOpExecutionMode): {
+      assert(wordCount >= 3);
+
+      SpvExecutionMode mode = (SpvExecutionMode)p_Data[wordIndex + 2];
+
+      switch (mode)
+      {
+      case SpvExecutionModeLocalSize: {
+        p_ParseResult->computeLocalSize.x = p_Data[wordIndex + 3];
+        p_ParseResult->computeLocalSize.y = p_Data[wordIndex + 4];
+        p_ParseResult->computeLocalSize.z = p_Data[wordIndex + 5];
+        break;
+      }
+      }
+
+      break;
+    }
+
     case (SpvOpDecorate): {
       assert(wordCount >= 3);
 
@@ -126,6 +174,15 @@ void parseBinary(
 
       case (SpvDecorationDescriptorSet): {
         id.set = p_Data[wordIndex + 3];
+        break;
+      }
+
+      case (SpvDecorationBlock): {
+        id.structuredBuffer = false;
+        break;
+      }
+      case (SpvDecorationBufferBlock): {
+        id.structuredBuffer = true;
         break;
       }
       }
@@ -261,8 +318,13 @@ void parseBinary(
     }
 
     case (SpvOpTypeImage): {
-      // NOTE: not sure we need this information just yet
       assert(wordCount >= 9);
+
+      uint32_t idIndex = p_Data[wordIndex + 1];
+      assert(idIndex < idBound);
+
+      Id& id = ids[idIndex];
+      id.op = op;
 
       break;
     }
@@ -360,8 +422,7 @@ void parseBinary(
       Id& id = ids[idIndex];
       id.op = op;
       id.typeIndex = p_Data[wordIndex + 2];
-      id.value = p_Data[wordIndex + 3]; // NOTE: we assume all constants to have maximum
-                                        // 32bit width
+      id.value = p_Data[wordIndex + 3]; // NOTE: we assume all constants to have maximum 32bit width
 
       break;
     }
@@ -384,6 +445,7 @@ void parseBinary(
     wordIndex += wordCount;
   }
 
+  //
   for (uint32_t idIndex = 0; idIndex < ids.m_Size; ++idIndex)
   {
     Id& id = ids[idIndex];
@@ -392,9 +454,17 @@ void parseBinary(
     {
       switch (id.storageClass)
       {
+      case SpvStorageClassStorageBuffer: {
+        // printf( "Storage!\n" );
+        break;
+      }
+      case SpvStorageClassImage: {
+        // printf( "Image!\n" );
+        break;
+      }
       case (SpvStorageClassUniform):
       case (SpvStorageClassUniformConstant): {
-        if (id.set == 1 &&
+        if (id.set == kBindlessSetIndex &&
             (id.binding == kBindlessTextureBinding || id.binding == (kBindlessTextureBinding + 1)))
         {
           // NOTE: these are managed by the GPU device
@@ -414,7 +484,8 @@ void parseBinary(
         switch (uniform_type.op)
         {
         case (SpvOpTypeStruct): {
-          binding.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+          binding.type = uniform_type.structuredBuffer ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                                       : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
           binding.name = uniform_type.name.m_Text;
           break;
         }
@@ -424,11 +495,24 @@ void parseBinary(
           binding.name = id.name.m_Text;
           break;
         }
+
+        case SpvOpTypeImage: {
+          binding.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+          binding.name = id.name.m_Text;
+          break;
         }
 
-        setLayout.addBindingAtIndex(binding, id.binding);
+        default: {
+          printf("Error reading op %u %s\n", uniform_type.op, uniform_type.name.m_Text);
+          break;
+        }
+        }
 
-        p_ParseResult->setCount = Framework::max(p_ParseResult->setCount, (id.set + 1));
+        // printf( "Adding binding %u %s, set %u. Total %u\n", binding.index, binding.name, id.set,
+        // setLayout.num_bindings );
+        addBindingIfUnique(setLayout, binding);
+
+        p_ParseResult->setCount = _max(p_ParseResult->setCount, (id.set + 1));
 
         break;
       }

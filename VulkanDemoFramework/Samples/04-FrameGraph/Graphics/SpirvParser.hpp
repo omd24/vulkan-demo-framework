@@ -24,6 +24,8 @@ struct ParseResult
 {
   uint32_t setCount;
   DescriptorSetLayoutCreation sets[kMaxSetCount];
+
+  ComputeLocalSize computeLocalSize;
 };
 
 void parseBinary(

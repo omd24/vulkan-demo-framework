@@ -836,6 +836,14 @@ struct Framebuffer
   const char* name = nullptr;
 }; // struct Framebuffer
 
+struct ComputeLocalSize
+{
+  uint32_t x : 10;
+  uint32_t y : 10;
+  uint32_t z : 10;
+  uint32_t pad : 2;
+}; // struct ComputeLocalSize
+
 //---------------------------------------------------------------------------//
 // Enum translations. Use tables or switches depending on the case.
 //---------------------------------------------------------------------------//
