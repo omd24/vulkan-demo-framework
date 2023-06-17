@@ -85,7 +85,7 @@ static VkBool32 debugUtilsCallback(
     const VkDebugUtilsMessengerCallbackDataEXT* p_CallbackData,
     void* p_UserData)
 {
-  char msg[1024]{};
+  char msg[2048]{};
   sprintf(
       msg,
       " MessageID: %s %i\nMessage: %s\n\n",

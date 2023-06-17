@@ -74,8 +74,8 @@ struct GpuTechnique : public Framework::Resource
 
   uint32_t m_PoolIndex;
 
-  static constexpr const char* kType = "gpu_technique_type";
-  static uint64_t kTypeHash;
+  static constexpr const char* ms_TypeName = "gpu_technique_type";
+  static uint64_t ms_TypeHash;
 };
 //---------------------------------------------------------------------------//
 struct MaterialCreation

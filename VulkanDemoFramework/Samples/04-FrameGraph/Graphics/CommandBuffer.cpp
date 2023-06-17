@@ -377,7 +377,7 @@ void CommandBuffer::bindDescriptorSet(
     }
   }
 
-  const uint32_t firstSet = 0;
+  const uint32_t firstSet = 1;
   vkCmdBindDescriptorSets(
       m_VulkanCmdBuffer,
       m_CurrentPipeline->vkBindPoint,
@@ -394,7 +394,7 @@ void CommandBuffer::bindDescriptorSet(
         m_VulkanCmdBuffer,
         m_CurrentPipeline->vkBindPoint,
         m_CurrentPipeline->vkPipelineLayout,
-        1,
+        0,
         1,
         &m_GpuDevice->m_VulkanBindlessDescriptorSetCached,
         0,

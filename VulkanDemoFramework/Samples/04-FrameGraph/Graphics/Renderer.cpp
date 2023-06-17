@@ -113,6 +113,8 @@ MaterialCreation& MaterialCreation::setName(const char* p_Name)
 uint64_t RendererUtil::TextureResource::ms_TypeHash = 0;
 uint64_t RendererUtil::BufferResource::ms_TypeHash = 0;
 uint64_t RendererUtil::SamplerResource::ms_TypeHash = 0;
+uint64_t RendererUtil::Material::ms_TypeHash = 0;
+uint64_t RendererUtil::GpuTechnique::ms_TypeHash = 0;
 
 static Renderer g_Renderer;
 //---------------------------------------------------------------------------//
@@ -270,11 +272,11 @@ void Renderer::init(const RendererCreation& p_Creation)
   m_Width = m_GpuDevice->m_SwapchainWidth;
   m_Height = m_GpuDevice->m_SwapchainHeight;
 
-  m_Textures.init(p_Creation.alloc, 512);
-  m_Buffers.init(p_Creation.alloc, 512);
-  m_Samplers.init(p_Creation.alloc, 128);
-  m_Techniques.init(p_Creation.alloc, 128);
+  m_Textures.init(p_Creation.alloc, kTexturesPoolSize);
+  m_Buffers.init(p_Creation.alloc, kBuffersPoolSize);
+  m_Samplers.init(p_Creation.alloc, kSamplersPoolSize);
   m_Materials.init(p_Creation.alloc, 128);
+  m_Techniques.init(p_Creation.alloc, 128);
 
   m_ResourceCache.init(p_Creation.alloc);
 
@@ -282,6 +284,11 @@ void Renderer::init(const RendererCreation& p_Creation)
   TextureResource::ms_TypeHash = Framework::hashCalculate(TextureResource::ms_TypeName);
   BufferResource::ms_TypeHash = Framework::hashCalculate(BufferResource::ms_TypeName);
   SamplerResource::ms_TypeHash = Framework::hashCalculate(SamplerResource::ms_TypeName);
+  Material::ms_TypeHash = Framework::hashCalculate(Material::ms_TypeName);
+  GpuTechnique::ms_TypeHash = Framework::hashCalculate(GpuTechnique::ms_TypeName);
+
+  const uint32_t gpuHeapCounts = m_GpuDevice->getMemoryHeapCount();
+  m_GpuHeapBudgets.init(m_GpuDevice->m_Allocator, gpuHeapCounts, gpuHeapCounts);
 }
 //---------------------------------------------------------------------------//
 void Renderer::shutdown()
