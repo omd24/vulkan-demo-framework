@@ -5,7 +5,7 @@ layout( location = 2 ) in uvec4 Color;
 layout( location = 0 ) out vec2 Frag_UV;
 layout( location = 1 ) out vec4 Frag_Color;
 layout (location = 2) flat out uint texture_id;
-layout( std140, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };
+layout( std140, set = 1, binding = 0 ) uniform LocalConstants { mat4 ProjMtx; };
 void main()
 {
   Frag_UV = UV;
