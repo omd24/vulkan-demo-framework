@@ -212,7 +212,7 @@ static void parseGpuPipeline(
     }
   }
 
-  json vertexInputs = p_Pipeline["vertexInput"];
+  json vertexInputs = p_Pipeline["vertex_input"];
   if (vertexInputs.is_array())
   {
 

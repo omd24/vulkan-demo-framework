@@ -152,8 +152,7 @@ void ImguiService::init(void* p_Configuration)
   {
     descriptorSetCreation.setLayout(pipelineCreation.descriptorSetLayouts[0])
         .buffer(g_UiConstantBuffer, 0)
-        .texture(g_FontTexture, 1)
-        .setName("Imgui Font Texture");
+        .setName("Imgui Ui cb");
   }
   else
   {

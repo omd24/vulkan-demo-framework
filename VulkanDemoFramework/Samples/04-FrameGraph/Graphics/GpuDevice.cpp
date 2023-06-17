@@ -2072,6 +2072,12 @@ GpuDevice::createPipeline(const PipelineCreation& p_Creation, const char* p_Cach
 
     if (p_Creation.blendState.activeStates)
     {
+      assert(
+          p_Creation.blendState.activeStates == p_Creation.renderPass.numColorFormats,
+          "Blend states (count: %u) mismatch with output targets (count %u)!If blend states are "
+          "active, they must be defined for all outputs",
+          p_Creation.blendState.activeStates,
+          p_Creation.renderPass.numColorFormats);
       for (size_t i = 0; i < p_Creation.blendState.activeStates; i++)
       {
         const BlendState& blendState = p_Creation.blendState.blendStates[i];
@@ -2101,10 +2107,14 @@ GpuDevice::createPipeline(const PipelineCreation& p_Creation, const char* p_Cach
     else
     {
       // Default non blended state
-      colorBlendAttachment[0] = {};
-      colorBlendAttachment[0].blendEnable = VK_FALSE;
-      colorBlendAttachment[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+      for (uint32_t i = 0; i < p_Creation.renderPass.numColorFormats; ++i)
+      {
+        colorBlendAttachment[i] = {};
+        colorBlendAttachment[i].blendEnable = VK_FALSE;
+        colorBlendAttachment[i].colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT;
+      }
     }
 
     VkPipelineColorBlendStateCreateInfo colorBlending{
@@ -2113,7 +2123,7 @@ GpuDevice::createPipeline(const PipelineCreation& p_Creation, const char* p_Cach
     colorBlending.logicOp = VK_LOGIC_OP_COPY; // Optional
     colorBlending.attachmentCount = p_Creation.blendState.activeStates
                                         ? p_Creation.blendState.activeStates
-                                        : 1; // Always have 1 blend defined.
+                                        : p_Creation.renderPass.numColorFormats;
     colorBlending.pAttachments = colorBlendAttachment;
     colorBlending.blendConstants[0] = 0.0f; // Optional
     colorBlending.blendConstants[1] = 0.0f; // Optional
@@ -2218,13 +2228,13 @@ GpuDevice::createPipeline(const PipelineCreation& p_Creation, const char* p_Cach
 
     pipelineCi.pDynamicState = &dynamicStateCi;
 
-    vkCreateGraphicsPipelines(
+    CHECKRES(vkCreateGraphicsPipelines(
         m_VulkanDevice,
         pipelineCache,
         1,
         &pipelineCi,
         m_VulkanAllocCallbacks,
-        &pipeline->vkPipeline);
+        &pipeline->vkPipeline));
 
     pipeline->vkBindPoint = VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_GRAPHICS;
   }
@@ -2235,13 +2245,13 @@ GpuDevice::createPipeline(const PipelineCreation& p_Creation, const char* p_Cach
     pipelineCi.stage = shaderStateData->shaderStageInfo[0];
     pipelineCi.layout = pipelineLayout;
 
-    vkCreateComputePipelines(
+    CHECKRES(vkCreateComputePipelines(
         m_VulkanDevice,
         pipelineCache,
         1,
         &pipelineCi,
         m_VulkanAllocCallbacks,
-        &pipeline->vkPipeline);
+        &pipeline->vkPipeline));
 
     pipeline->vkBindPoint = VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_COMPUTE;
   }

@@ -175,7 +175,7 @@ int main(int argc, char** argv)
 
     temporaryNameBuffer.clear();
     cstring mainPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s/%s%s", cwd.path, SHADER_FOLDER, "main.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd.path, SHADER_FOLDER, "main.json");
     renderResourcesLoader.loadGpuTechnique(mainPipelinePath);
 
     temporaryNameBuffer.clear();
