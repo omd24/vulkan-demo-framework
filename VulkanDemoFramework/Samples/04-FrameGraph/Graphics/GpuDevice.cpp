@@ -1359,7 +1359,7 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   // This should be after initializing the command lists:
   createSwapchain();
 
-  // create sampler, depth images and other fundamentals
+  // Init primitive resources
   SamplerCreation samplerCreation{};
   samplerCreation
       .setAddressModeUVW(
@@ -1370,11 +1370,12 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       .setName("Sampler Default");
   m_DefaultSampler = createSampler(samplerCreation);
 
+  uint32_t fullscreenSize = 3 * 3 * sizeof(float);
   BufferCreation fullscreenVbCreation = {
       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
       ResourceUsageType::kImmutable,
-      0,
-      0,
+      fullscreenSize,
+      1,
       0,
       nullptr,
       "Fullscreen_vb"};
@@ -3227,6 +3228,20 @@ void GpuDevice::createSwapchain()
   m_VulkanSwapchain = VK_NULL_HANDLE;
   VkResult result = vkCreateSwapchainKHR(m_VulkanDevice, &swapchainCi, 0, &m_VulkanSwapchain);
   CHECKRES(result);
+
+  if (m_SwapchainRenderPass.index == kInvalidIndex)
+  {
+    RenderPassCreation swapchainPassCreation = {};
+    swapchainPassCreation.setName("Swapchain");
+    swapchainPassCreation.addAttachment(
+        m_VulkanSurfaceFormat.format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, RenderPassOperation::kClear);
+    swapchainPassCreation.setDepthStencilTexture(
+        VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    swapchainPassCreation.setDepthStencilOperations(
+        RenderPassOperation::kClear, RenderPassOperation::kClear);
+
+    m_SwapchainRenderPass = createRenderPass(swapchainPassCreation);
+  }
 
   // Cache swapchain images
   vkGetSwapchainImagesKHR(m_VulkanDevice, m_VulkanSwapchain, &m_VulkanSwapchainImageCount, NULL);

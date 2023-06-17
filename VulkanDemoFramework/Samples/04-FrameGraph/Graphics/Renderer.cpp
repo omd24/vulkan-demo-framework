@@ -294,10 +294,13 @@ void Renderer::init(const RendererCreation& p_Creation)
 void Renderer::shutdown()
 {
   m_ResourceCache.shutdown(this);
+  m_GpuHeapBudgets.shutdown();
 
   m_Textures.shutdown();
   m_Buffers.shutdown();
   m_Samplers.shutdown();
+  m_Materials.shutdown();
+  m_Techniques.shutdown();
 
   OutputDebugStringA("Renderer shutdown\n");
 
@@ -584,11 +587,14 @@ void Renderer::destroyTechnique(GpuTechnique* p_Technique)
     return;
   }
 
-  m_ResourceCache.m_Techniques.remove(Framework::hashCalculate(p_Technique->m_Name));
+  for (uint32_t i = 0; i < p_Technique->passes.m_Size; ++i)
+  {
+    m_GpuDevice->destroyPipeline(p_Technique->passes[i].pipeline);
+  }
 
-  m_GpuDevice->destroyPipeline(p_Technique->passes[0].pipeline);
   p_Technique->passes.shutdown();
 
+  m_ResourceCache.m_Techniques.remove(Framework::hashCalculate(p_Technique->m_Name));
   m_Techniques.release(p_Technique);
 }
 //---------------------------------------------------------------------------//
