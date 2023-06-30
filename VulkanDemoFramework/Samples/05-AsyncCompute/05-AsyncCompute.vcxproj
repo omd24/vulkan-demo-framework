@@ -110,7 +110,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;_CONSOLE;SPV_FOLDER="\\Shaders\\";WORKING_FOLDER="\\";DATA_FOLDER="\\Data\\";SHADER_FOLDER="\\Shaders\\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)Externals\assimp\include;$(SolutionDir)Framework\;$(VULKAN_SDK)\Include\;$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>

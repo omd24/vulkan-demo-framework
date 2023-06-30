@@ -161,6 +161,9 @@ int main(int argc, char** argv)
   StringBuffer temporaryNameBuffer;
   temporaryNameBuffer.init(1024, &scratchAllocator);
 
+  //#define WORKING_FOLDER ""
+  //#define DATA_FOLDER ""
+
   // Load frame graph and parse gpu techniques
   {
     cstring frameGraphPath =
