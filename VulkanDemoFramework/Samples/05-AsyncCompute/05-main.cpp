@@ -88,17 +88,16 @@ struct AsynchronousLoadTask : enki::IPinnedTask
 //---------------------------------------------------------------------------//
 int main(int argc, char** argv)
 {
-  const char* modelPath = "c:/gltf-models/Sponza/Sponza.gltf";
+  using namespace Framework;
 
-  using namespace Graphics;
   // Init services
   MemoryServiceConfiguration memoryConfiguration;
   memoryConfiguration.MaximumDynamicSize = FRAMEWORK_GIGA(2ull);
 
   MemoryService::instance()->init(&memoryConfiguration);
-  Framework::Allocator* allocator = &MemoryService::instance()->m_SystemAllocator;
+  Allocator* allocator = &MemoryService::instance()->m_SystemAllocator;
 
-  Framework::StackAllocator scratchAllocator;
+  StackAllocator scratchAllocator;
   scratchAllocator.init(FRAMEWORK_MEGA(8));
 
   enki::TaskSchedulerConfig config;
@@ -113,7 +112,7 @@ int main(int argc, char** argv)
   // window
   WindowConfiguration wconf{
       1280, 800, "Framework Chapter 5", &MemoryService::instance()->m_SystemAllocator};
-  Framework::Window window;
+  Graphics::Window window;
   window.init(&wconf);
 
   InputService input;
@@ -123,117 +122,142 @@ int main(int argc, char** argv)
   window.registerOSMessagesCallback(inputOSMessagesCallback, &input);
 
   // graphics
-  DeviceCreation deviceCreation;
-  deviceCreation.setWindow(window.m_Width, window.m_Height, window.m_PlatformHandle)
+  Graphics::DeviceCreation dc;
+  dc.setWindow(window.m_Width, window.m_Height, window.m_PlatformHandle)
       .setAllocator(&MemoryService::instance()->m_SystemAllocator)
       .setNumThreads(taskScheduler.GetNumTaskThreads())
       .setTemporaryAllocator(&scratchAllocator);
-  GpuDevice gpu;
-  gpu.init(deviceCreation);
+  Graphics::GpuDevice gpu;
+  gpu.init(dc);
 
   ResourceManager rm;
   rm.init(allocator, nullptr);
 
-  RendererUtil::Renderer renderer;
+  Graphics::RendererUtil::Renderer renderer;
   renderer.init({&gpu, allocator});
   renderer.setLoaders(&rm);
 
-  ImguiUtil::ImguiService* imgui = ImguiUtil::ImguiService::instance();
-  ImguiUtil::ImguiServiceConfiguration imguiConfig{&gpu, window.m_PlatformHandle};
+  Graphics::ImguiUtil::ImguiService* imgui = Graphics::ImguiUtil::ImguiService::instance();
+  Graphics::ImguiUtil::ImguiServiceConfiguration imguiConfig{&gpu, window.m_PlatformHandle};
   imgui->init(&imguiConfig);
 
   GameCamera gameCamera;
   gameCamera.camera.initPerspective(0.1f, 1000.f, 60.f, wconf.m_Width * 1.f / wconf.m_Height);
   gameCamera.init(true, 20.f, 6.f, 0.1f);
 
-  Framework::Time::serviceInit();
+  Time::serviceInit();
 
-  FrameGraphBuilder frameGraphBuilder;
+  Graphics::FrameGraphBuilder frameGraphBuilder;
   frameGraphBuilder.init(&gpu);
 
-  FrameGraph frameGraph;
+  Graphics::FrameGraph frameGraph;
   frameGraph.init(&frameGraphBuilder);
 
-  RenderResourcesLoader renderResourcesLoader;
+  Graphics::RenderResourcesLoader renderResourcesLoader;
+  Graphics::RendererUtil::TextureResource* ditherTexture = nullptr;
+
+  size_t scratchMarker = scratchAllocator.getMarker();
+
+  StringBuffer temporaryNameBuffer;
+  temporaryNameBuffer.init(1024, &scratchAllocator);
 
   // Load frame graph and parse gpu techniques
   {
-    Directory cwd{};
-    Framework::directoryCurrent(&cwd);
-
-    size_t scratchMarker = scratchAllocator.getMarker();
-
-    StringBuffer temporaryNameBuffer;
-    temporaryNameBuffer.init(1024, &scratchAllocator);
-    cstring frameGraphPath = temporaryNameBuffer.appendUseFormatted("%s/%s", cwd, "graph.json");
+    cstring frameGraphPath =
+        temporaryNameBuffer.appendUseFormatted("%s/%s", WORKING_FOLDER, "graph.json");
 
     frameGraph.parse(frameGraphPath, &scratchAllocator);
     frameGraph.compile();
 
     renderResourcesLoader.init(&renderer, &scratchAllocator, &frameGraph);
 
-    // Parse techniques
-    RendererUtil::GpuTechniqueCreation gtc;
+    // TODO: add this to render graph itself.
+    // Add utility textures (dithering, ...)
     temporaryNameBuffer.clear();
-    cstring fullScreenPipelinePath = temporaryNameBuffer.appendUseFormatted(
-        "%s/%s%s", cwd.path, SHADER_FOLDER, "fullscreen.json");
+    cstring ditherTexturePath =
+        temporaryNameBuffer.appendUseFormatted("%s/BayerDither4x4.png", DATA_FOLDER);
+    ditherTexture = renderResourcesLoader.loadTexture(ditherTexturePath, false);
+
+    // Parse techniques
+    Graphics::RendererUtil::GpuTechniqueCreation gtc;
+    temporaryNameBuffer.clear();
+    cstring fullScreenPipelinePath =
+        temporaryNameBuffer.appendUseFormatted("%s/%s", SHADER_FOLDER, "fullscreen.json");
     renderResourcesLoader.loadGpuTechnique(fullScreenPipelinePath);
 
     temporaryNameBuffer.clear();
     cstring mainPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd.path, SHADER_FOLDER, "main.json");
+        temporaryNameBuffer.appendUseFormatted("%s/%s", SHADER_FOLDER, "main.json");
     renderResourcesLoader.loadGpuTechnique(mainPipelinePath);
 
     temporaryNameBuffer.clear();
-    cstring pbrPipelinePath = temporaryNameBuffer.appendUseFormatted(
-        "%s/%s%s", cwd.path, SHADER_FOLDER, "pbr_lighting.json");
+    cstring pbrPipelinePath =
+        temporaryNameBuffer.appendUseFormatted("%s/%s", SHADER_FOLDER, "pbr_lighting.json");
     renderResourcesLoader.loadGpuTechnique(pbrPipelinePath);
 
     temporaryNameBuffer.clear();
     cstring dofPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s/%s%s", cwd.path, SHADER_FOLDER, "dof.json");
+        temporaryNameBuffer.appendUseFormatted("%s/%s", SHADER_FOLDER, "dof.json");
     renderResourcesLoader.loadGpuTechnique(dofPipelinePath);
 
-    scratchAllocator.freeMarker(scratchMarker);
+    temporaryNameBuffer.clear();
+    cstring clothPipelinePath =
+        temporaryNameBuffer.appendUseFormatted("%s/%s", SHADER_FOLDER, "cloth.json");
+    renderResourcesLoader.loadGpuTechnique(clothPipelinePath);
+
+    temporaryNameBuffer.clear();
+    cstring debugPipelinePath =
+        temporaryNameBuffer.appendUseFormatted("%s/%s", SHADER_FOLDER, "debug.json");
+    renderResourcesLoader.loadGpuTechnique(debugPipelinePath);
   }
 
-  SceneGraph sceneGraph;
+  Graphics::SceneGraph sceneGraph;
   sceneGraph.init(allocator, 4);
 
   // [TAG: Multithreading]
-  AsynchronousLoader asyncLoader;
+  Graphics::AsynchronousLoader asyncLoader;
   asyncLoader.init(&renderer, &taskScheduler, allocator);
 
   Directory cwd{};
   directoryCurrent(&cwd);
 
+  temporaryNameBuffer.clear();
+  cstring scenePath = nullptr;
+  if (argc > 1)
+  {
+    scenePath = argv[1];
+  }
+  else
+  {
+    scenePath = temporaryNameBuffer.appendUseFormatted("%s/%s", DATA_FOLDER, "plane.obj");
+  }
+
   char fileBasePath[512]{};
-  memcpy(fileBasePath, modelPath, strlen(modelPath));
+  memcpy(fileBasePath, scenePath, strlen(scenePath));
   fileDirectoryFromPath(fileBasePath);
 
   directoryChange(fileBasePath);
 
-  char filename[512]{};
-  memcpy(filename, modelPath, strlen(modelPath));
-  filenameFromPath(filename);
+  char fileName[512]{};
+  memcpy(fileName, scenePath, strlen(scenePath));
+  filenameFromPath(fileName);
 
-  RenderScene* scene = nullptr;
+  scratchAllocator.freeMarker(scratchMarker);
 
-  char* fileExtension = fileExtensionFromPath(filename);
+  Graphics::RenderScene* scene = nullptr;
 
-  if (strcmp(fileExtension, "gltf") != 0)
-  {
-    assert(false && "Other formats not implemented");
-  }
-  scene = new glTFScene;
+  char* fileExtension = fileExtensionFromPath(fileName);
 
-  scene->init(filename, fileBasePath, allocator, &scratchAllocator, &asyncLoader);
+  assert(strcmp(fileExtension, "gltf") == 0);
 
-  // Restore working directory
+  scene->init(fileName, fileBasePath, allocator, &scratchAllocator, &asyncLoader);
+
+  // NOTE: restore working directory
   directoryChange(cwd.path);
 
-  scene->registerRenderPasses(&frameGraph);
-  scene->prepareDraws(&renderer, &scratchAllocator, &sceneGraph);
+  Graphics::FrameRenderer frameRenderer;
+  frameRenderer.init(allocator, &renderer, &frameGraph, &sceneGraph, scene);
+  frameRenderer.prepare_draws(&scratchAllocator);
 
   // Start multithreading IO
   // Create IO threads at the end
@@ -249,23 +273,29 @@ int main(int argc, char** argv)
   asyncLoadTask.m_AsyncLoader = &asyncLoader;
   taskScheduler.AddPinnedTask(&asyncLoadTask);
 
-  int64_t beginFrameTick = Time::getCurrentTime();
-  int64_t absoluteBeginFrameTick = beginFrameTick;
+  int16_t beginFrameTick = Time::getCurrentTime();
+  int16_t absoluteBeginFrameTick = beginFrameTick;
 
   vec3s lightPosition = vec3s{0.0f, 4.0f, 0.0f};
 
   float lightRadius = 20.0f;
   float lightIntensity = 80.0f;
 
-  while (!window.m_RequestedExit)
+  float springStiffness = 10000.0f;
+  float springDamping = 5000.0f;
+  float airDensity = 10.0f;
+  bool resetSimulation = false;
+  vec3s windDirection{-5.0f, 0.0f, 0.0f};
+
+  while (!window.requested_exit)
   {
     // New frame
-    if (!window.m_Minimized)
+    if (!window.minimized)
     {
       gpu.newFrame();
 
       static bool checksz = true;
-      if (asyncLoader.fileLoadRequests.m_Size == 0 && checksz)
+      if (asyncLoader.fileLoadRequests.size == 0 && checksz)
       {
         checksz = false;
         printf(
@@ -279,22 +309,24 @@ int main(int argc, char** argv)
 
     if (window.m_Resized)
     {
-      gpu.resize(window.m_Width, window.m_Height);
+      renderer.resizeSwapchain(window.width, window.height);
       window.m_Resized = false;
-      frameGraph.onResize(gpu, window.m_Width, window.m_Height);
+      frameGraph.onResize(gpu, window.width, window.height);
 
-      gameCamera.camera.setAspectRatio(window.m_Width * 1.f / window.m_Height);
+      gameCamera.camera.setAspectRatio(window.width * 1.f / window.height);
     }
     // This MUST be AFTER os messages!
     imgui->newFrame();
 
-    const int64_t currentTick = Time::getCurrentTime();
+    const int16_t currentTick = Time::getCurrentTime();
     float deltaTime = (float)Time::deltaSeconds(beginFrameTick, currentTick);
     beginFrameTick = currentTick;
 
     input.update(deltaTime);
-    gameCamera.update(&input, window.m_Width, window.m_Height, deltaTime);
+    gameCamera.update(&input, window.width, window.height, deltaTime);
     window.centerMouse(gameCamera.mouseDragging);
+
+    static float animationSpeedMultiplier = 0.05f;
 
     {
       if (ImGui::Begin("Framework ImGui"))
@@ -306,8 +338,16 @@ int main(int argc, char** argv)
         ImGui::InputFloat3("Camera position", gameCamera.camera.position.raw);
         ImGui::InputFloat3("Camera target movement", gameCamera.targetMovement.raw);
         ImGui::Separator();
+        ImGui::InputFloat3("Wind direction", windDirection.raw);
+        ImGui::InputFloat("Air density", &airDensity);
+        ImGui::InputFloat("Spring stiffness", &springStiffness);
+        ImGui::InputFloat("Spring damping", &springDamping);
+        ImGui::Checkbox("Reset simulation", &resetSimulation);
+        ImGui::Separator();
         ImGui::Checkbox("Dynamically recreate descriptor sets", &g_RecreatePerThreadDescriptors);
         ImGui::Checkbox("Use secondary command buffers", &g_UseSecondaryCommandBuffers);
+
+        ImGui::SliderFloat("Animation Speed Multiplier", &animationSpeedMultiplier, 0.0f, 10.0f);
 
         static bool fullscreen = false;
         if (ImGui::Checkbox("Fullscreen", &fullscreen))
@@ -329,46 +369,101 @@ int main(int argc, char** argv)
       }
       ImGui::End();
 
+      if (ImGui::Begin("Scene"))
+      {
+
+        static uint32_t selectedNode = UINT32_MAX;
+
+        ImGui::Text("Selected node %u", selectedNode);
+        if (selectedNode < sceneGraph.nodesHierarchy.size)
+        {
+
+          mat4s& localTransform = sceneGraph.localMatrices[selectedNode];
+          float position[3]{localTransform.m30, localTransform.m31, localTransform.m32};
+
+          if (ImGui::SliderFloat3("Node Position", position, -100.0f, 100.0f))
+          {
+            localTransform.m30 = position[0];
+            localTransform.m31 = position[1];
+            localTransform.m32 = position[2];
+
+            sceneGraph.setLocalMatrix(selectedNode, localTransform);
+          }
+          ImGui::Separator();
+        }
+
+        for (uint32_t n = 0; n < sceneGraph.nodesHierarchy.size; ++n)
+        {
+          const Graphics::SceneGraphNodeDebugData& node_debug_data = sceneGraph.nodes_debug_data[n];
+          if (ImGui::Selectable(
+                  node_debug_data.name ? node_debug_data.name : "-", n == selectedNode))
+          {
+            selectedNode = n;
+          }
+        }
+      }
+      ImGui::End();
+
       if (ImGui::Begin("GPU"))
       {
         renderer.imguiDraw();
-
-        ImGui::Separator();
       }
       ImGui::End();
     }
     {
+      scene->update_animations(deltaTime * animationSpeedMultiplier);
+    }
+    {
       sceneGraph.updateMatrices();
+    }
+    {
+      scene->update_joints();
     }
 
     {
       // Update scene constant buffer
-      MapBufferParameters cbMap = {scene->sceneCb, 0, 0};
-      GpuSceneData* uniformData = (GpuSceneData*)gpu.mapBuffer(cbMap);
-      if (uniformData)
+      Graphics::MapBufferParameters sceneCbMap = {scene->sceneCb, 0, 0};
+      GpuSceneData* gpuSceneData = (GpuSceneData*)gpu.mapBuffer(sceneCbMap);
+      if (gpuSceneData)
       {
-        uniformData->viewProj = gameCamera.camera.viewProjection;
-        uniformData->eye = vec4s{
+        gpuSceneData->viewProj = gameCamera.camera.viewProjection;
+        gpuSceneData->inverse_view_projection = glms_mat4_inv(gameCamera.camera.viewProjection);
+        gpuSceneData->eye = vec4s{
             gameCamera.camera.position.x,
             gameCamera.camera.position.y,
             gameCamera.camera.position.z,
             1.0f};
-        uniformData->lightPosition = vec4s{lightPosition.x, lightPosition.y, lightPosition.z, 1.0f};
-        uniformData->lightRange = lightRadius;
-        uniformData->lightIntensity = lightIntensity;
+        gpuSceneData->lightPosition =
+            vec4s{lightPosition.x, lightPosition.y, lightPosition.z, 1.0f};
+        gpuSceneData->lightRange = lightRadius;
+        gpuSceneData->lightIntensity = lightIntensity;
+        gpuSceneData->ditherTextureIndex = ditherTexture ? ditherTexture->m_Handle.index : 0;
 
-        gpu.unmapBuffer(cbMap);
+        gpu.unmapBuffer(sceneCbMap);
       }
 
-      scene->uploadMaterials(/* model_scale */);
+      frameRenderer.upload_gpu_data();
     }
 
     if (!window.m_Minimized)
     {
+      Graphics::DrawTask drawTask;
+      drawTask.init(renderer.gpu, &frameGraph, &renderer, imgui, scene, &frameRenderer);
+      taskScheduler.AddTaskSetToPipe(&drawTask);
 
-      scene->submitDrawTask(imgui, &taskScheduler);
+      Graphics::CommandBuffer* async_compute_command_buffer = nullptr;
+      {
+        async_compute_command_buffer = scene->update_physics(
+            deltaTime, airDensity, springStiffness, springDamping, windDirection, resetSimulation);
+        resetSimulation = false;
+      }
 
-      gpu.present();
+      taskScheduler.WaitforTaskSet(&drawTask);
+
+      // Avoid using the same command buffer
+      renderer.addTextureUpdateCommands(
+          (drawTask.threadId + 1) % taskScheduler.GetNumTaskThreads());
+      gpu.present(async_compute_command_buffer);
     }
     else
     {
@@ -393,6 +488,7 @@ int main(int argc, char** argv)
   frameGraphBuilder.shutdown();
 
   scene->shutdown(&renderer);
+  frameRenderer.shutdown();
 
   rm.shutdown();
   renderer.shutdown();
@@ -400,7 +496,7 @@ int main(int argc, char** argv)
   delete scene;
 
   input.shutdown();
-  window.unregisterOSMessagesCallback(inputOSMessagesCallback);
+  window.unregisterOSMessagesCallback(inputOSMessagesCallback());
   window.shutdown();
 
   scratchAllocator.shutdown();

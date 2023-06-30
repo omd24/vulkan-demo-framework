@@ -1,5 +1,7 @@
 #pragma once
 
+... Move this to a seperate file "RenderScene.hpp"
+
 #include "Foundation/Array.hpp"
 #include "Foundation/Prerequisites.hpp"
 
@@ -12,9 +14,9 @@
 
 #include <atomic>
 
-namespace enki
+    namespace enki
 {
-class TaskScheduler;
+  class TaskScheduler;
 }
 
 namespace Graphics
