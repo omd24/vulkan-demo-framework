@@ -1,3 +1,15 @@
+#if !defined(SPV_FOLDER)
+#  define SPV_FOLDER "\\Shaders\\"
+#endif
+
+#if !defined(WORKING_FOLDER)
+#  define WORKING_FOLDER "\\"
+#endif
+
+#if !defined(DATA_FOLDER)
+#  define DATA_FOLDER "\\Data\\"
+#endif
+
 #include <Foundation/File.hpp>
 #include <Foundation/Numerics.hpp>
 #include <Foundation/Time.hpp>
@@ -112,7 +124,7 @@ int main(int argc, char** argv)
   // window
   WindowConfiguration wconf{
       1280, 800, "Framework Chapter 5", &MemoryService::instance()->m_SystemAllocator};
-  Graphics::Window window;
+  Framework::Window window;
   window.init(&wconf);
 
   InputService input;

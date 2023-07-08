@@ -15,8 +15,9 @@ struct RenderResourcesLoader
       FrameGraph* p_FrameGraph);
   void shutdown();
 
-  void loadGpuTechnique(const char* p_JsonPath);
-  void loadTexture(const char* p_Path);
+  Graphics::RendererUtil::GpuTechnique* loadGpuTechnique(const char* p_JsonPath);
+  Graphics::RendererUtil::TextureResource*
+  loadTexture(const char* p_Path, bool p_GenerateMipMaps = true);
 
   RendererUtil::Renderer* renderer;
   FrameGraph* frameGraph;

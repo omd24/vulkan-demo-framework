@@ -155,11 +155,22 @@ static void parseGpuPipeline(
     Framework::StringBuffer& p_ShaderBuffer,
     Framework::Allocator* p_TempAllocator,
     RendererUtil::Renderer* p_Renderer,
-    Graphics::FrameGraph* p_FrameGraph)
+    Graphics::FrameGraph* p_FrameGraph,
+    Framework::StringBuffer& p_PassNameBuffer)
 {
   using json = nlohmann::json;
   using namespace Framework;
 
+  json jsonName = p_Pipeline["name"];
+  if (jsonName.is_string())
+  {
+    std::string name;
+    jsonName.get_to(name);
+
+    p_PipelineCreation.name = p_PassNameBuffer.appendUseFormatted("%s", name.c_str());
+  }
+
+  bool computeShaderPass = false;
   json shaders = p_Pipeline["shaders"];
   if (!shaders.is_null())
   {
@@ -208,6 +219,7 @@ static void parseGpuPipeline(
       else if (name == "compute")
       {
         p_PipelineCreation.shaders.addStage(code, strlen(code), VK_SHADER_STAGE_COMPUTE_BIT);
+        computeShaderPass = true;
       }
     }
   }
@@ -364,13 +376,17 @@ static void parseGpuPipeline(
       {
         p_PipelineCreation.renderPass = p_Renderer->m_GpuDevice->m_SwapchainOutput;
       }
+      else if (computeShaderPass)
+      {
+        p_PipelineCreation.renderPass = p_Renderer->m_GpuDevice->m_SwapchainOutput;
+      }
       else
       {
         const RenderPass* renderPass =
             (const RenderPass*)p_Renderer->m_GpuDevice->m_RenderPasses.accessResource(
                 node->renderPass.index);
-
-        p_PipelineCreation.renderPass = renderPass->output;
+        if (renderPass)
+          p_PipelineCreation.renderPass = renderPass->output;
       }
     }
     else
@@ -393,18 +409,22 @@ void Graphics::RenderResourcesLoader::init(
 //---------------------------------------------------------------------------//
 void Graphics::RenderResourcesLoader::shutdown() {}
 //---------------------------------------------------------------------------//
-void Graphics::RenderResourcesLoader::loadGpuTechnique(const char* p_JsonPath)
+Graphics::RendererUtil::GpuTechnique*
+Graphics::RenderResourcesLoader::loadGpuTechnique(const char* p_JsonPath)
 {
   using namespace Framework;
   size_t allocatedMarker = tempAllocator->getMarker();
 
   FileReadResult readResult = fileReadText(p_JsonPath, tempAllocator);
 
-  StringBuffer pathBuffer;
-  pathBuffer.init(1024, tempAllocator);
+  StringBuffer path_buffer;
+  path_buffer.init(1024, tempAllocator);
 
   StringBuffer shaderCodeBuffer;
-  shaderCodeBuffer.init(FRAMEWORK_KILO(64), tempAllocator);
+  shaderCodeBuffer.init(FRAMEWORK_KILO(256), tempAllocator);
+
+  StringBuffer passNameBuffer;
+  passNameBuffer.init(FRAMEWORK_KILO(2), tempAllocator);
 
   using json = nlohmann::json;
 
@@ -419,7 +439,7 @@ void Graphics::RenderResourcesLoader::loadGpuTechnique(const char* p_JsonPath)
     printf("Parsing GPU Technique %s\n", nameString.c_str());
   }
 
-  RendererUtil::GpuTechniqueCreation techniqueCreation;
+  Graphics::RendererUtil::GpuTechniqueCreation techniqueCreation;
   techniqueCreation.name = nameString.c_str();
 
   json pipelines = jsonData["pipelines"];
@@ -435,45 +455,62 @@ void Graphics::RenderResourcesLoader::loadGpuTechnique(const char* p_JsonPath)
       json inheritFrom = pipeline["inherit_from"];
       if (inheritFrom.is_string())
       {
-        std::string inheritedName;
-        inheritFrom.get_to(inheritedName);
+        std::string inherited_name;
+        inheritFrom.get_to(inherited_name);
 
         for (uint32_t ii = 0; ii < size; ++ii)
         {
-          json p = pipelines[ii];
+          json pipeline_i = pipelines[ii];
           std::string name;
-          p["name"].get_to(name);
+          pipeline_i["name"].get_to(name);
 
-          if (name == inheritedName)
+          if (name == inherited_name)
           {
             parseGpuPipeline(
-                p, pc, pathBuffer, shaderCodeBuffer, tempAllocator, renderer, frameGraph);
+                pipeline_i,
+                pc,
+                path_buffer,
+                shaderCodeBuffer,
+                tempAllocator,
+                renderer,
+                frameGraph,
+                passNameBuffer);
             break;
           }
         }
       }
 
       parseGpuPipeline(
-          pipeline, pc, pathBuffer, shaderCodeBuffer, tempAllocator, renderer, frameGraph);
+          pipeline,
+          pc,
+          path_buffer,
+          shaderCodeBuffer,
+          tempAllocator,
+          renderer,
+          frameGraph,
+          passNameBuffer);
 
       techniqueCreation.creations[techniqueCreation.numCreations++] = pc;
     }
   }
 
   // Create technique and cache it.
-  RendererUtil::GpuTechnique* technique = renderer->createTechnique(techniqueCreation);
+  Graphics::RendererUtil::GpuTechnique* technique = renderer->createTechnique(techniqueCreation);
 
   tempAllocator->freeMarker(allocatedMarker);
+
+  return technique;
 }
 //---------------------------------------------------------------------------//
-void Graphics::RenderResourcesLoader::loadTexture(const char* p_Path)
+Graphics::RendererUtil::TextureResource*
+Graphics::RenderResourcesLoader::loadTexture(const char* p_Path, bool p_GenerateMipMaps)
 {
   int comp, width, height;
   uint8_t* imageData = stbi_load(p_Path, &width, &height, &comp, 4);
   if (!imageData)
   {
     printf("Error loading texture %s", p_Path);
-    return;
+    return nullptr;
   }
 
   uint32_t mipLevels = 1;
@@ -504,13 +541,15 @@ void Graphics::RenderResourcesLoader::loadTexture(const char* p_Path)
       .setSize((uint16_t)width, (uint16_t)height, 1)
       .setName(copiedPath);
 
-  renderer->createTexture(creation);
+  Graphics::RendererUtil::TextureResource* ret = renderer->createTexture(creation);
 
   // IMPORTANT:
   // Free memory loaded from file, it should not matter!
   free(imageData);
 
   tempAllocator->freeMarker(allocatedMarker);
+
+  return ret;
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics
