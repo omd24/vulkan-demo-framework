@@ -29,9 +29,6 @@
     <ClCompile Include="Graphics\RenderResourcesLoader.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
-    <ClCompile Include="Graphics\RenderSceneBase.cpp">
-      <Filter>Graphics</Filter>
-    </ClCompile>
     <ClCompile Include="Graphics\SceneGraph.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
@@ -39,6 +36,9 @@
       <Filter>Graphics</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Externals\enkiTS\TaskScheduler.cpp" />
+    <ClCompile Include="Graphics\RenderScene.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Graphics">
@@ -76,13 +76,13 @@
     <ClInclude Include="Graphics\RenderResourcesLoader.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
-    <ClInclude Include="Graphics\RenderSceneBase.hpp">
-      <Filter>Graphics</Filter>
-    </ClInclude>
     <ClInclude Include="Graphics\SceneGraph.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
     <ClInclude Include="Graphics\SpirvParser.hpp">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\RenderScene.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
   </ItemGroup>

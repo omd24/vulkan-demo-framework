@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -152,7 +152,7 @@
     <ClCompile Include="Graphics\ImguiHelper.cpp" />
     <ClCompile Include="Graphics\Renderer.cpp" />
     <ClCompile Include="Graphics\RenderResourcesLoader.cpp" />
-    <ClCompile Include="Graphics\RenderSceneBase.cpp" />
+    <ClCompile Include="Graphics\RenderScene.cpp" />
     <ClCompile Include="Graphics\SceneGraph.cpp" />
     <ClCompile Include="Graphics\SpirvParser.cpp" />
   </ItemGroup>
@@ -167,7 +167,7 @@
     <ClInclude Include="Graphics\ImguiHelper.hpp" />
     <ClInclude Include="Graphics\Renderer.hpp" />
     <ClInclude Include="Graphics\RenderResourcesLoader.hpp" />
-    <ClInclude Include="Graphics\RenderSceneBase.hpp" />
+    <ClInclude Include="Graphics\RenderScene.hpp" />
     <ClInclude Include="Graphics\SceneGraph.hpp" />
     <ClInclude Include="Graphics\SpirvParser.hpp" />
   </ItemGroup>

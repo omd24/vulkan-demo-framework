@@ -224,7 +224,6 @@ struct GpuDevice : public Framework::Service
   uint32_t m_NumQueuedCommandBuffers = 0;
   CommandBuffer** m_QueuedCommandBuffers = nullptr;
 
-  static const uint32_t kMaxFrames = 3;
   static constexpr const char* kName = "Gpu-Service";
 
   bool m_DebugUtilsExtensionPresent = false;

@@ -51,7 +51,7 @@ struct FrameGraphResourceInfo
       size_t size;
       VkBufferUsageFlags flags;
 
-      BufferHandle buffer;
+      BufferHandle handle[kMaxFrames];
     } buffer;
 
     struct
@@ -59,13 +59,18 @@ struct FrameGraphResourceInfo
       uint32_t width;
       uint32_t height;
       uint32_t depth;
+      float scaleWidth;
+      float scaleHeight;
 
       VkFormat format;
       VkImageUsageFlags flags;
 
       RenderPassOperation::Enum loadOp;
 
-      TextureHandle texture;
+      TextureHandle handle[kMaxFrames];
+      float clearValues[4]; // Reused between color or depth/stencil.
+
+      bool compute;
     } texture;
   };
 };
@@ -117,7 +122,10 @@ struct FrameGraphNodeCreation
 struct FrameGraphRenderPass
 {
   virtual void addUi() {}
-  virtual void preRender(CommandBuffer* gpuCommands, RenderScene* renderScene) {}
+  virtual void
+  preRender(uint32_t currentFrameIndex, CommandBuffer* gpuCommands, FrameGraph* renderScene)
+  {
+  }
   virtual void render(CommandBuffer* gpuCommands, RenderScene* renderScene) {}
   virtual void onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight) {}
 };
@@ -127,7 +135,7 @@ struct FrameGraphNode
   int refCount = 0;
 
   RenderPassHandle renderPass;
-  FramebufferHandle framebuffer;
+  FramebufferHandle framebuffer[kMaxFrames];
 
   FrameGraphRenderPass* graphRenderPass;
 
@@ -136,6 +144,11 @@ struct FrameGraphNode
 
   Framework::Array<FrameGraphNodeHandle> edges;
 
+  float resolutionScaleWidth = 0.f;
+  float resolutionScaleHeight = 0.f;
+
+  bool compute = false;
+  bool rayTracing = false;
   bool enabled = true;
 
   const char* name = nullptr;
@@ -236,6 +249,7 @@ struct FrameGraph
 
   // NOTE: nodes sorted in topological order
   Framework::Array<FrameGraphNodeHandle> nodes;
+  Framework::Array<FrameGraphNodeHandle> allNodes;
 
   FrameGraphBuilder* builder;
   Framework::Allocator* allocator;

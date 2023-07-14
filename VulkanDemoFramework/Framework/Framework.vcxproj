@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -34,6 +34,7 @@
     <ClCompile Include="Application\Window.cpp" />
     <ClCompile Include="Foundation\Bit.cpp" />
     <ClCompile Include="Foundation\Camera.cpp" />
+    <ClCompile Include="Foundation\Color.cpp" />
     <ClCompile Include="Foundation\File.cpp" />
     <ClCompile Include="Foundation\Gltf.cpp" />
     <ClCompile Include="Foundation\Memory.cpp" />
@@ -62,6 +63,7 @@
     <ClInclude Include="Foundation\Array.hpp" />
     <ClInclude Include="Foundation\Bit.hpp" />
     <ClInclude Include="Foundation\Camera.hpp" />
+    <ClInclude Include="Foundation\Color.hpp" />
     <ClInclude Include="Foundation\File.hpp" />
     <ClInclude Include="Foundation\Gltf.hpp" />
     <ClInclude Include="Foundation\HashMap.hpp" />

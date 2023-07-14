@@ -664,6 +664,7 @@ struct ResourceUpdate
 // Device Resources:
 //---------------------------------------------------------------------------//
 static const uint32_t kMaxSwapchainImages = 3;
+static const uint32_t kMaxFrames = 1;
 
 struct DeviceStateVulkan;
 
