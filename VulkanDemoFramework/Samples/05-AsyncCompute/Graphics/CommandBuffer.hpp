@@ -63,7 +63,8 @@ struct CommandBuffer
       int p_VertexOffset,
       uint32_t p_FirstInstance);
 
-  void drawIndirect(BufferHandle p_Handle, uint32_t p_Offset, uint32_t p_Stride);
+  void
+  drawIndirect(BufferHandle p_Handle, uint32_t p_DrawCount, uint32_t p_Offset, uint32_t p_Stride);
   void drawIndexedIndirect(BufferHandle p_Handle, uint32_t p_Offset, uint32_t p_Stride);
 
   void dispatch(uint32_t p_GroupX, uint32_t p_GroupY, uint32_t p_GroupZ);

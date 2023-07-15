@@ -69,8 +69,8 @@ struct GpuTechniquePass
 //---------------------------------------------------------------------------//
 struct GpuTechnique : public Framework::Resource
 {
-
   Framework::Array<GpuTechniquePass> passes;
+  FlatHashMap<uint64_t, uint16_t> nameHashToIndex;
 
   uint32_t m_PoolIndex;
 

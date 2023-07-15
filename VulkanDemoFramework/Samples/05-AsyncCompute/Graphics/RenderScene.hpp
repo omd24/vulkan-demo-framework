@@ -79,7 +79,7 @@ struct Material;
 struct PBRMaterial
 {
 
-  Material* material = nullptr;
+  RendererUtil::Material* material = nullptr;
 
   Graphics::BufferHandle materialBuffer = kInvalidBuffer;
   Graphics::DescriptorSetHandle descriptorSet = kInvalidSet;
@@ -398,12 +398,12 @@ struct DepthPrePass : public Graphics::FrameGraphRenderPass
   void prepareDraws(
       RenderScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void freeGpuResources();
 
   Array<MeshInstance> meshInstances;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct DepthPrePass
 
 //
@@ -415,12 +415,12 @@ struct GBufferPass : public Graphics::FrameGraphRenderPass
   void prepareDraws(
       RenderScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void freeGpuResources();
 
   Array<MeshInstance> meshInstances;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct GBufferPass
 
 //
@@ -432,13 +432,13 @@ struct LighPass : public Graphics::FrameGraphRenderPass
   void prepareDraws(
       RenderScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void uploadGpuData();
   void freeGpuResources();
 
   Mesh mesh;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
   bool useCompute;
 
   Graphics::FrameGraphResource* colorTexture;
@@ -459,12 +459,12 @@ struct TransparentPass : public Graphics::FrameGraphRenderPass
   void prepareDraws(
       RenderScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void freeGpuResources();
 
   Array<MeshInstance> meshInstances;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct TransparentPass
 
 //
@@ -476,25 +476,25 @@ struct DebugPass : public Graphics::FrameGraphRenderPass
   void prepareDraws(
       RenderScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void freeGpuResources();
 
-  Graphics::RendererUtil::BufferResource* sphere_meshBuffer;
-  Graphics::RendererUtil::BufferResource* sphere_mesh_indices;
+  Graphics::RendererUtil::BufferResource* sphereMeshBuffer;
+  Graphics::RendererUtil::BufferResource* sphereMeshIndices;
   Graphics::RendererUtil::BufferResource* sphereMatrices;
   Graphics::RendererUtil::BufferResource* lineBuffer;
 
   uint32_t sphereIndexCount;
 
-  Graphics::DescriptorSetHandle mesh_descriptorSet;
-  Graphics::DescriptorSetHandle line_descriptorSet;
+  Graphics::DescriptorSetHandle meshDescriptorSet;
+  Graphics::DescriptorSetHandle lineDescriptorSet;
 
-  Material* debugMaterial;
+  RendererUtil::Material* debugMaterial;
 
   Array<MeshInstance> meshInstances;
   SceneGraph* sceneGraph;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 }; // struct DebugPass
 
 //
@@ -523,13 +523,13 @@ struct DoFPass : public Graphics::FrameGraphRenderPass
   void prepareDraws(
       RenderScene& scene,
       FrameGraph* frameGraph,
-      Allocator* residentAllocator,
-      StackAllocator* scratchAllocator);
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* scratchAllocator);
   void uploadGpuData();
   void freeGpuResources();
 
   Mesh mesh;
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
 
   Graphics::RendererUtil::TextureResource* sceneMips[Graphics::kMaxFrames];
   Graphics::FrameGraphResource* depthTexture;
@@ -550,13 +550,15 @@ struct RenderScene
   virtual void init(
       cstring filename,
       cstring path,
-      Allocator* residentAllocator,
-      StackAllocator* tempAllocator,
+      Framework::Allocator* residentAllocator,
+      Framework::StackAllocator* tempAllocator,
       AsynchronousLoader* asyncLoader){};
   virtual void shutdown(Renderer* renderer){};
 
-  virtual void
-  prepareDraws(Renderer* renderer, StackAllocator* scratchAllocator, SceneGraph* sceneGraph){};
+  virtual void prepareDraws(
+      RendererUtil::Renderer* renderer,
+      Framework::StackAllocator* scratchAllocator,
+      SceneGraph* sceneGraph){};
 
   Graphics::CommandBuffer* updatePhysics(
       float deltaTime,
@@ -581,8 +583,8 @@ struct RenderScene
   Graphics::BufferHandle sceneCb;
   Graphics::BufferHandle physicsCb = kInvalidBuffer;
 
-  Allocator* residentAllocator;
-  Renderer* renderer;
+  Framework::Allocator* residentAllocator;
+  RendererUtil::Renderer* renderer;
 
   float globalScale = 1.f;
 }; // struct RenderScene
@@ -594,7 +596,7 @@ struct FrameRenderer
 
   void init(
       Allocator* residentAllocator,
-      Renderer* renderer,
+      RendererUtil::Renderer* renderer,
       FrameGraph* frameGraph,
       SceneGraph* sceneGraph,
       RenderScene* scene);
@@ -603,12 +605,12 @@ struct FrameRenderer
   void uploadGpuData();
   void render(Graphics::CommandBuffer* gpuCommands, RenderScene* renderScene);
 
-  void prepareDraws(StackAllocator* scratchAllocator);
+  void prepareDraws(Framework::StackAllocator* scratchAllocator);
 
-  Allocator* residentAllocator;
+  Framework::Allocator* residentAllocator;
   SceneGraph* sceneGraph;
 
-  Renderer* renderer;
+  RendererUtil::Renderer* renderer;
   FrameGraph* frameGraph;
 
   RenderScene* scene;

@@ -490,7 +490,8 @@ void CommandBuffer::drawIndexed(
       p_FirstInstance);
 }
 //---------------------------------------------------------------------------//
-void CommandBuffer::drawIndirect(BufferHandle p_Handle, uint32_t p_Offset, uint32_t p_Stride)
+void CommandBuffer::drawIndirect(
+    BufferHandle p_Handle, uint32_t p_DrawCount, uint32_t p_Offset, uint32_t p_Stride)
 {
   assert(false && "Not implemented");
 }
