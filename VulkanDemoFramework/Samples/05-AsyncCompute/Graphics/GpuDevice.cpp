@@ -1159,6 +1159,14 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
           (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(m_VulkanDevice, "vkCmdEndRenderingKHR");
     }
 
+    if (m_Synchronization2ExtensionPresent)
+    {
+      m_QueueSubmit2 =
+          (PFN_vkQueueSubmit2KHR)vkGetDeviceProcAddr(m_VulkanDevice, "vkQueueSubmit2KHR");
+      m_CmdPipelineBarrier2 = (PFN_vkCmdPipelineBarrier2KHR)vkGetDeviceProcAddr(
+          m_VulkanDevice, "vkCmdPipelineBarrier2KHR");
+    }
+
     vkGetDeviceQueue(m_VulkanDevice, mainQueueIndex, 0, &m_VulkanMainQueue);
     if (m_VulkanTransferQueueFamily < queueFamilyCount)
       vkGetDeviceQueue(m_VulkanDevice, transferQueueIndex, 0, &m_VulkanTransferQueue);

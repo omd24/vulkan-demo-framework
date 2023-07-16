@@ -6,11 +6,14 @@
 #include <vulkan/vulkan.h>
 #include "Externals/vk_mem_alloc.h"
 
-#define SHADER_FOLDER "\\Shaders\\"
+#if !defined(SHADER_FOLDER)
+#  define SHADER_FOLDER "\\Shaders\\"
+#endif
 
 namespace Graphics
 {
-// Forward delcare
+// Forward declare
+struct GpuDevice;
 namespace Spirv
 {
 struct ParseResult;
@@ -709,8 +712,8 @@ struct Texture
   VkImage vkImage;
   VkImageView vkImageView;
   VkFormat vkFormat;
-  VkImageLayout vkImageLayout;
   VmaAllocation vmaAllocation;
+  ResourceState state = RESOURCE_STATE_UNDEFINED;
 
   uint16_t width = 1;
   uint16_t height = 1;
@@ -989,6 +992,61 @@ inline VkAccessFlags utilToVkAccessFlags(ResourceState state)
   return ret;
 }
 
+VkAccessFlags utilToVkAccessFlags2(ResourceState state)
+{
+  VkAccessFlags ret = 0;
+  if (state & RESOURCE_STATE_COPY_SOURCE)
+  {
+    ret |= VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_COPY_DEST)
+  {
+    ret |= VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
+  {
+    ret |= VK_ACCESS_2_UNIFORM_READ_BIT_KHR | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_INDEX_BUFFER)
+  {
+    ret |= VK_ACCESS_2_INDEX_READ_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_UNORDERED_ACCESS)
+  {
+    ret |= VK_ACCESS_2_SHADER_READ_BIT_KHR | VK_ACCESS_2_SHADER_WRITE_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_INDIRECT_ARGUMENT)
+  {
+    ret |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_RENDER_TARGET)
+  {
+    ret |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT_KHR | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_DEPTH_WRITE)
+  {
+    ret |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT_KHR |
+           VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_SHADER_RESOURCE)
+  {
+    ret |= VK_ACCESS_2_SHADER_READ_BIT_KHR;
+  }
+  if (state & RESOURCE_STATE_PRESENT)
+  {
+    ret |= VK_ACCESS_2_MEMORY_READ_BIT_KHR;
+  }
+#ifdef ENABLE_RAYTRACING
+  if (state & RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE)
+  {
+    ret |= VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV |
+           VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
+  }
+#endif
+
+  return ret;
+}
+
 inline VkImageLayout utilToVkImageLayout(ResourceState usage)
 {
   if (usage & RESOURCE_STATE_COPY_SOURCE)
@@ -1011,6 +1069,38 @@ inline VkImageLayout utilToVkImageLayout(ResourceState usage)
 
   if (usage & RESOURCE_STATE_SHADER_RESOURCE)
     return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+  if (usage & RESOURCE_STATE_PRESENT)
+    return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+  if (usage == RESOURCE_STATE_COMMON)
+    return VK_IMAGE_LAYOUT_GENERAL;
+
+  return VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+VkImageLayout utilToVkImageLayout2(ResourceState usage)
+{
+  if (usage & RESOURCE_STATE_COPY_SOURCE)
+    return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+  if (usage & RESOURCE_STATE_COPY_DEST)
+    return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+  if (usage & RESOURCE_STATE_RENDER_TARGET)
+    return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+
+  if (usage & RESOURCE_STATE_DEPTH_WRITE)
+    return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+
+  if (usage & RESOURCE_STATE_DEPTH_READ)
+    return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR;
+
+  if (usage & RESOURCE_STATE_UNORDERED_ACCESS)
+    return VK_IMAGE_LAYOUT_GENERAL;
+
+  if (usage & RESOURCE_STATE_SHADER_RESOURCE)
+    return VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR;
 
   if (usage & RESOURCE_STATE_PRESENT)
     return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -1091,9 +1181,93 @@ utilDeterminePipelineStageFlags(VkAccessFlags accessFlags, QueueType::Enum queue
 
   return flags;
 }
+
+VkPipelineStageFlags2KHR
+utilDeterminePipelineStageFlags2(VkAccessFlags2KHR p_AccessFlags, QueueType::Enum p_QueueType)
+{
+  VkPipelineStageFlags2KHR flags = 0;
+
+  switch (p_QueueType)
+  {
+  case QueueType::kGraphics: {
+    if ((p_AccessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0)
+      flags |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT_KHR;
+
+    if ((p_AccessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
+                          VK_ACCESS_SHADER_WRITE_BIT)) != 0)
+    {
+      flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT_KHR;
+      flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+      /*if ( pRenderer->pActiveGpuSettings->mGeometryShaderSupported ) {
+          flags |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
+      }
+      if ( pRenderer->pActiveGpuSettings->mTessellationSupported ) {
+          flags |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
+          flags |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
+      }*/
+      flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+#ifdef ENABLE_RAYTRACING
+      if (pRenderer->mVulkan.mRaytracingExtension)
+      {
+        flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV;
+      }
+#endif
+    }
+
+    if ((p_AccessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0)
+      flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+
+    if ((p_AccessFlags &
+         (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0)
+      flags |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+
+    if ((p_AccessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+      flags |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR |
+               VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;
+
+    break;
+  }
+  case QueueType::kCompute: {
+    if ((p_AccessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0 ||
+        (p_AccessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0 ||
+        (p_AccessFlags &
+         (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0 ||
+        (p_AccessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+      return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+
+    if ((p_AccessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
+                          VK_ACCESS_SHADER_WRITE_BIT)) != 0)
+      flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+
+    break;
+  }
+  case QueueType::kCopyTransfer:
+    return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+  default:
+    break;
+  }
+
+  // Compatible with both compute and graphics queues
+  if ((p_AccessFlags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT) != 0)
+    flags |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT_KHR;
+
+  if ((p_AccessFlags & (VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT)) != 0)
+    flags |= VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+
+  if ((p_AccessFlags & (VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT)) != 0)
+    flags |= VK_PIPELINE_STAGE_2_HOST_BIT_KHR;
+
+  if (flags == 0)
+    flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+
+  return flags;
+}
 //---------------------------------------------------------------------------//
 inline void utilAddImageBarrier(
-    VkCommandBuffer p_CmdBuf,
+    GpuDevice* p_GpuDevice,
+    VkCommandBuffer p_Cmdbuf,
     VkImage p_Image,
     ResourceState p_OldState,
     ResourceState p_NewState,
@@ -1101,108 +1275,225 @@ inline void utilAddImageBarrier(
     uint32_t p_MipCount,
     bool p_IsDepth)
 {
-  VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-  barrier.image = p_Image;
-  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.subresourceRange.aspectMask =
-      p_IsDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-  barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.subresourceRange.levelCount = p_MipCount;
+  if (p_GpuDevice->m_Synchronization2ExtensionPresent)
+  {
+    VkImageMemoryBarrier2KHR barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR};
+    barrier.srcAccessMask = utilToVkAccessFlags2(p_OldState);
+    barrier.srcStageMask =
+        utilDeterminePipelineStageFlags2(barrier.srcAccessMask, QueueType::kGraphics);
+    barrier.dstAccessMask = utilToVkAccessFlags2(p_NewState);
+    barrier.dstStageMask =
+        utilDeterminePipelineStageFlags2(barrier.dstAccessMask, QueueType::kGraphics);
+    barrier.oldLayout = utilToVkImageLayout2(p_OldState);
+    barrier.newLayout = utilToVkImageLayout2(p_NewState);
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = p_Image;
+    barrier.subresourceRange.aspectMask =
+        p_IsDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.baseMipLevel = p_BaseMipLevel;
+    barrier.subresourceRange.levelCount = p_MipCount;
 
-  barrier.subresourceRange.baseMipLevel = p_BaseMipLevel;
-  barrier.oldLayout = utilToVkImageLayout(p_OldState);
-  barrier.newLayout = utilToVkImageLayout(p_NewState);
-  barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
-  barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
+    VkDependencyInfoKHR dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR};
+    dependency_info.imageMemoryBarrierCount = 1;
+    dependency_info.pImageMemoryBarriers = &barrier;
 
-  const VkPipelineStageFlags sourceStageMask =
-      utilDeterminePipelineStageFlags(barrier.srcAccessMask, QueueType::kGraphics);
-  const VkPipelineStageFlags destinationStageMask =
-      utilDeterminePipelineStageFlags(barrier.dstAccessMask, QueueType::kGraphics);
+    p_GpuDevice->m_CmdPipelineBarrier2(p_Cmdbuf, &dependency_info);
+  }
+  else
+  {
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.image = p_Image;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask =
+        p_IsDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = p_MipCount;
 
-  vkCmdPipelineBarrier(
-      p_CmdBuf, sourceStageMask, destinationStageMask, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    barrier.subresourceRange.baseMipLevel = p_BaseMipLevel;
+    barrier.oldLayout = utilToVkImageLayout(p_OldState);
+    barrier.newLayout = utilToVkImageLayout(p_NewState);
+    barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
+    barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
+
+    const VkPipelineStageFlags sourceStageMask =
+        utilDeterminePipelineStageFlags(barrier.srcAccessMask, QueueType::kGraphics);
+    const VkPipelineStageFlags destinationStageMask =
+        utilDeterminePipelineStageFlags(barrier.dstAccessMask, QueueType::kGraphics);
+
+    vkCmdPipelineBarrier(
+        p_Cmdbuf, sourceStageMask, destinationStageMask, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+  }
 }
-//---------------------------------------------------------------------------//
-inline void utilAddImageBarrierExt(
-    VkCommandBuffer p_CommandBuffer,
-    VkImage p_Image,
-    ResourceState p_OldState,
-    ResourceState p_NewState,
-    uint32_t p_BaseMipLevel,
-    uint32_t p_MipCount,
-    bool is_depth,
-    uint32_t p_SourceFamily,
-    uint32_t p_DestinationFamily,
-    QueueType::Enum p_SourceQueueType,
-    QueueType::Enum p_DestinationQueueType)
+
+void utilAddImageBarrier(
+    GpuDevice* gpu,
+    VkCommandBuffer cmdbuf,
+    Texture* texture,
+    ResourceState newState,
+    uint32_t baseMipLevel,
+    uint32_t mipCount,
+    bool isDepth)
+{
+  utilAddImageBarrier(
+      gpu, cmdbuf, texture->vkImage, texture->state, newState, baseMipLevel, mipCount, isDepth);
+  texture->state = newState;
+}
+
+void utilAddImageBarrierExt(
+    GpuDevice* gpu,
+    VkCommandBuffer cmdbuf,
+    VkImage image,
+    ResourceState oldState,
+    ResourceState newState,
+    uint32_t baseMipLevel,
+    uint32_t mipCount,
+    bool isDepth,
+    uint32_t sourceFamily,
+    uint32_t destinationFamily,
+    QueueType::Enum sourceQueueType,
+    QueueType::Enum destinationQueueType)
+{
+  if (gpu->m_Synchronization2ExtensionPresent)
+  {
+    VkImageMemoryBarrier2KHR barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR};
+    barrier.srcAccessMask = utilToVkAccessFlags2(oldState);
+    barrier.srcStageMask = utilDeterminePipelineStageFlags2(barrier.srcAccessMask, sourceQueueType);
+    barrier.dstAccessMask = utilToVkAccessFlags2(newState);
+    barrier.dstStageMask =
+        utilDeterminePipelineStageFlags2(barrier.dstAccessMask, destinationQueueType);
+    barrier.oldLayout = utilToVkImageLayout2(oldState);
+    barrier.newLayout = utilToVkImageLayout2(newState);
+    barrier.srcQueueFamilyIndex = sourceFamily;
+    barrier.dstQueueFamilyIndex = destinationFamily;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask =
+        isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.baseMipLevel = baseMipLevel;
+    barrier.subresourceRange.levelCount = mipCount;
+
+    VkDependencyInfoKHR dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR};
+    dependency_info.imageMemoryBarrierCount = 1;
+    dependency_info.pImageMemoryBarriers = &barrier;
+
+    gpu->m_CmdPipelineBarrier2(cmdbuf, &dependency_info);
+  }
+  else
+  {
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.image = image;
+    barrier.srcQueueFamilyIndex = sourceFamily;
+    barrier.dstQueueFamilyIndex = destinationFamily;
+    barrier.subresourceRange.aspectMask =
+        isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = mipCount;
+
+    barrier.subresourceRange.baseMipLevel = baseMipLevel;
+    barrier.oldLayout = utilToVkImageLayout(oldState);
+    barrier.newLayout = utilToVkImageLayout(newState);
+    barrier.srcAccessMask = utilToVkAccessFlags(oldState);
+    barrier.dstAccessMask = utilToVkAccessFlags(newState);
+
+    const VkPipelineStageFlags sourceStageMask =
+        utilDeterminePipelineStageFlags(barrier.srcAccessMask, sourceQueueType);
+    const VkPipelineStageFlags destinationStageMask =
+        utilDeterminePipelineStageFlags(barrier.dstAccessMask, destinationQueueType);
+
+    vkCmdPipelineBarrier(
+        cmdbuf, sourceStageMask, destinationStageMask, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+  }
+}
+
+void utilAddImageBarrierExt(
+    GpuDevice* gpu,
+    VkCommandBuffer cmdbuf,
+    Texture* texture,
+    ResourceState newState,
+    uint32_t baseMipLevel,
+    uint32_t mipCount,
+    bool isDepth,
+    uint32_t sourceFamily,
+    uint32_t destinationFamily,
+    QueueType::Enum sourceQueueType,
+    QueueType::Enum destinationQueueType)
 {
 
-  VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-  barrier.image = p_Image;
-  barrier.srcQueueFamilyIndex = p_SourceFamily;
-  barrier.dstQueueFamilyIndex = p_DestinationFamily;
-  barrier.subresourceRange.aspectMask =
-      is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-  barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.subresourceRange.levelCount = p_MipCount;
-
-  barrier.subresourceRange.baseMipLevel = p_BaseMipLevel;
-  barrier.oldLayout = utilToVkImageLayout(p_OldState);
-  barrier.newLayout = utilToVkImageLayout(p_NewState);
-  barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
-  barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
-
-  const VkPipelineStageFlags sourceStageMask =
-      utilDeterminePipelineStageFlags(barrier.srcAccessMask, p_SourceQueueType);
-  const VkPipelineStageFlags destinationStageMask =
-      utilDeterminePipelineStageFlags(barrier.dstAccessMask, p_DestinationQueueType);
-
-  vkCmdPipelineBarrier(
-      p_CommandBuffer,
-      sourceStageMask,
-      destinationStageMask,
-      0,
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &barrier);
+  utilAddImageBarrierExt(
+      gpu,
+      cmdbuf,
+      texture->vkImage,
+      texture->state,
+      newState,
+      baseMipLevel,
+      mipCount,
+      isDepth,
+      sourceFamily,
+      destinationFamily,
+      sourceQueueType,
+      destinationQueueType);
+  texture->state = newState;
 }
-//---------------------------------------------------------------------------//
-inline void utilAddBufferBarrierExt(
-    VkCommandBuffer p_CmdBuffer,
-    VkBuffer p_Buffer,
-    ResourceState p_OldState,
-    ResourceState p_NewState,
-    uint32_t p_BufferSize,
-    uint32_t p_SourceFamily,
-    uint32_t p_DestinationFamily,
-    QueueType::Enum p_SourceQueueType,
-    QueueType::Enum p_DestinationQueueType)
+
+void utilAddBufferBarrierExt(
+    GpuDevice* gpu,
+    VkCommandBuffer cmdbuf,
+    VkBuffer buffer,
+    ResourceState oldState,
+    ResourceState newState,
+    uint32_t buffer_size,
+    uint32_t sourceFamily,
+    uint32_t destinationFamily,
+    QueueType::Enum sourceQueueType,
+    QueueType::Enum destinationQueueType)
 {
 
-  VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-  barrier.buffer = p_Buffer;
-  barrier.srcQueueFamilyIndex = p_SourceFamily;
-  barrier.dstQueueFamilyIndex = p_DestinationFamily;
-  barrier.offset = 0;
-  barrier.size = p_BufferSize;
-  barrier.srcAccessMask = utilToVkAccessFlags(p_OldState);
-  barrier.dstAccessMask = utilToVkAccessFlags(p_NewState);
+  if (gpu->m_Synchronization2ExtensionPresent)
+  {
+    VkBufferMemoryBarrier2KHR barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR};
+    barrier.srcAccessMask = utilToVkAccessFlags2(oldState);
+    barrier.srcStageMask = utilDeterminePipelineStageFlags2(barrier.srcAccessMask, sourceQueueType);
+    barrier.dstAccessMask = utilToVkAccessFlags2(newState);
+    barrier.dstStageMask =
+        utilDeterminePipelineStageFlags2(barrier.dstAccessMask, destinationQueueType);
+    barrier.buffer = buffer;
+    barrier.offset = 0;
+    barrier.size = buffer_size;
 
-  const VkPipelineStageFlags sourceStageMask =
-      utilDeterminePipelineStageFlags(barrier.srcAccessMask, p_SourceQueueType);
-  const VkPipelineStageFlags destinationStageMask =
-      utilDeterminePipelineStageFlags(barrier.dstAccessMask, p_DestinationQueueType);
+    VkDependencyInfoKHR dependency_info{VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR};
+    dependency_info.bufferMemoryBarrierCount = 1;
+    dependency_info.pBufferMemoryBarriers = &barrier;
 
-  vkCmdPipelineBarrier(
-      p_CmdBuffer, sourceStageMask, destinationStageMask, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+    gpu->m_CmdPipelineBarrier2(cmdbuf, &dependency_info);
+  }
+  else
+  {
+    VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    barrier.buffer = buffer;
+    barrier.srcQueueFamilyIndex = sourceFamily;
+    barrier.dstQueueFamilyIndex = destinationFamily;
+    barrier.offset = 0;
+    barrier.size = buffer_size;
+    barrier.srcAccessMask = utilToVkAccessFlags(oldState);
+    barrier.dstAccessMask = utilToVkAccessFlags(newState);
+
+    const VkPipelineStageFlags sourceStageMask =
+        utilDeterminePipelineStageFlags(barrier.srcAccessMask, sourceQueueType);
+    const VkPipelineStageFlags destinationStageMask =
+        utilDeterminePipelineStageFlags(barrier.dstAccessMask, destinationQueueType);
+
+    vkCmdPipelineBarrier(
+        cmdbuf, sourceStageMask, destinationStageMask, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+  }
 }
+
 //---------------------------------------------------------------------------//
 VkFormat utilStringToVkFormat(const char* p_Format);
 //---------------------------------------------------------------------------//

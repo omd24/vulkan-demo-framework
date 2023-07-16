@@ -80,8 +80,7 @@ struct CommandBuffer
       void* p_TextureData,
       BufferHandle p_StagingBuffer,
       size_t p_StagingBufferOffset);
-  void copyTexture(
-      TextureHandle p_Src, ResourceState p_SrcState, TextureHandle p_Dst, ResourceState p_DstState);
+  void copyTexture(TextureHandle p_Src, TextureHandle p_Dst, ResourceState p_DstState);
 
   void uploadBufferData(
       BufferHandle p_Buffer,

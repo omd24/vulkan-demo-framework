@@ -996,8 +996,7 @@ void CommandBuffer::uploadTextureData(
   texture->vkImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 }
 //---------------------------------------------------------------------------//
-void CommandBuffer::copyTexture(
-    TextureHandle p_Src, ResourceState p_SrcState, TextureHandle p_Dst, ResourceState p_DstState)
+void CommandBuffer::copyTexture(TextureHandle p_Src, TextureHandle p_Dst, ResourceState p_DstState)
 {
   Texture* src = (Texture*)m_GpuDevice->m_Textures.accessResource(p_Src.index);
   Texture* dst = (Texture*)m_GpuDevice->m_Textures.accessResource(p_Dst.index);

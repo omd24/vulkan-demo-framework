@@ -31,6 +31,7 @@ struct DeviceCreation
   uint16_t width = 1;
   uint16_t height = 1;
   uint16_t numThreads = 1;
+  bool forceDisableDynamicRendering = false;
 
   DeviceCreation& setWindow(uint32_t p_Width, uint32_t p_Height, void* p_Handle);
   DeviceCreation& setAllocator(Framework::Allocator* p_Allocator);
@@ -193,6 +194,8 @@ struct GpuDevice : public Framework::Service
   // Extension functions
   PFN_vkCmdBeginRenderingKHR m_CmdBeginRendering;
   PFN_vkCmdEndRenderingKHR m_CmdEndRendering;
+  PFN_vkQueueSubmit2KHR m_QueueSubmit2;
+  PFN_vkCmdPipelineBarrier2KHR m_CmdPipelineBarrier2;
 
   Framework::Array<ResourceUpdate> m_ResourceDeletionQueue;
   Framework::Array<DescriptorSetUpdate> m_DescriptorSetUpdates;
@@ -226,8 +229,11 @@ struct GpuDevice : public Framework::Service
 
   static constexpr const char* kName = "Gpu-Service";
 
+  uint32_t m_NumThreads = 1;
   bool m_DebugUtilsExtensionPresent = false;
   bool m_DynamicRenderingExtensionPresent = false;
+  bool m_TimelineSemaphoreExtensionPresent = false;
+  bool m_Synchronization2ExtensionPresent = false;
 
   size_t m_UboAlignment = 256;
   size_t m_SboAlignment = 256;
