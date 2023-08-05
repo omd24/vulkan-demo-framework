@@ -53,7 +53,7 @@ struct AsynchronousLoader
 
   void requestTextureData(const char* filename, TextureHandle texture);
   void requestBufferUpload(void* data, BufferHandle buffer);
-  void requestBufferCopy(BufferHandle src, BufferHandle dst, uint32_t* completed);
+  void requestBufferCopy(BufferHandle src, BufferHandle dst);
 
   Framework::Allocator* allocator = nullptr;
   RendererUtil::Renderer* renderer = nullptr;

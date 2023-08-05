@@ -22,6 +22,14 @@ namespace Graphics
 // Forward declarations:
 struct CommandBuffer;
 struct GpuDevice;
+
+struct GpuThreadFramePools
+{
+  VkCommandPool vulkanCommandPool = nullptr;
+
+  // TODO: Add query pools
+}; // struct GpuThreadFramePools
+
 //---------------------------------------------------------------------------//
 struct DeviceCreation
 {
@@ -45,7 +53,7 @@ struct GpuDevice : public Framework::Service
   void shutdown();
 
   void newFrame();
-  void present();
+  void present(CommandBuffer* p_AsyncComputeCommandBuffer);
 
   // Creation/Destruction of resources
   BufferHandle createBuffer(const BufferCreation& p_Creation);
@@ -107,6 +115,9 @@ struct GpuDevice : public Framework::Service
   void queryTexture(TextureHandle p_Texture, TextureDescription& p_OutDescription);
   void queryBuffer(BufferHandle p_Buffer, BufferDescription& p_OutDescription);
 
+  // Compute
+  void submitComputeLoad(CommandBuffer* p_CommandBuffer);
+
   // Other utility
   void setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name);
   VkRenderPass getVulkanRenderPass(const RenderPassOutput& p_Output, const char* p_Name);
@@ -133,6 +144,9 @@ struct GpuDevice : public Framework::Service
       const SamplerHandle* p_Samplers,
       const uint16_t* p_Bindings);
 
+  void fillBarrier(FramebufferHandle framebuffer, ExecutionBarrier& outBarrier);
+  bool bufferReady(BufferHandle buffer);
+
   FramebufferHandle getCurrentFramebuffer() const
   {
     return m_VulkanSwapchainFramebuffers[m_VulkanImageIndex];
@@ -150,8 +164,10 @@ struct GpuDevice : public Framework::Service
   VkPhysicalDeviceProperties m_VulkanPhysicalDeviceProps;
   VkDevice m_VulkanDevice;
   VkQueue m_VulkanMainQueue;
+  VkQueue m_VulkanComputeQueue;
   VkQueue m_VulkanTransferQueue;
   uint32_t m_VulkanMainQueueFamily;
+  uint32_t m_VulkanComputeQueueFamily;
   uint32_t m_VulkanTransferQueueFamily;
   VkDescriptorPool m_VulkanDescriptorPool;
 
@@ -200,10 +216,19 @@ struct GpuDevice : public Framework::Service
   Framework::Array<ResourceUpdate> m_ResourceDeletionQueue;
   Framework::Array<DescriptorSetUpdate> m_DescriptorSetUpdates;
 
+  Framework::Array<GpuThreadFramePools> m_ThreadFramePools;
+  Framework::Array<GpuThreadFramePools> m_ComputeFramePools;
+
   // Per-frame synchronization
   VkSemaphore m_VulkanRenderCompleteSemaphore[kMaxSwapchainImages];
   VkSemaphore m_VulkanImageAcquiredSemaphore;
-  VkFence m_VulkanCmdBufferExectuedFence[kMaxSwapchainImages];
+  VkSemaphore m_VulkanGraphicsSemaphore;
+  VkFence m_VulkanCmdBufferExecutedFence[kMaxSwapchainImages];
+
+  VkSemaphore m_VulkanComputeSemaphore;
+  VkFence m_VulkanComputeFence;
+  uint64_t m_LastComputeSemaphoreValue = 0;
+  bool m_HasAsyncWork = false;
 
   // Resource pools
   Framework::ResourcePool m_Buffers;

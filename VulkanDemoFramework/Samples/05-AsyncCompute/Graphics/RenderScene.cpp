@@ -360,8 +360,8 @@ void LighPass::prepareDraws(
   dsCreation.buffer(scene.sceneCb, 0).buffer(mesh.pbrMaterial.materialBuffer, 1).setLayout(layout);
   mesh.pbrMaterial.descriptorSet = renderer->m_GpuDevice->createDescriptorSet(dsCreation);
 
-  BufferHandle fs_vb = renderer->m_GpuDevice->m_FullscreenVertexBuffer;
-  mesh.positionBuffer = fs_vb;
+  BufferHandle fsVb = renderer->m_GpuDevice->m_FullscreenVertexBuffer;
+  mesh.positionBuffer = fsVb;
 
   colorTexture = frameGraph->accessResource(node->inputs[0]);
   normalTexture = frameGraph->accessResource(node->inputs[1]);
@@ -701,13 +701,13 @@ void DoFPass::render(CommandBuffer* gpuCommands, RenderScene* renderScene)
 }
 
 // TODO:
-static TextureCreation dof_scene_tc;
+static TextureCreation dofSceneTc;
 
-void DoFPass::on_resize(GpuDevice& gpu, uint32_t new_width, uint32_t new_height)
+void DoFPass::onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight)
 {
 
-  uint32_t w = new_width;
-  uint32_t h = new_height;
+  uint32_t w = newWidth;
+  uint32_t h = newHeight;
 
   uint32_t mips = 1;
   while (w > 1 && h > 1)
@@ -718,13 +718,13 @@ void DoFPass::on_resize(GpuDevice& gpu, uint32_t new_width, uint32_t new_height)
   }
 
   // Destroy scene mips
-  for (uint32_t i = 0; i < k_max_frames; ++i)
+  for (uint32_t i = 0; i < kMaxFrames; ++i)
   {
     renderer->destroyTexture(sceneMips[i]);
 
     // Reuse cached texture creation and create new scene mips.
-    dof_scene_tc.set_flags(mips, 0).setSize(new_width, new_height, 1);
-    sceneMips[i] = renderer->createTexture(dof_scene_tc);
+    dofSceneTc.setFlags(mips, 0).setSize(newWidth, newHeight, 1);
+    sceneMips[i] = renderer->createTexture(dofSceneTc);
   }
 }
 
@@ -744,17 +744,18 @@ void DoFPass::prepareDraws(
   }
 
   const uint64_t hashedName = hashCalculate("depth_of_field");
-  GpuTechnique* mainTechnique = renderer->m_ResourceCache.m_Techniques.get(hashedName);
+  RendererUtil::GpuTechnique* mainTechnique =
+      renderer->m_ResourceCache.m_Techniques.get(hashedName);
 
-  MaterialCreation materialCreation;
+  RendererUtil::MaterialCreation materialCreation;
 
   materialCreation.setName("material_dof").setTechnique(mainTechnique).setRenderIndex(0);
-  Material* material_dof = renderer->createMaterial(materialCreation);
+  RendererUtil::Material* materialDof = renderer->createMaterial(materialCreation);
 
   BufferCreation bufferCreation;
   bufferCreation.reset()
-      .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::Dynamic, sizeof(DoFData))
-      .setName("dof_data");
+      .set(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, ResourceUsageType::kDynamic, sizeof(DoFData))
+      .setName("dofData");
   mesh.pbrMaterial.materialBuffer = renderer->m_GpuDevice->createBuffer(bufferCreation);
 
   DescriptorSetCreation dsCreation{};
@@ -763,13 +764,13 @@ void DoFPass::prepareDraws(
   dsCreation.buffer(mesh.pbrMaterial.materialBuffer, 0).setLayout(layout);
   mesh.pbrMaterial.descriptorSet = renderer->m_GpuDevice->createDescriptorSet(dsCreation);
 
-  BufferHandle fs_vb = renderer->m_GpuDevice->getFullscreenVertexBuffer();
-  mesh.positionBuffer = fs_vb;
+  BufferHandle fsVb = renderer->m_GpuDevice->m_FullscreenVertexBuffer;
+  mesh.positionBuffer = fsVb;
 
   FrameGraphResource* colorTexture = frameGraph->accessResource(node->inputs[0]);
-  FrameGraphResource* depthTexture_reference = frameGraph->accessResource(node->inputs[1]);
+  FrameGraphResource* depthTextureReference = frameGraph->accessResource(node->inputs[1]);
 
-  depthTexture = frameGraph->getResource(depthTexture_reference->name);
+  depthTexture = frameGraph->getResource(depthTextureReference->m_Name);
   assert(depthTexture != nullptr);
 
   FrameGraphResourceInfo& info = colorTexture->resourceInfo;
@@ -784,16 +785,16 @@ void DoFPass::prepareDraws(
     mips++;
   }
 
-  dof_scene_tc.setData(nullptr)
-      .set_format_type(info.texture.format, TextureType::Texture2D)
-      .set_flags(mips, 0)
-      .setSize((u16)info.texture.width, (u16)info.texture.height, 1)
+  dofSceneTc.setData(nullptr)
+      .setFormatType(info.texture.format, TextureType::kTexture2D)
+      .setFlags(mips, 0)
+      .setSize((uint16_t)info.texture.width, (uint16_t)info.texture.height, 1)
       .setName("sceneMips");
-  for (uint32_t i = 0; i < k_max_frames; ++i)
+  for (uint32_t i = 0; i < kMaxFrames; ++i)
   {
-    sceneMips[i] = renderer->createTexture(dof_scene_tc);
+    sceneMips[i] = renderer->createTexture(dofSceneTc);
   }
-  mesh.pbrMaterial.material = material_dof;
+  mesh.pbrMaterial.material = materialDof;
 
   znear = 0.1f;
   zfar = 1000.0f;
@@ -805,20 +806,20 @@ void DoFPass::prepareDraws(
 void DoFPass::uploadGpuData()
 {
 
-  uint32_t currentFrameIndex = renderer->m_GpuDevice->currentFrame;
+  uint32_t currentFrameIndex = renderer->m_GpuDevice->m_CurrentFrameIndex;
 
   MapBufferParameters cbMap = {mesh.pbrMaterial.materialBuffer, 0, 0};
-  DoFData* dof_data = (DoFData*)renderer->m_GpuDevice->mapBuffer(cbMap);
-  if (dof_data)
+  DoFData* dofData = (DoFData*)renderer->m_GpuDevice->mapBuffer(cbMap);
+  if (dofData)
   {
-    dof_data->textures[0] = sceneMips[currentFrameIndex]->handle.index;
-    dof_data->textures[1] = depthTexture->resourceInfo.texture.handle[currentFrameIndex].index;
+    dofData->textures[0] = sceneMips[currentFrameIndex]->m_Handle.index;
+    dofData->textures[1] = depthTexture->resourceInfo.texture.handle[currentFrameIndex].index;
 
-    dof_data->znear = znear;
-    dof_data->zfar = zfar;
-    dof_data->focalLength = focalLength;
-    dof_data->planeInFocus = planeInFocus;
-    dof_data->aperture = aperture;
+    dofData->znear = znear;
+    dofData->zfar = zfar;
+    dofData->focalLength = focalLength;
+    dofData->planeInFocus = planeInFocus;
+    dofData->aperture = aperture;
 
     renderer->m_GpuDevice->unmapBuffer(cbMap);
   }
@@ -828,7 +829,7 @@ void DoFPass::freeGpuResources()
 {
   GpuDevice& gpu = *renderer->m_GpuDevice;
 
-  for (uint32_t i = 0; i < k_max_frames; ++i)
+  for (uint32_t i = 0; i < kMaxFrames; ++i)
   {
     renderer->destroyTexture(sceneMips[i]);
   }
@@ -836,21 +837,21 @@ void DoFPass::freeGpuResources()
   gpu.destroyDescriptorSet(mesh.pbrMaterial.descriptorSet);
 }
 
-CommandBuffer* RenderScene::update_physics(
-    float delta_time,
-    float air_density,
-    float spring_stiffness,
-    float spring_damping,
-    vec3s wind_direction,
-    bool reset_simulation)
+CommandBuffer* RenderScene::updatePhysics(
+    float deltaTime,
+    float airDensity,
+    float springStiffness,
+    float springDamping,
+    vec3s windDirection,
+    bool resetSimulation)
 {
   // Based on http://graphics.stanford.edu/courses/cs468-02-winter/Papers/Rigidcloth.pdf
 
 #if 0
     // NOTE: left for reference
-    const uint32_t sim_steps = 10;
-    const float dt_multiplier = 1.0f / sim_steps;
-    delta_time *= dt_multiplier;
+    const uint32_t simSteps = 10;
+    const float dtMultiplier = 1.0f / simSteps;
+    deltaTime *= dtMultiplier;
 
     const vec3s g{ 0.0f, -9.8f, 0.0f };
 
@@ -865,68 +866,68 @@ CommandBuffer* RenderScene::update_physics(
             const vec3s fixedVertex_3{ 0.0f, -1.0f,  1.0f };
             const vec3s fixedVertex_4{ 0.0f, -1.0f, -1.0f };
 
-            if ( reset_simulation ) {
+            if ( resetSimulation ) {
                 for ( uint32_t v = 0; v < physicsMesh->vertices.m_Size; ++v ) {
                     PhysicsVertex& vertex = physicsMesh->vertices[ v ];
-                    vertex.position = vertex.start_position;
-                    vertex.previous_position = vertex.start_position;
+                    vertex.position = vertex.startPosition;
+                    vertex.previousPosition = vertex.startPosition;
                     vertex.velocity = vec3s{ };
                     vertex.force = vec3s{ };
                 }
             }
 
-            for ( uint32_t s = 0; s < sim_steps; ++s ) {
+            for ( uint32_t s = 0; s < simSteps; ++s ) {
                 // First calculate the force to apply to each vertex
                 for ( uint32_t v = 0; v < physicsMesh->vertices.m_Size; ++v ) {
                     PhysicsVertex& vertex = physicsMesh->vertices[ v ];
 
-                    if ( glms_vec3_eqv( vertex.start_position, fixedVertex_1 ) || glms_vec3_eqv( vertex.start_position, fixedVertex_2 ) ||
-                        glms_vec3_eqv( vertex.start_position, fixedVertex_3 ) || glms_vec3_eqv( vertex.start_position, fixedVertex_4 )) {
+                    if ( glms_vec3_eqv( vertex.startPosition, fixedVertex_1 ) || glms_vec3_eqv( vertex.startPosition, fixedVertex_2 ) ||
+                        glms_vec3_eqv( vertex.startPosition, fixedVertex_3 ) || glms_vec3_eqv( vertex.startPosition, fixedVertex_4 )) {
                         continue;
                     }
 
                     float m = vertex.mass;
 
-                    vec3s spring_force{ };
+                    vec3s springForce{ };
 
                     for ( uint32_t j = 0; j < vertex.jointCount; ++j ) {
                         PhysicsVertex& otherVertex = physicsMesh->vertices[ vertex.joints[ j ].vertexIndex ];
 
-                        float spring_rest_length =  glms_vec3_distance( vertex.start_position, otherVertex.start_position );
+                        float springRestLength =  glms_vec3_distance( vertex.startPosition, otherVertex.startPosition );
 
-                        vec3s pull_direction = glms_vec3_sub( vertex.position, otherVertex.position );
-                        vec3s relative_pull_direction = glms_vec3_sub( pull_direction, glms_vec3_scale( glms_vec3_normalize( pull_direction ), spring_rest_length ) );
-                        pull_direction = glms_vec3_scale( relative_pull_direction, spring_stiffness );
-                        spring_force = glms_vec3_add( spring_force, pull_direction );
+                        vec3s pullDirection = glms_vec3_sub( vertex.position, otherVertex.position );
+                        vec3s relativePullDirection = glms_vec3_sub( pullDirection, glms_vec3_scale( glms_vec3_normalize( pullDirection ), springRestLength ) );
+                        pullDirection = glms_vec3_scale( relativePullDirection, springStiffness );
+                        springForce = glms_vec3_add( springForce, pullDirection );
                     }
 
-                    vec3s viscous_damping = glms_vec3_scale( vertex.velocity, -spring_damping );
+                    vec3s viscousDamping = glms_vec3_scale( vertex.velocity, -springDamping );
 
-                    vec3s viscous_velocity = glms_vec3_sub( wind_direction, vertex.velocity );
-                    viscous_velocity = glms_vec3_scale( vertex.normal, glms_vec3_dot( vertex.normal, viscous_velocity ) );
-                    viscous_velocity = glms_vec3_scale( viscous_velocity, air_density );
+                    vec3s viscousVelocity = glms_vec3_sub( windDirection, vertex.velocity );
+                    viscousVelocity = glms_vec3_scale( vertex.normal, glms_vec3_dot( vertex.normal, viscousVelocity ) );
+                    viscousVelocity = glms_vec3_scale( viscousVelocity, airDensity );
 
                     vertex.force = glms_vec3_scale( g, m );
-                    vertex.force = glms_vec3_sub( vertex.force, spring_force );
-                    vertex.force = glms_vec3_add( vertex.force, viscous_damping );
-                    vertex.force = glms_vec3_add( vertex.force, viscous_velocity );
+                    vertex.force = glms_vec3_sub( vertex.force, springForce );
+                    vertex.force = glms_vec3_add( vertex.force, viscousDamping );
+                    vertex.force = glms_vec3_add( vertex.force, viscousVelocity );
                 }
 
                 // Then update their position
                 for ( uint32_t v = 0; v < physicsMesh->vertices.m_Size; ++v ) {
                     PhysicsVertex& vertex = physicsMesh->vertices[ v ];
 
-                    vec3s previous_position = vertex.previous_position;
-                    vec3s current_position = vertex.position;
+                    vec3s previousPosition = vertex.previousPosition;
+                    vec3s currentPosition = vertex.position;
 
                     // Verlet integration
-                    vertex.position = glms_vec3_scale( current_position, 2.0f );
-                    vertex.position = glms_vec3_sub( vertex.position, previous_position );
-                    vertex.position = glms_vec3_add( vertex.position, glms_vec3_scale( vertex.force, delta_time * delta_time ) );
+                    vertex.position = glms_vec3_scale( currentPosition, 2.0f );
+                    vertex.position = glms_vec3_sub( vertex.position, previousPosition );
+                    vertex.position = glms_vec3_add( vertex.position, glms_vec3_scale( vertex.force, deltaTime * deltaTime ) );
 
-                    vertex.previous_position = current_position;
+                    vertex.previousPosition = currentPosition;
 
-                    vertex.velocity = glms_vec3_sub( vertex.position, current_position );
+                    vertex.velocity = glms_vec3_sub( vertex.position, currentPosition );
                 }
             }
 
@@ -972,20 +973,20 @@ CommandBuffer* RenderScene::update_physics(
         }
     }
 #else
-  if (physicsCb.index == k_invalidBuffer.index)
+  if (physicsCb.index == kInvalidBuffer.index)
     return nullptr;
 
   GpuDevice& gpu = *renderer->m_GpuDevice;
 
   MapBufferParameters physicsCbMap = {physicsCb, 0, 0};
-  PhysicsSceneData* gpu_physics_data = (PhysicsSceneData*)gpu.mapBuffer(physicsCbMap);
-  if (gpu_physics_data)
+  PhysicsSceneData* gpuPhysicsData = (PhysicsSceneData*)gpu.mapBuffer(physicsCbMap);
+  if (gpuPhysicsData)
   {
-    gpu_physics_data->wind_direction = wind_direction;
-    gpu_physics_data->reset_simulation = reset_simulation ? 1 : 0;
-    gpu_physics_data->air_density = air_density;
-    gpu_physics_data->spring_stiffness = spring_stiffness;
-    gpu_physics_data->spring_damping = spring_damping;
+    gpuPhysicsData->windDirection = windDirection;
+    gpuPhysicsData->resetSimulation = resetSimulation ? 1 : 0;
+    gpuPhysicsData->airDensity = airDensity;
+    gpuPhysicsData->springStiffness = springStiffness;
+    gpuPhysicsData->springDamping = springDamping;
 
     gpu.unmapBuffer(physicsCbMap);
   }
@@ -1000,10 +1001,10 @@ CommandBuffer* RenderScene::update_physics(
 
     if (physicsMesh != nullptr)
     {
-      if (!gpu.buffer_ready(mesh.positionBuffer) || !gpu.buffer_ready(mesh.normalBuffer) ||
-          !gpu.buffer_ready(mesh.tangentBuffer) || !gpu.buffer_ready(mesh.indexBuffer) ||
-          !gpu.buffer_ready(physicsMesh->m_GpuDeviceBuffer) ||
-          !gpu.buffer_ready(physicsMesh->drawIndirectBuffer))
+      if (!gpu.bufferReady(mesh.positionBuffer) || !gpu.bufferReady(mesh.normalBuffer) ||
+          !gpu.bufferReady(mesh.tangentBuffer) || !gpu.bufferReady(mesh.indexBuffer) ||
+          !gpu.bufferReady(physicsMesh->gpuBuffer) ||
+          !gpu.bufferReady(physicsMesh->drawIndirectBuffer))
       {
         continue;
       }
@@ -1046,7 +1047,7 @@ CommandBuffer* RenderScene::update_physics(
 // TODO: refactor
 Transform animated_transforms[256];
 
-void RenderScene::update_animations(float delta_time)
+void RenderScene::update_animations(float deltaTime)
 {
 
   if (animations.m_Size == 0)
@@ -1058,7 +1059,7 @@ void RenderScene::update_animations(float delta_time)
   Animation& animation = animations[0];
   static float current_time = 0.f;
 
-  current_time += delta_time;
+  current_time += deltaTime;
   if (current_time > animation.time_end)
   {
     current_time -= animation.time_end;

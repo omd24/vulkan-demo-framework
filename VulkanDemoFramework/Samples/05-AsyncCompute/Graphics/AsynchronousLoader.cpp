@@ -41,7 +41,7 @@ void AsynchronousLoader::init(
 
   stagingBufferOffset = 0;
 
-  for (uint32_t i = 0; i < GpuDevice::kMaxFrames; ++i)
+  for (uint32_t i = 0; i < kMaxFrames; ++i)
   {
     VkCommandPoolCreateInfo cmdPoolInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
     cmdPoolInfo.queueFamilyIndex = renderer->m_GpuDevice->m_VulkanTransferQueueFamily;
@@ -240,7 +240,7 @@ void AsynchronousLoader::shutdown()
   fileLoadRequests.shutdown();
   uploadRequests.shutdown();
 
-  for (uint32_t i = 0; i < GpuDevice::kMaxFrames; ++i)
+  for (uint32_t i = 0; i < kMaxFrames; ++i)
   {
     vkDestroyCommandPool(
         renderer->m_GpuDevice->m_VulkanDevice,
@@ -275,7 +275,7 @@ void AsynchronousLoader::requestBufferUpload(void* data, BufferHandle buffer)
   uploadRequest.texture = kInvalidTexture;
 }
 //---------------------------------------------------------------------------//
-void AsynchronousLoader::requestBufferCopy(BufferHandle src, BufferHandle dst, uint32_t* completed)
+void AsynchronousLoader::requestBufferCopy(BufferHandle src, BufferHandle dst)
 {
   UploadRequest& uploadRequest = uploadRequests.pushUse();
   uploadRequest.completed = completed;
@@ -283,6 +283,9 @@ void AsynchronousLoader::requestBufferCopy(BufferHandle src, BufferHandle dst, u
   uploadRequest.cpuBuffer = src;
   uploadRequest.gpuBuffer = dst;
   uploadRequest.texture = kInvalidTexture;
+
+  Buffer* buffer = (Buffer*)renderer->m_GpuDevice->m_Buffers.accessResource(dst.index);
+  buffer->ready = false;
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics

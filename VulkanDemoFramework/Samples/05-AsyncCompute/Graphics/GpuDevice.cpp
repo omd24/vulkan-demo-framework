@@ -16,7 +16,7 @@ template <class T> constexpr const T& _min(const T& a, const T& b) { return (a <
 
 template <class T> constexpr const T& _max(const T& a, const T& b) { return (a < b) ? b : a; }
 
-// VMA link prequisities:
+// VMA link prerequisites:
 #define VMA_USE_STL_CONTAINERS 0
 #define VMA_USE_STL_VECTOR 0
 #define VMA_USE_STL_UNORDERED_MAP 0
@@ -119,8 +119,9 @@ PFN_vkCmdEndDebugUtilsLabelEXT pfnCmdEndDebugUtilsLabelEXT;
 
 static SDL_Window* g_SdlWindow;
 
-static const uint32_t kMaxBindlessResources = 1024u;
 static const uint32_t kBindlessTextureBinding = 10u;
+static const uint32_t kBindlessImageBinding = 11u;
+static const uint32_t kMaxBindlessResources = 1024u;
 
 static VkPresentModeKHR _toVkPresentMode(PresentMode::Enum p_Mode)
 {
@@ -490,7 +491,7 @@ static void _vulkanCreateTexture(
   p_GpuDevice.setResourceName(
       VK_OBJECT_TYPE_IMAGE_VIEW, (uint64_t)p_Texture->vkImageView, p_Creation.name);
 
-  p_Texture->vkImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  p_Texture->state = RESOURCE_STATE_UNDEFINED;
 
   // Deferred bindless update:
   if (p_GpuDevice.m_BindlessSupported)
@@ -499,6 +500,7 @@ static void _vulkanCreateTexture(
     resourceUpdate.type = ResourceUpdateType::kTexture;
     resourceUpdate.handle = p_Texture->handle.index;
     resourceUpdate.currentFrame = p_GpuDevice.m_CurrentFrameIndex;
+    resourceUpdate.deleting = 0;
     p_GpuDevice.m_TextureToUpdateBindless.push(resourceUpdate);
   }
 }
@@ -556,6 +558,7 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
 
   // Copy from the staging buffer to the image
   utilAddImageBarrier(
+      &p_Gpu,
       commandBuffer->m_VulkanCmdBuffer,
       p_Texture->vkImage,
       RESOURCE_STATE_UNDEFINED,
@@ -575,6 +578,7 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
   if (p_Texture->mipmaps > 1)
   {
     utilAddImageBarrier(
+        &p_Gpu,
         commandBuffer->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         RESOURCE_STATE_COPY_DEST,
@@ -590,6 +594,7 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
   for (int mipIndex = 1; mipIndex < p_Texture->mipmaps; ++mipIndex)
   {
     utilAddImageBarrier(
+        &p_Gpu,
         commandBuffer->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         RESOURCE_STATE_UNDEFINED,
@@ -630,6 +635,7 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
 
     // Prepare current mip for next level
     utilAddImageBarrier(
+        &p_Gpu,
         commandBuffer->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         RESOURCE_STATE_COPY_DEST,
@@ -641,6 +647,7 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
 
   // Transition
   utilAddImageBarrier(
+      &p_Gpu,
       commandBuffer->m_VulkanCmdBuffer,
       p_Texture->vkImage,
       (p_Texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST,
@@ -652,11 +659,26 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
   vkEndCommandBuffer(commandBuffer->m_VulkanCmdBuffer);
 
   // Submit command buffer
-  VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffer->m_VulkanCmdBuffer;
+  if (p_Gpu.m_Synchronization2ExtensionPresent)
+  {
+    VkCommandBufferSubmitInfoKHR commandBufferInfo{
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR};
+    commandBufferInfo.commandBuffer = commandBuffer->m_VulkanCmdBuffer;
 
-  vkQueueSubmit(p_Gpu.m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    VkSubmitInfo2KHR submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR};
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &commandBufferInfo;
+
+    p_Gpu.m_QueueSubmit2(p_Gpu.m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+  }
+  else
+  {
+    VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer->m_VulkanCmdBuffer;
+
+    vkQueueSubmit(p_Gpu.m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+  }
   vkQueueWaitIdle(p_Gpu.m_VulkanMainQueue);
 
   vmaDestroyBuffer(p_Gpu.m_VmaAllocator, stagingBuffer, stagingAllocation);
@@ -664,8 +686,6 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
   // TODO: free command buffer
   vkResetCommandBuffer(
       commandBuffer->m_VulkanCmdBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
-
-  p_Texture->vkImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 //---------------------------------------------------------------------------//
 // helper method
@@ -1009,9 +1029,22 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
       for (size_t i = 0; i < deviceExtensionCount; i++)
       {
 
-        if (!strcmp(extensions[i].extensionName, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME))
+        if (!p_Creation.forceDisableDynamicRendering &&
+            !strcmp(extensions[i].extensionName, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME))
         {
           m_DynamicRenderingExtensionPresent = true;
+          continue;
+        }
+
+        if (!strcmp(extensions[i].extensionName, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME))
+        {
+          m_TimelineSemaphoreExtensionPresent = true;
+          continue;
+        }
+
+        if (!strcmp(extensions[i].extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME))
+        {
+          m_Synchronization2ExtensionPresent = true;
           continue;
         }
       }
@@ -1047,8 +1080,9 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     vkGetPhysicalDeviceQueueFamilyProperties(
         m_VulkanPhysicalDevice, &queueFamilyCount, queueFamilies);
 
-    uint32_t mainQueueIndex = UINT_MAX, transferQueueIndex = UINT_MAX, computeQueueIndex = UINT_MAX,
-             presentQueueIndex = UINT_MAX;
+    uint32_t mainQueueFamilyIndex = UINT_MAX, transferQueueFamilyIndex = UINT_MAX,
+             computeQueueFamilyIndex = UINT_MAX, presentQueueFamilyIndex = UINT_MAX;
+    uint32_t computeQueueIndex = UINT_MAX;
     for (uint32_t fi = 0; fi < queueFamilyCount; ++fi)
     {
       VkQueueFamilyProperties queueFamily = queueFamilies[fi];
@@ -1066,63 +1100,135 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
 #endif // DEBUG
 
       // Search for main queue that should be able to do all work (graphics, compute and transfer)
-      if ((queueFamily.queueFlags &
-           (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT)) ==
-          (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT))
+      if ((queueFamily.queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) ==
+          (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
       {
-        mainQueueIndex = fi;
+        mainQueueFamilyIndex = fi;
+
+        if (queueFamily.queueCount > 1)
+        {
+          computeQueueFamilyIndex = fi;
+          computeQueueIndex = 1;
+        }
+
+        continue;
       }
+
+      // Search for another compute queue if graphics queue exposes only one queue
+      if ((queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) && computeQueueIndex == UINT_MAX)
+      {
+        computeQueueFamilyIndex = fi;
+        computeQueueIndex = 0;
+      }
+
       // Search for transfer queue
       if ((queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) == 0 &&
           (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT))
       {
-        transferQueueIndex = fi;
+        transferQueueFamilyIndex = fi;
+        continue;
       }
     }
 
     // Cache family indices
-    m_VulkanMainQueueFamily = mainQueueIndex;
-    m_VulkanTransferQueueFamily = transferQueueIndex;
+    m_VulkanMainQueueFamily = mainQueueFamilyIndex;
+    m_VulkanComputeQueueFamily = computeQueueFamilyIndex;
+    m_VulkanTransferQueueFamily = transferQueueFamilyIndex;
 
     Framework::Array<const char*> deviceExtensions;
-    deviceExtensions.init(m_Allocator, 2);
+    deviceExtensions.init(m_TemporaryAllocator, 2);
     deviceExtensions.push(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    deviceExtensions.push(VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME);
+
     if (m_DynamicRenderingExtensionPresent)
     {
       deviceExtensions.push(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
     }
 
-    const float queuePriority[] = {1.0f};
-    VkDeviceQueueCreateInfo queueInfo[2] = {};
+    if (m_TimelineSemaphoreExtensionPresent)
+    {
+      deviceExtensions.push(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+    }
 
-    VkDeviceQueueCreateInfo& mainQueueCi = queueInfo[0];
+    if (m_Synchronization2ExtensionPresent)
+    {
+      deviceExtensions.push(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    }
+
+    const float queuePriority[] = {1.0f, 1.0f};
+    VkDeviceQueueCreateInfo queueInfo[3] = {};
+    uint32_t queueCount = 0;
+
+    VkDeviceQueueCreateInfo& mainQueueCi = queueInfo[queueCount++];
     mainQueueCi.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    mainQueueCi.queueFamilyIndex = mainQueueIndex;
-    mainQueueCi.queueCount = 1;
+    mainQueueCi.queueFamilyIndex = mainQueueFamilyIndex;
+    mainQueueCi.queueCount = computeQueueFamilyIndex == mainQueueFamilyIndex ? 2 : 1;
     mainQueueCi.pQueuePriorities = queuePriority;
+
+    if (computeQueueFamilyIndex != mainQueueFamilyIndex)
+    {
+      VkDeviceQueueCreateInfo& compute_queue = queueInfo[queueCount++];
+      compute_queue.queueFamilyIndex = computeQueueFamilyIndex;
+      compute_queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+      compute_queue.queueCount = 1;
+      compute_queue.pQueuePriorities = queuePriority;
+    }
 
     if (m_VulkanTransferQueueFamily < queueFamilyCount)
     {
-      VkDeviceQueueCreateInfo& transferQueueCi = queueInfo[1];
+      VkDeviceQueueCreateInfo& transferQueueCi = queueInfo[queueCount++];
       transferQueueCi.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-      transferQueueCi.queueFamilyIndex = transferQueueIndex;
+      transferQueueCi.queueFamilyIndex = transferQueueFamilyIndex;
       transferQueueCi.queueCount = 1;
       transferQueueCi.pQueuePriorities = queuePriority;
     }
 
     // Enable all features: just pass the physical features 2 struct.
     VkPhysicalDeviceFeatures2 physicalFeatures2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    VkPhysicalDeviceVulkan11Features vulkan11Features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+    void* currentPNext = &vulkan11Features;
+
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRenderingFeatures{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR};
     if (m_DynamicRenderingExtensionPresent)
     {
-      physicalFeatures2.pNext = &dynamicRenderingFeatures;
+      dynamicRenderingFeatures.pNext = currentPNext;
+      currentPNext = &dynamicRenderingFeatures;
     }
+
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSempahoreFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES};
+    if (m_TimelineSemaphoreExtensionPresent)
+    {
+      timelineSempahoreFeatures.pNext = currentPNext;
+      currentPNext = &timelineSempahoreFeatures;
+    }
+
+    VkPhysicalDeviceSynchronization2FeaturesKHR synchronization2Features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR};
+    if (m_Synchronization2ExtensionPresent)
+    {
+      synchronization2Features.pNext = currentPNext;
+      currentPNext = &synchronization2Features;
+    }
+
+    // [TAG: BINDLESS]
+    // We also add the bindless needed feature on the device creation.
+    if (m_BindlessSupported)
+    {
+      indexingFeatures.pNext = currentPNext;
+      currentPNext = &indexingFeatures;
+    }
+
+    physicalFeatures2.pNext = currentPNext;
     vkGetPhysicalDeviceFeatures2(m_VulkanPhysicalDevice, &physicalFeatures2);
+
+    assert(vulkan11Features.shaderDrawParameters == VK_TRUE);
 
     VkDeviceCreateInfo deviceCi = {};
     deviceCi.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceCi.queueCreateInfoCount = m_VulkanTransferQueueFamily < queueFamilyCount ? 2 : 1;
+    deviceCi.queueCreateInfoCount = queueCount;
     deviceCi.pQueueCreateInfos = queueInfo;
     deviceCi.enabledExtensionCount = deviceExtensions.m_Size;
     deviceCi.ppEnabledExtensionNames = deviceExtensions.m_Data;
@@ -1167,9 +1273,13 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
           m_VulkanDevice, "vkCmdPipelineBarrier2KHR");
     }
 
-    vkGetDeviceQueue(m_VulkanDevice, mainQueueIndex, 0, &m_VulkanMainQueue);
+    vkGetDeviceQueue(m_VulkanDevice, mainQueueFamilyIndex, 0, &m_VulkanMainQueue);
+
+    vkGetDeviceQueue(
+        m_VulkanDevice, computeQueueFamilyIndex, computeQueueIndex, &m_VulkanComputeQueue);
+
     if (m_VulkanTransferQueueFamily < queueFamilyCount)
-      vkGetDeviceQueue(m_VulkanDevice, transferQueueIndex, 0, &m_VulkanTransferQueue);
+      vkGetDeviceQueue(m_VulkanDevice, transferQueueFamilyIndex, 0, &m_VulkanTransferQueue);
   }
 
   //  Get the function pointers to Debug Utils functions.
@@ -1312,6 +1422,39 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     }
   }
 
+  // Create vulkan pools
+  const uint32_t numPools = p_Creation.numThreads * kMaxFrames;
+  m_NumThreads = p_Creation.numThreads;
+  m_ThreadFramePools.init(m_Allocator, numPools, numPools);
+
+  // Create compute command pools and command buffers
+  m_ComputeFramePools.init(m_Allocator, kMaxFrames, kMaxFrames);
+
+  for (uint32_t i = 0; i < m_ThreadFramePools.m_Size; ++i)
+  {
+    GpuThreadFramePools& pool = m_ThreadFramePools[i];
+
+    // Create command buffer pool.
+    VkCommandPoolCreateInfo cmdPoolInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
+    cmdPoolInfo.queueFamilyIndex = m_VulkanMainQueueFamily;
+    cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    vkCreateCommandPool(
+        m_VulkanDevice, &cmdPoolInfo, m_VulkanAllocCallbacks, &pool.vulkanCommandPool);
+  }
+
+  for (uint32_t i = 0; i < m_ComputeFramePools.m_Size; ++i)
+  {
+    GpuThreadFramePools& pool = m_ComputeFramePools[i];
+
+    VkCommandPoolCreateInfo cmdPoolInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
+    cmdPoolInfo.queueFamilyIndex = m_VulkanComputeQueueFamily;
+    cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    vkCreateCommandPool(
+        m_VulkanDevice, &cmdPoolInfo, m_VulkanAllocCallbacks, &pool.vulkanCommandPool);
+  }
+
   // Init pools
   m_Buffers.init(m_Allocator, kBuffersPoolSize, sizeof(Buffer));
   m_Textures.init(m_Allocator, kTexturesPoolSize, sizeof(Texture));
@@ -1329,7 +1472,7 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
   vkCreateSemaphore(
       m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanImageAcquiredSemaphore);
 
-  for (size_t i = 0; i < kMaxSwapchainImages; i++)
+  for (size_t i = 0; i < kMaxFrames; i++)
   {
 
     vkCreateSemaphore(
@@ -1337,9 +1480,37 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
 
     VkFenceCreateInfo fenceCi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     fenceCi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    vkCreateFence(
-        m_VulkanDevice, &fenceCi, m_VulkanAllocCallbacks, &m_VulkanCmdBufferExectuedFence[i]);
+
+    if (!m_TimelineSemaphoreExtensionPresent)
+      vkCreateFence(
+          m_VulkanDevice, &fenceCi, m_VulkanAllocCallbacks, &m_VulkanCmdBufferExecutedFence[i]);
   }
+
+  if (m_TimelineSemaphoreExtensionPresent)
+  {
+    VkSemaphoreTypeCreateInfo semaphoreTypeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+    semaphoreTypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    semaphoreCi.pNext = &semaphoreTypeInfo;
+
+    vkCreateSemaphore(
+        m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanGraphicsSemaphore);
+
+    vkCreateSemaphore(
+        m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanComputeSemaphore);
+  }
+  else
+  {
+    vkCreateSemaphore(
+        m_VulkanDevice, &semaphoreCi, m_VulkanAllocCallbacks, &m_VulkanComputeSemaphore);
+
+    VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    vkCreateFence(m_VulkanDevice, &fenceInfo, m_VulkanAllocCallbacks, &m_VulkanComputeFence);
+  }
+
+  // Init the command buffer ring:
+  g_CmdBufferRing.init(this, p_Creation.numThreads);
 
   // Allocate command buffers queue
   {
@@ -1347,12 +1518,9 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     m_QueuedCommandBuffers = (CommandBuffer**)(memory);
   }
 
-  // Init the command buffer ring:
-  g_CmdBufferRing.init(this, p_Creation.numThreads);
-
   // Init frame counters
   m_VulkanImageIndex = 0;
-  m_CurrentFrameIndex = 1;
+  m_CurrentFrameIndex = 0;
   m_PreviousFrameIndex = 0;
   m_AbsoluteFrameIndex = 0;
 
@@ -1469,7 +1637,17 @@ void GpuDevice::shutdown()
   for (size_t i = 0; i < kMaxSwapchainImages; i++)
   {
     vkDestroySemaphore(m_VulkanDevice, m_VulkanRenderCompleteSemaphore[i], m_VulkanAllocCallbacks);
-    vkDestroyFence(m_VulkanDevice, m_VulkanCmdBufferExectuedFence[i], m_VulkanAllocCallbacks);
+
+    if (!m_TimelineSemaphoreExtensionPresent)
+    {
+      vkDestroyFence(m_VulkanDevice, m_VulkanCmdBufferExecutedFence[i], m_VulkanAllocCallbacks);
+    }
+  }
+
+  if (m_TimelineSemaphoreExtensionPresent)
+  {
+    vkDestroySemaphore(m_VulkanDevice, m_VulkanGraphicsSemaphore, m_VulkanAllocCallbacks);
+    vkDestroySemaphore(m_VulkanDevice, m_VulkanComputeSemaphore, m_VulkanAllocCallbacks);
   }
 
   vkDestroySemaphore(m_VulkanDevice, m_VulkanImageAcquiredSemaphore, m_VulkanAllocCallbacks);
@@ -1554,83 +1732,70 @@ void GpuDevice::shutdown()
 void GpuDevice::newFrame()
 {
   // Fence wait and reset
-  VkFence* renderCompleteFence = &m_VulkanCmdBufferExectuedFence[m_CurrentFrameIndex];
-
-  if (vkGetFenceStatus(m_VulkanDevice, *renderCompleteFence) != VK_SUCCESS)
+  if (m_TimelineSemaphoreExtensionPresent)
   {
-    vkWaitForFences(m_VulkanDevice, 1, renderCompleteFence, VK_TRUE, UINT64_MAX);
+    if (m_AbsoluteFrameIndex >= kMaxFrames)
+    {
+      uint64_t graphicsTimelineValue = m_AbsoluteFrameIndex - (kMaxFrames - 1);
+      uint64_t computeTimelineValue = m_LastComputeSemaphoreValue;
+
+      uint64_t waitValues[]{graphicsTimelineValue, computeTimelineValue};
+
+      VkSemaphore semaphores[]{m_VulkanGraphicsSemaphore, m_VulkanComputeSemaphore};
+
+      VkSemaphoreWaitInfo semaphoreWaitInfo{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
+      semaphoreWaitInfo.semaphoreCount = m_HasAsyncWork ? 2 : 1;
+      semaphoreWaitInfo.pSemaphores = semaphores;
+      semaphoreWaitInfo.pValues = waitValues;
+
+      vkWaitSemaphores(m_VulkanDevice, &semaphoreWaitInfo, ~0ull);
+    }
   }
-  vkResetFences(m_VulkanDevice, 1, renderCompleteFence);
+  else
+  {
+    VkFence renderCompleteFence = m_VulkanCmdBufferExecutedFence[m_CurrentFrameIndex];
+
+    VkFence fences[]{renderCompleteFence, m_VulkanComputeFence};
+
+    // if ( vkGetFenceStatus( m_VulkanDevice, *renderCompleteFence ) != VK_SUCCESS ) {
+    //     vkWaitForFences( m_VulkanDevice, 1, renderCompleteFence, VK_TRUE, UINT64_MAX );
+    // }
+
+    uint32_t fenceCount = m_HasAsyncWork ? 2 : 1;
+    vkWaitForFences(m_VulkanDevice, fenceCount, fences, VK_TRUE, UINT64_MAX);
+
+    vkResetFences(m_VulkanDevice, fenceCount, fences);
+  }
 
   // Command pool reset
   g_CmdBufferRing.resetPools(m_CurrentFrameIndex);
   // Dynamic memory update
   const uint32_t usedSize = m_DynamicAllocatedSize - (m_DynamicPerFrameSize * m_PreviousFrameIndex);
-  m_DynamicMaxPerFrameSize = _min(usedSize, m_DynamicMaxPerFrameSize);
+  m_DynamicMaxPerFrameSize = _max(usedSize, m_DynamicMaxPerFrameSize);
   m_DynamicAllocatedSize = m_DynamicPerFrameSize * m_CurrentFrameIndex;
 
   // Descriptor Set Updates
-  if (m_DescriptorSetUpdates.m_Size > 0)
+  if (m_DescriptorSetUpdates.m_Size)
   {
     for (int i = m_DescriptorSetUpdates.m_Size - 1; i >= 0; i--)
     {
       DescriptorSetUpdate& update = m_DescriptorSetUpdates[i];
 
-#pragma region Update descriptor set
-      // Use a dummy descriptor set to delete the vulkan descriptor set handle
-      DescriptorSetHandle dummyDeleteDescriptorSetHandle = {m_DescriptorSets.obtainResource()};
-      DescriptorSet* dummyDeleteDescriptorSet =
-          (DescriptorSet*)m_DescriptorSets.accessResource(dummyDeleteDescriptorSetHandle.index);
+      // if ( update.frame_issued == m_CurrentFrameIndex )
+      {
+        updateDescriptorSetInstant(update);
 
-      DescriptorSet* descriptorSet =
-          (DescriptorSet*)m_DescriptorSets.accessResource(update.descriptorSet.index);
-      const DescriptorSetLayout* descriptorSetLayout = descriptorSet->layout;
-
-      dummyDeleteDescriptorSet->vkDescriptorSet = descriptorSet->vkDescriptorSet;
-      dummyDeleteDescriptorSet->bindings = nullptr;
-      dummyDeleteDescriptorSet->resources = nullptr;
-      dummyDeleteDescriptorSet->samplers = nullptr;
-      dummyDeleteDescriptorSet->numResources = 0;
-
-      destroyDescriptorSet(dummyDeleteDescriptorSetHandle);
-
-      // Allocate the new descriptor set and update its content.
-      VkWriteDescriptorSet descriptorWrite[8];
-      VkDescriptorBufferInfo bufferInfo[8];
-      VkDescriptorImageInfo imageInfo[8];
-
-      Sampler* defaultSampler = (Sampler*)m_Samplers.accessResource(m_DefaultSampler.index);
-
-      VkDescriptorSetAllocateInfo allocInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-      allocInfo.descriptorPool = m_VulkanDescriptorPool;
-      allocInfo.descriptorSetCount = 1;
-      allocInfo.pSetLayouts = &descriptorSet->layout->vkDescriptorSetLayout;
-      vkAllocateDescriptorSets(m_VulkanDevice, &allocInfo, &descriptorSet->vkDescriptorSet);
-
-      uint32_t numResources = descriptorSetLayout->numBindings;
-      fillWriteDescriptorSets(
-          *this,
-          descriptorSetLayout,
-          descriptorSet->vkDescriptorSet,
-          descriptorWrite,
-          bufferInfo,
-          imageInfo,
-          defaultSampler->vkSampler,
-          numResources,
-          descriptorSet->resources,
-          descriptorSet->samplers,
-          descriptorSet->bindings);
-
-      vkUpdateDescriptorSets(m_VulkanDevice, numResources, descriptorWrite, 0, nullptr);
-#pragma endregion End Update descriptor set
-
-      update.frameIssued = UINT32_MAX;
-      m_DescriptorSetUpdates.deleteSwap(i);
+        update.frameIssued = UINT32_MAX;
+        m_DescriptorSetUpdates.deleteSwap(i);
+      }
     }
   }
+
+  // Reset time queries
+  // TODO
 }
 //---------------------------------------------------------------------------//
-void GpuDevice::present()
+void GpuDevice::present(CommandBuffer* p_AsyncComputeCommandBuffer)
 {
   VkResult result = vkAcquireNextImageKHR(
       m_VulkanDevice,
@@ -1648,7 +1813,6 @@ void GpuDevice::present()
 
     return;
   }
-  VkFence* renderCompleteFence = &m_VulkanCmdBufferExectuedFence[m_CurrentFrameIndex];
   VkSemaphore* renderCompleteSemaphore = &m_VulkanRenderCompleteSemaphore[m_CurrentFrameIndex];
 
   // Copy all commands
@@ -1666,49 +1830,6 @@ void GpuDevice::present()
     commandBuffer->m_IsRecording = false;
     commandBuffer->m_CurrentRenderPass = nullptr;
   }
-
-  // Submit command buffers
-  VkSemaphore wait_semaphores[] = {m_VulkanImageAcquiredSemaphore};
-  VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-
-  VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submit_info.waitSemaphoreCount = 1;
-  submit_info.pWaitSemaphores = wait_semaphores;
-  submit_info.pWaitDstStageMask = wait_stages;
-  submit_info.commandBufferCount = m_NumQueuedCommandBuffers;
-  submit_info.pCommandBuffers = enqueuedCommandBuffers;
-  submit_info.signalSemaphoreCount = 1;
-  submit_info.pSignalSemaphores = renderCompleteSemaphore;
-
-  vkQueueSubmit(m_VulkanMainQueue, 1, &submit_info, *renderCompleteFence);
-
-  VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-  presentInfo.waitSemaphoreCount = 1;
-  presentInfo.pWaitSemaphores = renderCompleteSemaphore;
-
-  VkSwapchainKHR swap_chains[] = {m_VulkanSwapchain};
-  presentInfo.swapchainCount = 1;
-  presentInfo.pSwapchains = swap_chains;
-  presentInfo.pImageIndices = &m_VulkanImageIndex;
-  presentInfo.pResults = nullptr; // Optional
-  result = vkQueuePresentKHR(m_VulkanMainQueue, &presentInfo);
-
-  m_NumQueuedCommandBuffers = 0;
-
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_Resized)
-  {
-    m_Resized = false;
-    resizeSwapchain();
-
-    // Advance frame counters that are skipped during this frame.
-    frameCountersAdvance();
-
-    return;
-  }
-
-  // TODO:
-  // This is called inside resizeSwapchain as well to correctly work.
-  // frameCountersAdvance();
 
   // Update bindless descriptor sets:
   if (m_TextureToUpdateBindless.m_Size > 0)
@@ -1769,6 +1890,32 @@ void GpuDevice::present()
         m_TextureToUpdateBindless.deleteSwap(it);
 
         ++currentWriteIndex;
+
+        // Add texture to delete
+        if (textureToUpdate.deleting)
+        {
+          m_ResourceDeletionQueue.push(
+              {ResourceUpdateType::kTexture, texture->handle.index, m_CurrentFrameIndex, 1});
+        }
+
+        // Add optional compute bindless descriptor update
+        if (texture->flags & TextureFlags::kComputeMask)
+        {
+          VkWriteDescriptorSet& descriptorWriteImage = bindlessDescriptorWrites[currentWriteIndex];
+          VkDescriptorImageInfo& descriptorImageInfoCompute = bindlessImageInfo[currentWriteIndex];
+
+          // Copy common data from descriptor and image info
+          descriptorWriteImage = descriptorWrite;
+          descriptorImageInfoCompute = descriptorImageInfo;
+
+          descriptorImageInfoCompute.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+          descriptorWriteImage.dstBinding = kBindlessImageBinding;
+          descriptorWriteImage.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+          descriptorWriteImage.pImageInfo = &descriptorImageInfoCompute;
+
+          ++currentWriteIndex;
+        }
       }
     }
 
@@ -1777,6 +1924,209 @@ void GpuDevice::present()
       vkUpdateDescriptorSets(
           m_VulkanDevice, currentWriteIndex, bindlessDescriptorWrites, 0, nullptr);
     }
+  }
+
+  // Submit command buffers
+  uint32_t waitSemaphoreCount = 1;
+
+  if (m_TimelineSemaphoreExtensionPresent)
+  {
+    bool waitForComputeSemaphore = (m_LastComputeSemaphoreValue > 0) && m_HasAsyncWork;
+    if (waitForComputeSemaphore)
+      waitSemaphoreCount++;
+
+    bool waitForTimelineSemaphore = m_AbsoluteFrameIndex >= kMaxFrames;
+    if (waitForTimelineSemaphore)
+      waitSemaphoreCount++;
+
+    if (m_Synchronization2ExtensionPresent)
+    {
+      VkCommandBufferSubmitInfoKHR commandBufferInfo[4]{};
+      for (uint32_t c = 0; c < m_NumQueuedCommandBuffers; c++)
+      {
+        commandBufferInfo[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+        commandBufferInfo[c].commandBuffer = enqueuedCommandBuffers[c];
+      }
+
+      VkSemaphoreSubmitInfoKHR waitSemaphores[]{
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanImageAcquiredSemaphore,
+           0,
+           VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+           0},
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanComputeSemaphore,
+           m_LastComputeSemaphoreValue,
+           VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT_KHR,
+           0},
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanGraphicsSemaphore,
+           m_AbsoluteFrameIndex - (kMaxFrames - 1),
+           VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR,
+           0},
+      };
+
+      VkSemaphoreSubmitInfoKHR signalSemaphores[]{
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           *renderCompleteSemaphore,
+           0,
+           VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+           0},
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanGraphicsSemaphore,
+           m_AbsoluteFrameIndex + 1,
+           VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+           0}};
+
+      VkSubmitInfo2KHR submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR};
+      submitInfo.waitSemaphoreInfoCount = waitSemaphoreCount;
+      submitInfo.pWaitSemaphoreInfos = waitSemaphores;
+      submitInfo.commandBufferInfoCount = m_NumQueuedCommandBuffers;
+      submitInfo.pCommandBufferInfos = commandBufferInfo;
+      submitInfo.signalSemaphoreInfoCount = 2;
+      submitInfo.pSignalSemaphoreInfos = signalSemaphores;
+
+      m_QueueSubmit2(m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    }
+    else
+    {
+      VkSemaphore waitSemaphores[] = {
+          m_VulkanImageAcquiredSemaphore, m_VulkanComputeSemaphore, m_VulkanGraphicsSemaphore};
+      VkPipelineStageFlags wait_stages[] = {
+          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+          VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
+
+      VkSemaphore signalSemaphores[] = {*renderCompleteSemaphore, m_VulkanGraphicsSemaphore};
+
+      // NOTE: timeline semaphore values have to be monotonically increasing, so we need to
+      // start from 1 NOTE: we still have to provide a value even for non-timeline semaphores
+      uint64_t signalValues[] = {0, m_AbsoluteFrameIndex + 1};
+      VkTimelineSemaphoreSubmitInfo semaphoreCi{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
+      semaphoreCi.signalSemaphoreValueCount = 2;
+      semaphoreCi.pSignalSemaphoreValues = signalValues;
+
+      uint64_t waitValues[] = {
+          0, m_LastComputeSemaphoreValue, m_AbsoluteFrameIndex - (kMaxFrames - 1)};
+      semaphoreCi.waitSemaphoreValueCount = waitSemaphoreCount;
+      semaphoreCi.pWaitSemaphoreValues = waitValues;
+
+      VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+      submitInfo.waitSemaphoreCount = waitSemaphoreCount;
+      submitInfo.pWaitSemaphores = waitSemaphores;
+      submitInfo.pWaitDstStageMask = wait_stages;
+      submitInfo.commandBufferCount = m_NumQueuedCommandBuffers;
+      submitInfo.pCommandBuffers = enqueuedCommandBuffers;
+      submitInfo.signalSemaphoreCount = 2;
+      submitInfo.pSignalSemaphores = signalSemaphores;
+
+      submitInfo.pNext = &semaphoreCi;
+
+      vkQueueSubmit(m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    }
+  }
+  else
+  {
+    VkFence renderCompleteFence = m_VulkanCmdBufferExecutedFence[m_CurrentFrameIndex];
+
+    if (m_HasAsyncWork)
+      waitSemaphoreCount++;
+
+    if (m_Synchronization2ExtensionPresent)
+    {
+      VkCommandBufferSubmitInfoKHR commandBufferInfo[4]{};
+      for (uint32_t c = 0; c < m_NumQueuedCommandBuffers; c++)
+      {
+        commandBufferInfo[c].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+        commandBufferInfo[c].commandBuffer = enqueuedCommandBuffers[c];
+      }
+
+      VkSemaphoreSubmitInfoKHR waitSemaphores[]{
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanImageAcquiredSemaphore,
+           0,
+           VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+           0},
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanComputeSemaphore,
+           0,
+           VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT_KHR,
+           0}};
+
+      VkSemaphoreSubmitInfoKHR signalSemaphores[]{
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           *renderCompleteSemaphore,
+           0,
+           VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+           0},
+      };
+
+      VkSubmitInfo2KHR submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR};
+      submitInfo.waitSemaphoreInfoCount = waitSemaphoreCount;
+      submitInfo.pWaitSemaphoreInfos = waitSemaphores;
+      submitInfo.commandBufferInfoCount = m_NumQueuedCommandBuffers;
+      submitInfo.pCommandBufferInfos = commandBufferInfo;
+      submitInfo.signalSemaphoreInfoCount = 1;
+      submitInfo.pSignalSemaphoreInfos = signalSemaphores;
+
+      m_QueueSubmit2(m_VulkanMainQueue, 1, &submitInfo, renderCompleteFence);
+    }
+    else
+    {
+      VkSemaphore waitSemaphores[] = {m_VulkanImageAcquiredSemaphore, m_VulkanComputeSemaphore};
+      VkPipelineStageFlags wait_stages[] = {
+          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT};
+
+      VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+      submitInfo.waitSemaphoreCount = waitSemaphoreCount;
+      submitInfo.pWaitSemaphores = waitSemaphores;
+      submitInfo.pWaitDstStageMask = wait_stages;
+      submitInfo.commandBufferCount = m_NumQueuedCommandBuffers;
+      submitInfo.pCommandBuffers = enqueuedCommandBuffers;
+      submitInfo.signalSemaphoreCount = 1;
+      submitInfo.pSignalSemaphores = renderCompleteSemaphore;
+
+      vkQueueSubmit(m_VulkanMainQueue, 1, &submitInfo, renderCompleteFence);
+    }
+  }
+
+  m_HasAsyncWork = false;
+
+  if (p_AsyncComputeCommandBuffer != nullptr)
+  {
+    submitComputeLoad(p_AsyncComputeCommandBuffer);
+  }
+
+  VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+  presentInfo.waitSemaphoreCount = 1;
+  presentInfo.pWaitSemaphores = renderCompleteSemaphore;
+
+  VkSwapchainKHR swapchains[] = {m_VulkanSwapchain};
+  presentInfo.swapchainCount = 1;
+  presentInfo.pSwapchains = swapchains;
+  presentInfo.pImageIndices = &m_VulkanImageIndex;
+  presentInfo.pResults = nullptr; // Optional
+  result = vkQueuePresentKHR(m_VulkanMainQueue, &presentInfo);
+
+  m_NumQueuedCommandBuffers = 0;
+
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_Resized)
+  {
+    m_Resized = false;
+    resizeSwapchain();
+
+    // Advance frame counters that are skipped during this frame.
+    frameCountersAdvance();
+
+    return;
   }
 
   // Resource deletion using reverse iteration and swap with last element.
@@ -3328,6 +3678,7 @@ void GpuDevice::createSwapchain()
     }
 
     utilAddImageBarrier(
+        this,
         cmd->m_VulkanCmdBuffer,
         color->vkImage,
         RESOURCE_STATE_UNDEFINED,
@@ -3340,11 +3691,26 @@ void GpuDevice::createSwapchain()
   vkEndCommandBuffer(cmd->m_VulkanCmdBuffer);
 
   // Submit command buffer
-  VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &cmd->m_VulkanCmdBuffer;
+  if (m_Synchronization2ExtensionPresent)
+  {
+    VkCommandBufferSubmitInfoKHR commandBufferInfo{
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR};
+    commandBufferInfo.commandBuffer = cmd->m_VulkanCmdBuffer;
 
-  vkQueueSubmit(m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    VkSubmitInfo2KHR submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR};
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &commandBufferInfo;
+
+    m_QueueSubmit2(m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+  }
+  else
+  {
+    VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd->m_VulkanCmdBuffer;
+
+    vkQueueSubmit(m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+  }
   vkQueueWaitIdle(m_VulkanMainQueue);
 
   swapchainImages.shutdown();
@@ -3680,5 +4046,162 @@ void GpuDevice::resizeTexture(TextureHandle texture, uint32_t width, uint32_t he
 }
 //---------------------------------------------------------------------------//
 uint32_t GpuDevice::getMemoryHeapCount() { return m_VmaAllocator->GetMemoryHeapCount(); }
+//---------------------------------------------------------------------------//
+void GpuDevice::fillBarrier(FramebufferHandle framebuffer, ExecutionBarrier& outBarrier)
+{
+  Framebuffer* vkFramebuffer = (Framebuffer*)m_Framebuffers.accessResource(framebuffer.index);
+
+  outBarrier.numImageBarriers = 0;
+
+  if (vkFramebuffer)
+  {
+    const uint32_t rts = vkFramebuffer->numColorAttachments;
+    for (uint32_t i = 0; i < rts; ++i)
+    {
+      outBarrier.imageBarriers[outBarrier.numImageBarriers++].texture =
+          vkFramebuffer->colorAttachments[i];
+    }
+
+    if (vkFramebuffer->depthStencilAttachment.index != kInvalidIndex)
+    {
+      outBarrier.imageBarriers[outBarrier.numImageBarriers++].texture =
+          vkFramebuffer->depthStencilAttachment;
+    }
+  }
+}
+//---------------------------------------------------------------------------//
+bool GpuDevice::bufferReady(BufferHandle p_Buffer)
+{
+  Buffer* buffer = (Buffer*)m_Buffers.accessResource(p_Buffer.index);
+  return buffer->ready;
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::submitComputeLoad(CommandBuffer* p_CommandBuffer)
+{
+  m_HasAsyncWork = true;
+
+  if (m_TimelineSemaphoreExtensionPresent)
+  {
+    bool hasWaitSemaphore = m_LastComputeSemaphoreValue > 0;
+
+    if (m_Synchronization2ExtensionPresent)
+    {
+
+      VkSemaphoreSubmitInfoKHR waitSemaphores[]{
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanComputeSemaphore,
+           m_LastComputeSemaphoreValue,
+           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR,
+           0}};
+
+      m_LastComputeSemaphoreValue++;
+
+      VkSemaphoreSubmitInfoKHR signalSemaphores[]{
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanComputeSemaphore,
+           m_LastComputeSemaphoreValue,
+           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR,
+           0},
+      };
+
+      VkCommandBufferSubmitInfoKHR commandBufferInfo{
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR};
+      commandBufferInfo.commandBuffer = p_CommandBuffer->m_VulkanCmdBuffer;
+
+      VkSubmitInfo2KHR submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR};
+      submitInfo.waitSemaphoreInfoCount = hasWaitSemaphore ? 1 : 0;
+      submitInfo.pWaitSemaphoreInfos = waitSemaphores;
+      submitInfo.commandBufferInfoCount = 1;
+      submitInfo.pCommandBufferInfos = &commandBufferInfo;
+      submitInfo.signalSemaphoreInfoCount = 1;
+      submitInfo.pSignalSemaphoreInfos = signalSemaphores;
+
+      m_QueueSubmit2(m_VulkanComputeQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    }
+    else
+    {
+      VkSemaphore waitSemaphores[] = {m_VulkanComputeSemaphore};
+      VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT};
+
+      VkSemaphore signalSemaphores[] = {m_VulkanComputeSemaphore};
+
+      VkTimelineSemaphoreSubmitInfo semaphore_info{
+          VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
+
+      uint64_t waitValues[] = {m_LastComputeSemaphoreValue};
+      semaphore_info.waitSemaphoreValueCount = hasWaitSemaphore ? 1 : 0;
+      semaphore_info.pWaitSemaphoreValues = waitValues;
+
+      m_LastComputeSemaphoreValue++;
+
+      uint64_t signalValues[] = {m_LastComputeSemaphoreValue};
+      semaphore_info.signalSemaphoreValueCount = 1;
+      semaphore_info.pSignalSemaphoreValues = signalValues;
+
+      VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+      submitInfo.waitSemaphoreCount = hasWaitSemaphore ? 1 : 0;
+      submitInfo.pWaitSemaphores = waitSemaphores;
+      submitInfo.pWaitDstStageMask = wait_stages;
+      submitInfo.commandBufferCount = 1;
+      submitInfo.pCommandBuffers = &p_CommandBuffer->m_VulkanCmdBuffer;
+      submitInfo.signalSemaphoreCount = 1;
+      submitInfo.pSignalSemaphores = signalSemaphores;
+
+      submitInfo.pNext = &semaphore_info;
+
+      vkQueueSubmit(m_VulkanMainQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    }
+  }
+  else
+  {
+    if (vkGetFenceStatus(m_VulkanDevice, m_VulkanComputeFence) != VK_SUCCESS)
+    {
+      vkWaitForFences(m_VulkanDevice, 1, &m_VulkanComputeFence, VK_TRUE, UINT64_MAX);
+    }
+
+    vkResetFences(m_VulkanDevice, 1, &m_VulkanComputeFence);
+
+    if (m_Synchronization2ExtensionPresent)
+    {
+      VkCommandBufferSubmitInfoKHR commandBufferInfo{
+          VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR};
+      commandBufferInfo.commandBuffer = p_CommandBuffer->m_VulkanCmdBuffer;
+
+      VkSemaphoreSubmitInfoKHR signalSemaphores[]{
+          {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+           nullptr,
+           m_VulkanComputeSemaphore,
+           0,
+           VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,
+           0},
+      };
+
+      VkSubmitInfo2KHR submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR};
+      submitInfo.waitSemaphoreInfoCount = 0;
+      submitInfo.pWaitSemaphoreInfos = nullptr;
+      submitInfo.commandBufferInfoCount = 1;
+      submitInfo.pCommandBufferInfos = &commandBufferInfo;
+      submitInfo.signalSemaphoreInfoCount = 1;
+      submitInfo.pSignalSemaphoreInfos = signalSemaphores;
+
+      m_QueueSubmit2(m_VulkanComputeQueue, 1, &submitInfo, m_VulkanComputeFence);
+    }
+    else
+    {
+      VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+      submitInfo.waitSemaphoreCount = 0;
+      submitInfo.pWaitSemaphores = nullptr;
+      submitInfo.pWaitDstStageMask = nullptr;
+      submitInfo.commandBufferCount = 1;
+      submitInfo.pCommandBuffers = &p_CommandBuffer->m_VulkanCmdBuffer;
+      submitInfo.signalSemaphoreCount = 1;
+      submitInfo.pSignalSemaphores = &m_VulkanComputeSemaphore;
+
+      vkQueueSubmit(m_VulkanComputeQueue, 1, &submitInfo, m_VulkanComputeFence);
+    }
+  }
+}
 //---------------------------------------------------------------------------//
 } // namespace Graphics

@@ -686,6 +686,8 @@ struct Buffer
   BufferHandle handle;
   BufferHandle parentBuffer;
 
+  bool ready = true;
+
   uint8_t* mappedData = nullptr;
   const char* name = nullptr;
 

@@ -45,7 +45,7 @@
 #include "Graphics/CommandBuffer.hpp"
 #include "Graphics/Renderer.hpp"
 #include "Graphics/ImguiHelper.hpp"
-#include "Graphics/RenderSceneBase.hpp"
+#include "Graphics/RenderScene.hpp"
 #include "Graphics/GltfScene.hpp"
 #include "Graphics/FrameGraph.hpp"
 #include "Graphics/AsynchronousLoader.hpp"
