@@ -33,7 +33,6 @@ struct FileLoadRequest
 //---------------------------------------------------------------------------//
 struct UploadRequest
 {
-
   void* data = nullptr;
   uint32_t* completed = nullptr;
   TextureHandle texture = kInvalidTexture;
@@ -68,10 +67,9 @@ struct AsynchronousLoader
   TextureHandle textureReady;
   BufferHandle cpuBufferReady;
   BufferHandle gpuBufferReady;
-  uint32_t* completed;
 
-  VkCommandPool commandPools[GpuDevice::kMaxFrames];
-  CommandBuffer commandBuffers[GpuDevice::kMaxFrames];
+  VkCommandPool commandPools[kMaxFrames];
+  CommandBuffer commandBuffers[kMaxFrames];
   VkSemaphore transferCompleteSemaphore;
   VkFence transferFence;
 

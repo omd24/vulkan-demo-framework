@@ -24,7 +24,6 @@ void AsynchronousLoader::init(
   textureReady.index = kInvalidTexture.index;
   cpuBufferReady.index = kInvalidBuffer.index;
   gpuBufferReady.index = kInvalidBuffer.index;
-  completed = nullptr;
 
   using namespace Framework;
 
@@ -95,14 +94,14 @@ void AsynchronousLoader::update(Framework::Allocator* scratchAllocator)
 
   if (cpuBufferReady.index != kInvalidBuffer.index && cpuBufferReady.index != kInvalidBuffer.index)
   {
-    assert(completed != nullptr);
-    (*completed)++;
-
     // TODO: free cpu buffer
+    renderer->m_GpuDevice->destroyBuffer(cpuBufferReady);
+
+    Buffer* buffer = (Buffer*)renderer->m_GpuDevice->m_Buffers.accessResource(gpuBufferReady.index);
+    buffer->ready = true;
 
     gpuBufferReady.index = kInvalidBuffer.index;
     cpuBufferReady.index = kInvalidBuffer.index;
-    completed = nullptr;
   }
 
   textureReady.index = kInvalidTexture.index;
@@ -189,10 +188,9 @@ void AsynchronousLoader::update(Framework::Allocator* scratchAllocator)
     {
       assert(cpuBufferReady.index == kInvalidIndex);
       assert(gpuBufferReady.index == kInvalidIndex);
-      assert(completed == nullptr);
+
       cpuBufferReady = request.cpuBuffer;
       gpuBufferReady = request.gpuBuffer;
-      completed = request.completed;
     }
     else if (request.cpuBuffer.index != kInvalidIndex)
     {
@@ -278,7 +276,6 @@ void AsynchronousLoader::requestBufferUpload(void* data, BufferHandle buffer)
 void AsynchronousLoader::requestBufferCopy(BufferHandle src, BufferHandle dst)
 {
   UploadRequest& uploadRequest = uploadRequests.pushUse();
-  uploadRequest.completed = completed;
   uploadRequest.data = nullptr;
   uploadRequest.cpuBuffer = src;
   uploadRequest.gpuBuffer = dst;
