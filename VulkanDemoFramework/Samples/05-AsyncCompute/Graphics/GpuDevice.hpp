@@ -99,6 +99,8 @@ struct GpuDevice : public Framework::Service
 
   void* dynamicAllocate(uint32_t p_Size);
 
+  void setBufferGlobalOffset(BufferHandle p_Buffer, uint32_t p_Offset);
+
   // Swapchain helpers
   void setPresentMode(PresentMode::Enum p_Mode);
   void createSwapchain();
@@ -106,8 +108,9 @@ struct GpuDevice : public Framework::Service
   void resizeSwapchain();
 
   // Commands helpers
-  CommandBuffer* getCommandBuffer(uint32_t p_ThreadIndex, bool p_Begin);
-  CommandBuffer* getSecondaryCommandBuffer(uint32_t p_ThreadIndex);
+  CommandBuffer* getCommandBuffer(
+      uint32_t p_ThreadIndex, uint32_t p_FrameIndex, bool p_Begin, bool p_Compute = false);
+  CommandBuffer* getSecondaryCommandBuffer(uint32_t p_ThreadIndex, uint32_t p_FrameIndex);
   void queueCommandBuffer(CommandBuffer* p_CommandBuffer);
 
   // Query resources

@@ -581,10 +581,9 @@ void CommandBuffer::barrier(const ExecutionBarrier& p_Barrier)
 
         sourceAccessFlags |= pImageBarrier->srcAccessMask;
         destinationAccessFlags |= pImageBarrier->dstAccessMask;
-      }
 
-      vkBarrier.oldLayout = textureVulkan->vkImageLayout;
-      textureVulkan->vkImageLayout = vkBarrier.newLayout;
+        textureVulkan->state = nextState;
+      }
     }
 
     static VkBufferMemoryBarrier bufferMemoryBarriers[8];
@@ -731,7 +730,7 @@ void CommandBuffer::barrier(const ExecutionBarrier& p_Barrier)
     vkBarrier.subresourceRange.baseArrayLayer = 0;
     vkBarrier.subresourceRange.layerCount = 1;
 
-    vkBarrier.oldLayout = textureVulkan->vkImageLayout;
+    vkBarrier.oldLayout = utilToVkImageLayout(textureVulkan->state);
 
     // Transition to...
     vkBarrier.newLayout = isColor ? newLayout : newDepthLayout;
@@ -739,7 +738,8 @@ void CommandBuffer::barrier(const ExecutionBarrier& p_Barrier)
     vkBarrier.srcAccessMask = isColor ? sourceAccessMask : sourceDepthAccessMask;
     vkBarrier.dstAccessMask = isColor ? destinationAccessMask : destinationDepthAccessMask;
 
-    textureVulkan->vkImageLayout = vkBarrier.newLayout;
+    assert(false && "Reimplement!");
+    textureVulkan->state = RESOURCE_STATE_GENERIC_READ;
   }
 
   VkPipelineStageFlags sourceStageMask =
@@ -749,7 +749,6 @@ void CommandBuffer::barrier(const ExecutionBarrier& p_Barrier)
 
   if (hasDepth)
   {
-
     sourceStageMask |=
         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     destinationStageMask |=
@@ -963,13 +962,7 @@ void CommandBuffer::uploadTextureData(
 
   // Pre copy memory barrier to perform layout transition
   utilAddImageBarrier(
-      m_VulkanCmdBuffer,
-      texture->vkImage,
-      RESOURCE_STATE_UNDEFINED,
-      RESOURCE_STATE_COPY_DEST,
-      0,
-      1,
-      false);
+      m_GpuDevice, m_VulkanCmdBuffer, texture, RESOURCE_STATE_COPY_DEST, 0, 1, false);
   // Copy from the staging buffer to the image
   vkCmdCopyBufferToImage(
       m_VulkanCmdBuffer,
@@ -981,10 +974,10 @@ void CommandBuffer::uploadTextureData(
 
   // Post copy memory barrier
   utilAddImageBarrierExt(
+      m_GpuDevice,
       m_VulkanCmdBuffer,
-      texture->vkImage,
+      texture,
       RESOURCE_STATE_COPY_DEST,
-      RESOURCE_STATE_COPY_SOURCE,
       0,
       1,
       false,
@@ -992,8 +985,6 @@ void CommandBuffer::uploadTextureData(
       m_GpuDevice->m_VulkanMainQueueFamily,
       QueueType::kCopyTransfer,
       QueueType::kGraphics);
-
-  texture->vkImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::copyTexture(TextureHandle p_Src, TextureHandle p_Dst, ResourceState p_DstState)
@@ -1016,16 +1007,9 @@ void CommandBuffer::copyTexture(TextureHandle p_Src, TextureHandle p_Dst, Resour
   region.extent = {src->width, src->height, src->depth};
 
   // Copy from the staging buffer to the image
-  utilAddImageBarrier(
-      m_VulkanCmdBuffer, src->vkImage, p_SrcState, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
-  utilAddImageBarrier(
-      m_VulkanCmdBuffer,
-      dst->vkImage,
-      RESOURCE_STATE_UNDEFINED,
-      RESOURCE_STATE_COPY_DEST,
-      0,
-      1,
-      false);
+  utilAddImageBarrier(m_GpuDevice, m_VulkanCmdBuffer, src, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
+  ResourceState oldState = dst->state;
+  utilAddImageBarrier(m_GpuDevice, m_VulkanCmdBuffer, dst, RESOURCE_STATE_COPY_DEST, 0, 1, false);
 
   vkCmdCopyImage(
       m_VulkanCmdBuffer,
@@ -1040,13 +1024,7 @@ void CommandBuffer::copyTexture(TextureHandle p_Src, TextureHandle p_Dst, Resour
   if (dst->mipmaps > 1)
   {
     utilAddImageBarrier(
-        m_VulkanCmdBuffer,
-        dst->vkImage,
-        RESOURCE_STATE_COPY_DEST,
-        RESOURCE_STATE_COPY_SOURCE,
-        0,
-        1,
-        false);
+        m_GpuDevice, m_VulkanCmdBuffer, dst, RESOURCE_STATE_COPY_SOURCE, 0, 1, false);
   }
 
   int w = dst->width;
@@ -1055,9 +1033,10 @@ void CommandBuffer::copyTexture(TextureHandle p_Src, TextureHandle p_Dst, Resour
   for (int mipIndex = 1; mipIndex < dst->mipmaps; ++mipIndex)
   {
     utilAddImageBarrier(
+        m_GpuDevice,
         m_VulkanCmdBuffer,
         dst->vkImage,
-        RESOURCE_STATE_UNDEFINED,
+        oldState,
         RESOURCE_STATE_COPY_DEST,
         mipIndex,
         1,
@@ -1095,6 +1074,7 @@ void CommandBuffer::copyTexture(TextureHandle p_Src, TextureHandle p_Dst, Resour
 
     // Prepare current mip for next level
     utilAddImageBarrier(
+        m_GpuDevice,
         m_VulkanCmdBuffer,
         dst->vkImage,
         RESOURCE_STATE_COPY_DEST,
@@ -1105,14 +1085,7 @@ void CommandBuffer::copyTexture(TextureHandle p_Src, TextureHandle p_Dst, Resour
   }
 
   // Transition
-  utilAddImageBarrier(
-      m_VulkanCmdBuffer,
-      dst->vkImage,
-      (dst->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST,
-      p_DstState,
-      0,
-      dst->mipmaps,
-      false);
+  utilAddImageBarrier(m_GpuDevice, m_VulkanCmdBuffer, dst, p_DstState, 0, dst->mipmaps, false);
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::uploadBufferData(
@@ -1140,6 +1113,7 @@ void CommandBuffer::uploadBufferData(
   vkCmdCopyBuffer(m_VulkanCmdBuffer, stagingBuffer->vkBuffer, buffer->vkBuffer, 1, &region);
 
   utilAddBufferBarrierExt(
+      m_GpuDevice,
       m_VulkanCmdBuffer,
       buffer->vkBuffer,
       RESOURCE_STATE_COPY_DEST,
@@ -1174,24 +1148,13 @@ void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
   m_NumPoolsPerFrame = p_NumThreads;
 
   // Create pools: num frames * num threads;
-  const uint32_t totalPools = m_NumPoolsPerFrame * m_GpuDevice->kMaxFrames;
-  m_VulkanCommandPools.init(m_GpuDevice->m_Allocator, totalPools, totalPools);
+  const uint32_t totalPools = m_NumPoolsPerFrame * kMaxFrames;
   // Init per thread-frame used buffers
   m_UsedBuffers.init(m_GpuDevice->m_Allocator, totalPools, totalPools);
   m_UsedSecondaryCommandBuffers.init(m_GpuDevice->m_Allocator, totalPools, totalPools);
 
   for (uint32_t i = 0; i < totalPools; i++)
   {
-    VkCommandPoolCreateInfo cmdPoolCi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr};
-    cmdPoolCi.queueFamilyIndex = m_GpuDevice->m_VulkanMainQueueFamily;
-    cmdPoolCi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-    vkCreateCommandPool(
-        m_GpuDevice->m_VulkanDevice,
-        &cmdPoolCi,
-        m_GpuDevice->m_VulkanAllocCallbacks,
-        &m_VulkanCommandPools[i]);
-
     m_UsedBuffers[i] = 0;
     m_UsedSecondaryCommandBuffers[i] = 0;
   }
@@ -1203,6 +1166,9 @@ void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
   const uint32_t totalSecondaryBuffers = totalPools * g_SecondaryCommandBuffersCount;
   m_SecondaryCommandBuffers.init(m_GpuDevice->m_Allocator, totalSecondaryBuffers);
 
+  const uint32_t totalComputeBuffers = kMaxFrames;
+  m_ComputeCommandBuffers.init(m_GpuDevice->m_Allocator, kMaxFrames, kMaxFrames);
+
   for (uint32_t i = 0; i < totalBuffers; i++)
   {
     VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
@@ -1211,7 +1177,7 @@ void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
     const uint32_t threadIndex = (i / m_NumCommandBuffersPerThread) % m_NumPoolsPerFrame;
     const uint32_t poolIndex = poolFromIndices(frameIndex, threadIndex);
     // printf( "Indices i:%u f:%u t:%u p:%u\n", i, frameIndex, threadIndex, poolIndex );
-    cmd.commandPool = m_VulkanCommandPools[poolIndex];
+    cmd.commandPool = m_GpuDevice->m_ThreadFramePools[poolIndex].vulkanCommandPool;
     cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmd.commandBufferCount = 1;
 
@@ -1221,6 +1187,7 @@ void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
 
     // TODO: move to have a ring per queue per thread
     currentCommandBuffer.m_Handle = i;
+    currentCommandBuffer.m_ThreadFramePool = &m_GpuDevice->m_ThreadFramePools[poolIndex];
     currentCommandBuffer.init(m_GpuDevice);
   }
 
@@ -1229,7 +1196,7 @@ void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
   {
     VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
 
-    cmd.commandPool = m_VulkanCommandPools[poolIndex];
+    cmd.commandPool = m_GpuDevice->m_ThreadFramePools[poolIndex].vulkanCommandPool;
     cmd.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
     cmd.commandBufferCount = g_SecondaryCommandBuffersCount;
 
@@ -1242,13 +1209,30 @@ void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
       cmdBuf.m_VulkanCmdBuffer = secondaryBuffers[cmdIndex];
 
       cmdBuf.m_Handle = handle++;
+      cmdBuf.m_ThreadFramePool = &m_GpuDevice->m_ThreadFramePools[poolIndex];
       cmdBuf.init(m_GpuDevice);
 
       // NOTE: access to the descriptor pool has to be synchronized
-      // across theads. Don't allow for now
-
+      // across threads. Don't allow for now
       m_SecondaryCommandBuffers.push(cmdBuf);
     }
+  }
+
+  for (uint32_t i = 0; i < totalComputeBuffers; i++)
+  {
+    VkCommandBufferAllocateInfo cmd = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr};
+
+    cmd.commandPool = m_GpuDevice->m_ComputeFramePools[i].vulkanCommandPool;
+    cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmd.commandBufferCount = 1;
+
+    CommandBuffer& currentCommandBuffer = m_ComputeCommandBuffers[i];
+    vkAllocateCommandBuffers(
+        m_GpuDevice->m_VulkanDevice, &cmd, &currentCommandBuffer.m_VulkanCmdBuffer);
+
+    currentCommandBuffer.m_Handle = i;
+    currentCommandBuffer.m_ThreadFramePool = &m_GpuDevice->m_ComputeFramePools[i];
+    currentCommandBuffer.init(m_GpuDevice);
   }
 
   // printf( "Done\n" );
@@ -1256,13 +1240,6 @@ void CommandBufferManager::init(GpuDevice* p_GpuDevice, uint32_t p_NumThreads)
 //---------------------------------------------------------------------------//
 void CommandBufferManager::shutdown()
 {
-  const uint32_t totalPools = m_NumPoolsPerFrame * m_GpuDevice->kMaxFrames;
-  for (uint32_t i = 0; i < totalPools; i++)
-  {
-    vkDestroyCommandPool(
-        m_GpuDevice->m_VulkanDevice, m_VulkanCommandPools[i], m_GpuDevice->m_VulkanAllocCallbacks);
-  }
-
   for (uint32_t i = 0; i < m_CommandBuffers.m_Size; i++)
   {
     m_CommandBuffers[i].shutdown();
@@ -1273,8 +1250,13 @@ void CommandBufferManager::shutdown()
     m_SecondaryCommandBuffers[i].shutdown();
   }
 
-  m_VulkanCommandPools.shutdown();
+  for (uint32_t i = 0; i < m_ComputeCommandBuffers.m_Size; ++i)
+  {
+    m_ComputeCommandBuffers[i].shutdown();
+  }
+
   m_SecondaryCommandBuffers.shutdown();
+  m_ComputeCommandBuffers.shutdown();
   m_CommandBuffers.shutdown();
   m_UsedBuffers.shutdown();
   m_UsedSecondaryCommandBuffers.shutdown();
@@ -1286,32 +1268,56 @@ void CommandBufferManager::resetPools(uint32_t p_FrameIndex)
   for (uint32_t i = 0; i < m_NumPoolsPerFrame; i++)
   {
     const uint32_t poolIndex = poolFromIndices(p_FrameIndex, i);
-    vkResetCommandPool(m_GpuDevice->m_VulkanDevice, m_VulkanCommandPools[poolIndex], 0);
+    vkResetCommandPool(
+        m_GpuDevice->m_VulkanDevice,
+        m_GpuDevice->m_ThreadFramePools[poolIndex].vulkanCommandPool,
+        0);
 
     m_UsedBuffers[poolIndex] = 0;
     m_UsedSecondaryCommandBuffers[poolIndex] = 0;
   }
 }
 //---------------------------------------------------------------------------//
-CommandBuffer*
-CommandBufferManager::getCommandBuffer(uint32_t p_Frame, uint32_t p_ThreadIndex, bool begin)
+CommandBuffer* CommandBufferManager::getCommandBuffer(
+    uint32_t p_Frame, uint32_t p_ThreadIndex, bool p_Begin, bool p_Compute)
 {
-  const uint32_t poolIndex = poolFromIndices(p_Frame, p_ThreadIndex);
-  uint32_t currentUsedBuffer = m_UsedBuffers[poolIndex];
-  // TODO: how to handle fire-and-forget command buffers ?
-  // m_UsedBuffers[ poolIndex ] = currentUsedBuffer + 1;
-  assert(currentUsedBuffer < m_NumCommandBuffersPerThread);
+  CommandBuffer* cb = nullptr;
 
-  CommandBuffer* cmdBuf =
-      &m_CommandBuffers[(poolIndex * m_NumCommandBuffersPerThread) + currentUsedBuffer];
-  if (begin)
+  if (p_Compute)
   {
-    cmdBuf->reset();
-    VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmdBuf->m_VulkanCmdBuffer, &beginInfo);
+    assert(p_ThreadIndex == 0);
+    cb = &m_ComputeCommandBuffers[p_Frame];
   }
-  return cmdBuf;
+  else
+  {
+    const uint32_t poolIndex = poolFromIndices(p_Frame, p_ThreadIndex);
+    uint32_t currentUsedBuffer = m_UsedBuffers[poolIndex];
+    // TODO: how to handle fire-and-forget command buffers ?
+    assert(currentUsedBuffer < m_NumCommandBuffersPerThread);
+    if (p_Begin)
+    {
+      m_UsedBuffers[poolIndex] = currentUsedBuffer + 1;
+    }
+
+    cb = &m_CommandBuffers[(poolIndex * m_NumCommandBuffersPerThread) + currentUsedBuffer];
+  }
+
+  if (p_Begin)
+  {
+    cb->reset();
+    cb->begin();
+
+    // Timestamp queries
+    GpuThreadFramePools* threadPools = cb->m_ThreadFramePool;
+
+    if (!p_Compute)
+    {
+      // Pipeline statistics
+      // TODO...
+    }
+  }
+
+  return cb;
 }
 //---------------------------------------------------------------------------//
 CommandBuffer*

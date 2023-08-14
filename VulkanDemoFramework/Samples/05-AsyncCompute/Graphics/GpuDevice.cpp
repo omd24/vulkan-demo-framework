@@ -3489,6 +3489,15 @@ void* GpuDevice::dynamicAllocate(uint32_t p_Size)
   return MappedMemory;
 }
 //---------------------------------------------------------------------------//
+void GpuDevice::setBufferGlobalOffset(BufferHandle p_Buffer, uint32_t p_Offset)
+{
+  if (p_Buffer.index == kInvalidIndex)
+    return;
+
+  Buffer* vulkanBuffer = (Buffer*)m_Buffers.accessResource(p_Buffer.index);
+  vulkanBuffer->globalOffset = p_Offset;
+}
+//---------------------------------------------------------------------------//
 void GpuDevice::setPresentMode(PresentMode::Enum p_Mode)
 {
 
@@ -3773,17 +3782,17 @@ void GpuDevice::setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const
   pfnSetDebugUtilsObjectNameEXT(m_VulkanDevice, &nameInfo);
 }
 //---------------------------------------------------------------------------//
-CommandBuffer* GpuDevice::getCommandBuffer(uint32_t p_ThreadIndex, bool p_Begin)
+CommandBuffer* GpuDevice::getCommandBuffer(
+    uint32_t p_ThreadIndex, uint32_t p_FrameIndex, bool p_Begin, bool p_Compute)
 {
   CommandBuffer* cmd =
-      g_CmdBufferRing.getCommandBuffer(m_CurrentFrameIndex, p_ThreadIndex, p_Begin);
+      g_CmdBufferRing.getCommandBuffer(p_FrameIndex, p_ThreadIndex, p_Begin, p_Compute);
   return cmd;
 }
 //---------------------------------------------------------------------------//
-CommandBuffer* GpuDevice::getSecondaryCommandBuffer(uint32_t p_ThreadIndex)
+CommandBuffer* GpuDevice::getSecondaryCommandBuffer(uint32_t p_ThreadIndex, uint32_t p_FrameIndex)
 {
-  CommandBuffer* cmd =
-      g_CmdBufferRing.getSecondaryCommandBuffer(m_CurrentFrameIndex, p_ThreadIndex);
+  CommandBuffer* cmd = g_CmdBufferRing.getSecondaryCommandBuffer(p_FrameIndex, p_ThreadIndex);
   return cmd;
 }
 //---------------------------------------------------------------------------//

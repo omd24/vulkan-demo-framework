@@ -94,6 +94,7 @@ struct CommandBuffer
   VkDescriptorPool m_VulkanDescriptorPool;
   Framework::ResourcePool m_DescriptorSets;
 
+  GpuThreadFramePools* m_ThreadFramePool;
   GpuDevice* m_GpuDevice;
 
   VkDescriptorSet m_VulkanDescriptorSets[16];
@@ -117,15 +118,16 @@ struct CommandBufferManager
 
   void resetPools(uint32_t p_FrameIndex);
 
-  CommandBuffer* getCommandBuffer(uint32_t p_Frame, uint32_t p_ThreadIndex, bool p_Begin);
+  CommandBuffer*
+  getCommandBuffer(uint32_t p_Frame, uint32_t p_ThreadIndex, bool p_Begin, bool p_Compute);
   CommandBuffer* getSecondaryCommandBuffer(uint32_t p_Frame, uint32_t p_ThreadIndex);
 
   uint16_t poolFromIndex(uint32_t p_Index) { return (uint16_t)p_Index / m_NumPoolsPerFrame; }
   uint32_t poolFromIndices(uint32_t p_FrameIndex, uint32_t thread_index);
 
-  Framework::Array<VkCommandPool> m_VulkanCommandPools;
   Framework::Array<CommandBuffer> m_CommandBuffers;
   Framework::Array<CommandBuffer> m_SecondaryCommandBuffers;
+  Framework::Array<CommandBuffer> m_ComputeCommandBuffers;
   Framework::Array<uint8_t> m_UsedBuffers; // Track how many buffers were used per thread per frame.
   Framework::Array<uint8_t> m_UsedSecondaryCommandBuffers;
 
