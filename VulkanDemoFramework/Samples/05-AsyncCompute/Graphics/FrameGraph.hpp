@@ -235,7 +235,7 @@ struct FrameGraph
   void disableRenderPass(const char* renderPassName);
   void compile();
   void addUi();
-  void render(CommandBuffer* gpuCommands, RenderScene* renderScene);
+  void render(uint32_t currentFrameIndex, CommandBuffer* gpuCommands, RenderScene* renderScene);
   void onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight);
 
   FrameGraphNode* getNode(const char* name);

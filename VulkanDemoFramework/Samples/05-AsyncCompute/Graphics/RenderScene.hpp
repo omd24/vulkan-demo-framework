@@ -7,6 +7,7 @@
 #include "Graphics/Renderer.hpp"
 #include "Graphics/GpuResources.hpp"
 #include "Graphics/FrameGraph.hpp"
+#include "Graphics/ImguiHelper.hpp"
 
 #include "Externals/cglm/types-struct.h"
 
@@ -26,7 +27,7 @@ struct Allocator;
 struct AsynchronousLoader;
 struct FrameGraph;
 struct GpuVisualProfiler;
-struct ImGuiService;
+struct ImguiService;
 struct Renderer;
 struct RenderScene;
 struct SceneGraph;
@@ -593,9 +594,8 @@ struct RenderScene
 //
 struct FrameRenderer
 {
-
   void init(
-      Allocator* residentAllocator,
+      Framework::Allocator* residentAllocator,
       RendererUtil::Renderer* renderer,
       FrameGraph* frameGraph,
       SceneGraph* sceneGraph,
@@ -638,8 +638,8 @@ struct DrawTask : public enki::ITaskSet
 
   Graphics::GpuDevice* gpu = nullptr;
   FrameGraph* frameGraph = nullptr;
-  Renderer* renderer = nullptr;
-  ImGuiService* imgui = nullptr;
+  RendererUtil::Renderer* renderer = nullptr;
+  ImguiUtil::ImguiService* imgui = nullptr;
   RenderScene* scene = nullptr;
   FrameRenderer* frameRenderer = nullptr;
   uint32_t thread_id = 0;
@@ -650,8 +650,8 @@ struct DrawTask : public enki::ITaskSet
   void init(
       Graphics::GpuDevice* p_Gpu,
       FrameGraph* p_FrameGraph,
-      Renderer* p_Renderer,
-      ImGuiService* p_Imgui,
+      RendererUtil::Renderer* p_Renderer,
+      Graphics::ImguiUtil::ImguiService* p_Imgui,
       RenderScene* p_Scene,
       FrameRenderer* p_FrameRenderer);
 

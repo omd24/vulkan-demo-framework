@@ -22,6 +22,11 @@ struct CommandBuffer
   bindPass(RenderPassHandle p_Passhandle, FramebufferHandle p_Framebuffer, bool p_UseSecondary);
   void bindPipeline(PipelineHandle p_Handle);
   void bindVertexBuffer(BufferHandle p_Handle, uint32_t p_Binding, uint32_t p_Offset);
+  void bindVertexBuffers(
+      BufferHandle* p_Handles,
+      uint32_t p_FirstBinding,
+      uint32_t p_BindingCount,
+      uint32_t* p_Offsets);
   void bindIndexBuffer(BufferHandle p_Handle, uint32_t p_Offset, VkIndexType p_IndexType);
   void bindDescriptorSet(
       DescriptorSetHandle* p_Handles,
@@ -37,15 +42,15 @@ struct CommandBuffer
   void setViewport(const Viewport* p_Viewport);
   void setScissor(const Rect2DInt* p_Rect);
 
-  void clear(float p_Red, float p_Green, float p_Blue, float p_Alpha)
+  void clear(float p_Red, float p_Green, float p_Blue, float p_Alpha, uint32_t p_AttachmentIndex)
   {
-    m_Clears[0].color = {p_Red, p_Green, p_Blue, p_Alpha};
+    m_Clears[p_AttachmentIndex].color = {p_Red, p_Green, p_Blue, p_Alpha};
   }
 
   void clearDepthStencil(float p_Depth, uint8_t p_Value)
   {
-    m_Clears[1].depthStencil.depth = p_Depth;
-    m_Clears[1].depthStencil.stencil = p_Value;
+    m_Clears[kDepthStencilClearIndex].depthStencil.depth = p_Depth;
+    m_Clears[kDepthStencilClearIndex].depthStencil.stencil = p_Value;
   }
 
   // Draw methods:
@@ -89,6 +94,8 @@ struct CommandBuffer
       size_t p_StagingBufferOffset);
   void uploadBufferData(BufferHandle p_Src, BufferHandle p_Dst);
 
+  static const uint32_t kDepthStencilClearIndex = kMaxImageOutputs;
+
   VkCommandBuffer m_VulkanCmdBuffer;
 
   VkDescriptorPool m_VulkanDescriptorPool;
@@ -102,7 +109,8 @@ struct CommandBuffer
   RenderPass* m_CurrentRenderPass;
   Framebuffer* m_CurrentFramebuffer;
   Pipeline* m_CurrentPipeline;
-  VkClearValue m_Clears[2]; // 0 = Color, 1 = Depth
+  VkClearValue m_ClearValues[kMaxImageOutputs + 1]; // Clear value for each attachment with
+                                                    // depth/stencil at the end.
   bool m_IsRecording;
 
   uint32_t m_Handle;

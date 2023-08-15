@@ -932,16 +932,16 @@ CommandBuffer* RenderScene::updatePhysics(
             }
 
             Buffer* positionBuffer = renderer->m_GpuDevice->accessBuffer( mesh.positionBuffer );
-            vec3s* positions = ( vec3s* )( positionBuffer->mapped_data + mesh.position_offset );
+            vec3s* positions = ( vec3s* )( positionBuffer->mapped_data + mesh.positionOffset );
 
             Buffer* normalBuffer = renderer->m_GpuDevice->accessBuffer( mesh.normalBuffer );
-            vec3s* normals = ( vec3s* )( normalBuffer->mapped_data + mesh.normal_offset );
+            vec3s* normals = ( vec3s* )( normalBuffer->mapped_data + mesh.normalOffset );
 
             Buffer* tangentBuffer = renderer->m_GpuDevice->accessBuffer( mesh.tangentBuffer );
-            vec3s* tangents = ( vec3s* )( tangentBuffer->mapped_data + mesh.tangent_offset );
+            vec3s* tangents = ( vec3s* )( tangentBuffer->mapped_data + mesh.tangentOffset );
 
             Buffer* indexBuffer = renderer->m_GpuDevice->accessBuffer( mesh.indexBuffer );
-            uint32_t* indices = ( uint32_t* )( indexBuffer->mapped_data + mesh.index_offset );
+            uint32_t* indices = ( uint32_t* )( indexBuffer->mapped_data + mesh.indexOffset );
 
             for ( uint32_t v = 0; v < physicsMesh->vertices.m_Size; ++v ) {
                 positions[ v ] = physicsMesh->vertices[ v ].position;
@@ -1011,16 +1011,13 @@ CommandBuffer* RenderScene::updatePhysics(
 
       if (cb == nullptr)
       {
-        cb = gpu.get_commandBuffer(0, gpu.currentFrame, true, true /*compute*/);
+        cb = gpu.getCommandBuffer(0, gpu.m_CurrentFrameIndex, true, true /*compute*/);
 
-        cb->push_marker("Frame");
-        cb->push_marker("async");
+        const uint64_t clothHashedName = hashCalculate("cloth");
+        RendererUtil::GpuTechnique* clothTechnique =
+            renderer->m_ResourceCache.m_Techniques.get(clothHashedName);
 
-        const uint64_t cloth_hashedName = hashCalculate("cloth");
-        GpuTechnique* cloth_technique =
-            renderer->m_ResourceCache.m_Techniques.get(cloth_hashedName);
-
-        cb->bindPipeline(cloth_technique->passes[0].pipeline);
+        cb->bindPipeline(clothTechnique->passes[0].pipeline);
       }
 
       cb->bindDescriptorSet(&physicsMesh->descriptorSet, 1, nullptr, 0);
@@ -1032,9 +1029,6 @@ CommandBuffer* RenderScene::updatePhysics(
 
   if (cb != nullptr)
   {
-    cb->pop_marker();
-    cb->pop_marker();
-
     // Graphics queries not available in compute only queues.
 
     cb->end();
@@ -1045,9 +1039,9 @@ CommandBuffer* RenderScene::updatePhysics(
 }
 
 // TODO: refactor
-Transform animated_transforms[256];
+Transform animatedTransforms[256];
 
-void RenderScene::update_animations(float deltaTime)
+void RenderScene::updateAnimations(float deltaTime)
 {
 
   if (animations.m_Size == 0)
@@ -1057,24 +1051,24 @@ void RenderScene::update_animations(float deltaTime)
 
   // TODO: update the first animation as test
   Animation& animation = animations[0];
-  static float current_time = 0.f;
+  static float currentTime = 0.f;
 
-  current_time += deltaTime;
-  if (current_time > animation.time_end)
+  currentTime += deltaTime;
+  if (currentTime > animation.timeEnd)
   {
-    current_time -= animation.time_end;
+    currentTime -= animation.timeEnd;
   }
 
   // TODO: fix skeleton/scene graph relationship
   for (uint32_t i = 0; i < 256; ++i)
   {
 
-    Transform& transform = animated_transforms[i];
+    Transform& transform = animatedTransforms[i];
     transform.reset();
   }
   // Accumulate transformations
 
-  u8 changed[256];
+  uint8_t changed[256];
   memset(changed, 0, 256);
 
   // For each animation channel
@@ -1083,54 +1077,54 @@ void RenderScene::update_animations(float deltaTime)
     AnimationChannel& channel = animation.channels[ac];
     AnimationSampler& sampler = animation.samplers[channel.sampler];
 
-    if (sampler.interpolation_type != AnimationSampler::Linear)
+    if (sampler.interpolationType != AnimationSampler::Linear)
     {
-      rprint("Interpolation %s still not supported.\n", sampler.interpolation_type);
+      printf("Interpolation %s still not supported.\n", sampler.interpolationType);
       continue;
     }
 
     // Scroll through all key frames
-    for (uint32_t ki = 0; ki < sampler.key_frames.m_Size - 1; ++ki)
+    for (uint32_t ki = 0; ki < sampler.keyFrames.m_Size - 1; ++ki)
     {
-      const float keyframe = sampler.key_frames[ki];
-      const float next_keyframe = sampler.key_frames[ki + 1];
-      if (current_time >= keyframe && current_time <= next_keyframe)
+      const float keyframe = sampler.keyFrames[ki];
+      const float nextKeyframe = sampler.keyFrames[ki + 1];
+      if (currentTime >= keyframe && currentTime <= nextKeyframe)
       {
 
-        const float interpolation = (current_time - keyframe) / (next_keyframe - keyframe);
+        const float interpolation = (currentTime - keyframe) / (nextKeyframe - keyframe);
 
         assert(channel.targetNode < 256);
         changed[channel.targetNode] = 1;
-        Transform& transform = animated_transforms[channel.targetNode];
-        switch (channel.target_type)
+        Transform& transform = animatedTransforms[channel.targetNode];
+        switch (channel.targetType)
         {
         case AnimationChannel::TargetType::Translation: {
-          const vec3s current_data{sampler.data[ki].x, sampler.data[ki].y, sampler.data[ki].z};
-          const vec3s next_data{
+          const vec3s currentData{sampler.data[ki].x, sampler.data[ki].y, sampler.data[ki].z};
+          const vec3s nextData{
               sampler.data[ki + 1].x, sampler.data[ki + 1].y, sampler.data[ki + 1].z};
-          transform.translation = glms_vec3_lerp(current_data, next_data, interpolation);
+          transform.translation = glms_vec3_lerp(currentData, nextData, interpolation);
 
           break;
         }
         case AnimationChannel::TargetType::Rotation: {
-          const vec4s current_data = sampler.data[ki];
-          const versors current_rotation =
-              glms_quat_init(current_data.x, current_data.y, current_data.z, current_data.w);
+          const vec4s currentData = sampler.data[ki];
+          const versors currentRotation =
+              glms_quat_init(currentData.x, currentData.y, currentData.z, currentData.w);
 
-          const vec4s next_data = sampler.data[ki + 1];
-          const versors next_rotation =
-              glms_quat_init(next_data.x, next_data.y, next_data.z, next_data.w);
+          const vec4s nextData = sampler.data[ki + 1];
+          const versors nextRotation =
+              glms_quat_init(nextData.x, nextData.y, nextData.z, nextData.w);
 
           transform.rotation =
-              glms_quat_normalize(glms_quat_slerp(current_rotation, next_rotation, interpolation));
+              glms_quat_normalize(glms_quat_slerp(currentRotation, nextRotation, interpolation));
 
           break;
         }
         case AnimationChannel::TargetType::Scale: {
-          const vec3s current_data{sampler.data[ki].x, sampler.data[ki].y, sampler.data[ki].z};
-          const vec3s next_data{
+          const vec3s currentData{sampler.data[ki].x, sampler.data[ki].y, sampler.data[ki].z};
+          const vec3s nextData{
               sampler.data[ki + 1].x, sampler.data[ki + 1].y, sampler.data[ki + 1].z};
-          transform.scale = glms_vec3_lerp(current_data, next_data, interpolation);
+          transform.scale = glms_vec3_lerp(currentData, nextData, interpolation);
 
           break;
         }
@@ -1145,31 +1139,31 @@ void RenderScene::update_animations(float deltaTime)
 }
 
 // TODO: remove, improve
-mat4s get_local_matrix(SceneGraph* sceneGraph, uint32_t nodeIndex)
+mat4s getLocalMatrix(SceneGraph* sceneGraph, uint32_t nodeIndex)
 {
-  const mat4s& a = animated_transforms[nodeIndex].calculate_matrix();
+  const mat4s& a = animatedTransforms[nodeIndex].calculateMatrix();
   // NOTE: according to the spec (3.7.3.2)
   // Only the joint transforms are applied to the skinned mesh; the transform of the skinned mesh
   // node MUST be ignored
   return a;
 }
 
-mat4s getNode_transform(SceneGraph* sceneGraph, uint32_t nodeIndex)
+mat4s getNodeTransform(SceneGraph* sceneGraph, uint32_t nodeIndex)
 {
-  mat4s node_transform = get_local_matrix(sceneGraph, nodeIndex);
+  mat4s node_transform = getLocalMatrix(sceneGraph, nodeIndex);
 
-  i32 parent = sceneGraph->nodes_hierarchy[nodeIndex].parent;
+  int parent = sceneGraph->nodesHierarchy[nodeIndex].parent;
   while (parent >= 0)
   {
-    node_transform = glms_mat4_mul(get_local_matrix(sceneGraph, parent), node_transform);
+    node_transform = glms_mat4_mul(getLocalMatrix(sceneGraph, parent), node_transform);
 
-    parent = sceneGraph->nodes_hierarchy[parent].parent;
+    parent = sceneGraph->nodesHierarchy[parent].parent;
   }
 
   return node_transform;
 }
 
-void RenderScene::update_joints()
+void RenderScene::updateJoints()
 {
 
   for (uint32_t i = 0; i < skins.m_Size; i++)
@@ -1177,19 +1171,19 @@ void RenderScene::update_joints()
     Skin& skin = skins[i];
 
     // Calculate joint transforms and upload to GPU
-    MapBufferParameters cbMap{skin.joint_transforms, 0, 0};
-    mat4s* joint_transforms = (mat4s*)renderer->m_GpuDevice->mapBuffer(cbMap);
+    MapBufferParameters cbMap{skin.jointTransforms, 0, 0};
+    mat4s* jointTransforms = (mat4s*)renderer->m_GpuDevice->mapBuffer(cbMap);
 
-    if (joint_transforms)
+    if (jointTransforms)
     {
       for (uint32_t ji = 0; ji < skin.joints.m_Size; ji++)
       {
         uint32_t joint = skin.joints[ji];
 
-        mat4s& joint_transform = joint_transforms[ji];
+        mat4s& jointTransform = jointTransforms[ji];
 
-        joint_transform =
-            glms_mat4_mul(getNode_transform(sceneGraph, joint), skin.inverse_bind_matrices[ji]);
+        jointTransform =
+            glms_mat4_mul(getNodeTransform(sceneGraph, joint), skin.inverseBindMatrices[ji]);
       }
 
       renderer->m_GpuDevice->unmapBuffer(cbMap);
@@ -1200,8 +1194,7 @@ void RenderScene::update_joints()
 // RenderScene ////////////////////////////////////////////////////////////
 void RenderScene::uploadGpuData()
 {
-
-  // uint32_t currentFrameIndex = renderer->m_GpuDevice->absolute_frame;
+  // uint32_t currentFrameIndex = renderer->m_GpuDevice->absoluteFrameIndex;
 
   // Update per mesh material buffer
   for (uint32_t meshIndex = 0; meshIndex < meshes.m_Size; ++meshIndex)
@@ -1213,7 +1206,7 @@ void RenderScene::uploadGpuData()
     if (mesh_data)
     {
       copyGpuMaterialData(*mesh_data, mesh);
-      copyGpuMeshMatrix(*mesh_data, mesh, p_GlobalScale, sceneGraph);
+      copyGpuMeshMatrix(*mesh_data, mesh, globalScale, sceneGraph);
 
       renderer->m_GpuDevice->unmapBuffer(cbMap);
     }
@@ -1231,83 +1224,77 @@ void RenderScene::drawMesh(CommandBuffer* gpuCommands, Mesh& mesh)
       mesh.jointsBuffer,
       mesh.weightsBuffer};
   uint32_t offsets[]{
-      mesh.position_offset,
-      mesh.tangent_offset,
-      mesh.normal_offset,
-      mesh.texcoord_offset,
-      mesh.joints_offset,
-      mesh.weights_offset};
-  gpuCommands->bindVertexBuffers(buffers, 0, mesh.skinIndex != i32_max ? 6 : 4, offsets);
+      mesh.positionOffset,
+      mesh.tangentOffset,
+      mesh.normalOffset,
+      mesh.texcoordOffset,
+      mesh.jointsOffset,
+      mesh.weightsOffset};
+  gpuCommands->bindVertexBuffers(buffers, 0, mesh.skinIndex != INT_MAX ? 6 : 4, offsets);
 
-  gpuCommands->bindIndexBuffer(mesh.indexBuffer, mesh.index_offset, mesh.index_type);
+  gpuCommands->bindIndexBuffer(mesh.indexBuffer, mesh.indexOffset, mesh.indexType);
 
-  if (recreate_per_thread_descriptors)
+  if (g_RecreatePerThreadDescriptors)
   {
     DescriptorSetCreation dsCreation{};
     dsCreation.buffer(sceneCb, 0).buffer(mesh.pbrMaterial.materialBuffer, 1);
     DescriptorSetHandle descriptorSet =
         renderer->createDescriptorSet(gpuCommands, mesh.pbrMaterial.material, dsCreation);
 
-    gpuCommands->bind_local_descriptorSet(&descriptorSet, 1, nullptr, 0);
+    gpuCommands->bindLocalDescriptorSet(&descriptorSet, 1, nullptr, 0);
   }
   else
   {
     gpuCommands->bindDescriptorSet(&mesh.pbrMaterial.descriptorSet, 1, nullptr, 0);
   }
 
-  gpuCommands->drawIndexed(TopologyType::kTriangle, mesh.primitive_count, 1, 0, 0, 0);
+  gpuCommands->drawIndexed(TopologyType::kTriangle, mesh.primitiveCount, 1, 0, 0, 0);
 }
 
 // DrawTask ///////////////////////////////////////////////////////////////
 void DrawTask::init(
-    GpuDevice* gpu_,
-    FrameGraph* frameGraph_,
-    Renderer* renderer_,
-    ImGuiService* imgui_,
-    GpuVisualProfiler* gpu_profiler_,
-    RenderScene* scene_,
-    FrameRenderer* frame_renderer_)
+    Graphics::GpuDevice* p_Gpu,
+    FrameGraph* p_FrameGraph,
+    RendererUtil::Renderer* p_Renderer,
+    Graphics::ImguiUtil::ImguiService* p_Imgui,
+    RenderScene* p_Scene,
+    FrameRenderer* p_FrameRenderer)
 {
-  gpu = gpu_;
-  frameGraph = frameGraph_;
-  renderer = renderer_;
-  imgui = imgui_;
-  gpu_profiler = gpu_profiler_;
-  scene = scene_;
-  frame_renderer = frame_renderer_;
+  gpu = p_Gpu;
+  frameGraph = p_FrameGraph;
+  renderer = p_Renderer;
+  imgui = p_Imgui;
+  scene = p_Scene;
+  frameRenderer = p_FrameRenderer;
 
-  currentFrameIndex = gpu->currentFrame;
-  currentFramebuffer = gpu->get_currentFramebuffer();
+  currentFrameIndex = gpu->m_CurrentFrameIndex;
+  currentFramebuffer = gpu->getCurrentFramebuffer();
 }
 
 void DrawTask::ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_)
 {
-  ZoneScoped;
-
   using namespace Graphics;
 
   thread_id = threadnum_;
 
-  // rprint( "Executing draw task from thread %u\n", threadnum_ );
+  // printf( "Executing draw task from thread %u\n", threadnum_ );
   // TODO: improve getting a command buffer/pool
-  CommandBuffer* gpuCommands = gpu->get_commandBuffer(threadnum_, currentFrameIndex, true);
-  gpuCommands->push_marker("Frame");
+  CommandBuffer* gpuCommands = gpu->getCommandBuffer(threadnum_, currentFrameIndex, true);
 
   frameGraph->render(currentFrameIndex, gpuCommands, scene);
 
-  gpuCommands->push_marker("Fullscreen");
   gpuCommands->clear(0.3f, 0.3f, 0.3f, 1.f, 0);
-  gpuCommands->clear_depth_stencil(1.0f, 0);
-  gpuCommands->bind_pass(gpu->get_swapchain_pass(), currentFramebuffer, false);
-  gpuCommands->set_scissor(nullptr);
-  gpuCommands->set_viewport(nullptr);
+  gpuCommands->clearDepthStencil(1.0f, 0);
+  gpuCommands->bindPass(gpu->m_SwapchainRenderPass, currentFramebuffer, false);
+  gpuCommands->setScissor(nullptr);
+  gpuCommands->setViewport(nullptr);
 
   // Apply fullscreen material
   FrameGraphResource* texture = frameGraph->getResource("final");
   assert(texture != nullptr);
 
-  gpuCommands->bindPipeline(frame_renderer->fullscreen_tech->passes[0].pipeline);
-  gpuCommands->bindDescriptorSet(&frame_renderer->fullscreen_ds, 1, nullptr, 0);
+  gpuCommands->bindPipeline(frameRenderer->fullscreenTech->passes[0].pipeline);
+  gpuCommands->bindDescriptorSet(&frameRenderer->fullscreenDS, 1, nullptr, 0);
   gpuCommands->draw(
       TopologyType::kTriangle,
       0,
@@ -1317,53 +1304,48 @@ void DrawTask::ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_)
 
   imgui->render(*gpuCommands, false);
 
-  gpuCommands->pop_marker(); // Fullscreen marker
-  gpuCommands->pop_marker(); // Frame marker
-
-  gpu_profiler->update(*gpu);
-
   // Send commands to GPU
-  gpu->queue_commandBuffer(gpuCommands);
+  gpu->queueCommandBuffer(gpuCommands);
 }
 
 // FrameRenderer //////////////////////////////////////////////////////////
 void FrameRenderer::init(
-    Allocator* residentAllocator_,
-    Renderer* renderer_,
-    FrameGraph* frameGraph_,
-    SceneGraph* sceneGraph_,
-    RenderScene* scene_)
+    Framework::Allocator* p_ResidentAllocator,
+    RendererUtil::Renderer* p_Renderer,
+    FrameGraph* p_FrameGraph,
+    SceneGraph* p_SceneGraph,
+    RenderScene* p_Scene)
 {
-  residentAllocator = residentAllocator_;
-  renderer = renderer_;
-  frameGraph = frameGraph_;
-  sceneGraph = sceneGraph_;
-  scene = scene_;
+  residentAllocator = p_ResidentAllocator;
+  renderer = p_Renderer;
+  frameGraph = p_FrameGraph;
+  sceneGraph = p_SceneGraph;
+  scene = p_Scene;
 
-  frameGraph->builder->register_render_pass("depth_pre_pass", &depth_pre_pass);
-  frameGraph->builder->register_render_pass("gbuffer_pass", &gbuffer_pass);
-  frameGraph->builder->register_render_pass("lighting_pass", &light_pass);
-  frameGraph->builder->register_render_pass("transparent_pass", &transparent_pass);
-  frameGraph->builder->register_render_pass("depth_of_field_pass", &dof_pass);
-  frameGraph->builder->register_render_pass("debug_pass", &debug_pass);
+  frameGraph->builder->registerRenderPass("depth_pre_pass", &depthPrePass);
+  frameGraph->builder->registerRenderPass("gbuffer_pass", &gbufferPass);
+  frameGraph->builder->registerRenderPass("lighting_pass", &lightPass);
+  frameGraph->builder->registerRenderPass("transparent_pass", &transparentPass);
+  frameGraph->builder->registerRenderPass("depth_of_field_pass", &dofPass);
+  frameGraph->builder->registerRenderPass("debug_pass", &debugPass);
 }
 
 void FrameRenderer::shutdown()
 {
-  depth_pre_pass.freeGpuResources();
-  gbuffer_pass.freeGpuResources();
-  light_pass.freeGpuResources();
-  transparent_pass.freeGpuResources();
+  depthPrePass.freeGpuResources();
+  gbufferPass.freeGpuResources();
+  lightPass.freeGpuResources();
+  transparentPass.freeGpuResources();
   // TODO: check that node is enabled before calling
-  // dof_pass.freeGpuResources();
-  debug_pass.freeGpuResources();
+  // dofPass.freeGpuResources();
+  debugPass.freeGpuResources();
 
-  renderer->m_GpuDevice->destroyDescriptorSet(fullscreen_ds);
+  renderer->m_GpuDevice->destroyDescriptorSet(fullscreenDS);
 }
 
 void FrameRenderer::uploadGpuData()
 {
-  light_pass.uploadGpuData();
+  lightPass.uploadGpuData();
   // dof_pass.uploadGpuData();
 
   scene->uploadGpuData();
@@ -1376,24 +1358,25 @@ void FrameRenderer::prepareDraws(Framework::StackAllocator* scratchAllocator)
 
   scene->prepareDraws(renderer, scratchAllocator, sceneGraph);
 
-  depth_pre_pass.prepareDraws(
-      *scene, frameGraph, renderer->m_GpuDevice->allocator, scratchAllocator);
-  gbuffer_pass.prepareDraws(*scene, frameGraph, renderer->m_GpuDevice->allocator, scratchAllocator);
-  light_pass.prepareDraws(*scene, frameGraph, renderer->m_GpuDevice->allocator, scratchAllocator);
-  transparent_pass.prepareDraws(
-      *scene, frameGraph, renderer->m_GpuDevice->allocator, scratchAllocator);
-  // dof_pass.prepareDraws( *scene, frameGraph, renderer->m_GpuDevice->allocator, scratchAllocator
+  depthPrePass.prepareDraws(
+      *scene, frameGraph, renderer->m_GpuDevice->m_Allocator, scratchAllocator);
+  gbufferPass.prepareDraws(
+      *scene, frameGraph, renderer->m_GpuDevice->m_Allocator, scratchAllocator);
+  lightPass.prepareDraws(*scene, frameGraph, renderer->m_GpuDevice->m_Allocator, scratchAllocator);
+  transparentPass.prepareDraws(
+      *scene, frameGraph, renderer->m_GpuDevice->m_Allocator, scratchAllocator);
+  // dofPass.prepareDraws( *scene, frameGraph, renderer->m_GpuDevice->m_Allocator, scratchAllocator
   // );
-  debug_pass.prepareDraws(*scene, frameGraph, renderer->m_GpuDevice->allocator, scratchAllocator);
+  debugPass.prepareDraws(*scene, frameGraph, renderer->m_GpuDevice->m_Allocator, scratchAllocator);
 
   // Handle fullscreen pass.
-  fullscreen_tech = renderer->m_ResourceCache.m_Techniques.get(hashCalculate("fullscreen"));
+  fullscreenTech = renderer->m_ResourceCache.m_Techniques.get(hashCalculate("fullscreen"));
 
   DescriptorSetCreation dsc;
   DescriptorSetLayoutHandle descriptorSet_layout = renderer->m_GpuDevice->getDescriptorSetLayout(
-      fullscreen_tech->passes[0].pipeline, kMaterialDescriptorSetIndex);
+      fullscreenTech->passes[0].pipeline, kMaterialDescriptorSetIndex);
   dsc.reset().buffer(scene->sceneCb, 0).setLayout(descriptorSet_layout);
-  fullscreen_ds = renderer->m_GpuDevice->createDescriptorSet(dsc);
+  fullscreenDS = renderer->m_GpuDevice->createDescriptorSet(dsc);
 }
 
 // Transform ////////////////////////////////////////////////////
@@ -1405,14 +1388,14 @@ void Transform::reset()
   rotation = glms_quat_identity();
 }
 
-mat4s Transform::calculate_matrix() const
+mat4s Transform::calculateMatrix() const
 {
 
-  const mat4s translation_matrix = glms_translate_make(translation);
+  const mat4s translationMatrix = glms_translate_make(translation);
   const mat4s scaleMatrix = glms_scale_make(scale);
-  const mat4s local_matrix =
-      glms_mat4_mul(glms_mat4_mul(translation_matrix, glms_quat_mat4(rotation)), scaleMatrix);
-  return local_matrix;
+  const mat4s localMatrix =
+      glms_mat4_mul(glms_mat4_mul(translationMatrix, glms_quat_mat4(rotation)), scaleMatrix);
+  return localMatrix;
 }
 
 } // namespace Graphics

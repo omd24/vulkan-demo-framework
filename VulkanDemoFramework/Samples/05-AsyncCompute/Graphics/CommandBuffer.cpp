@@ -204,7 +204,7 @@ void CommandBuffer::bindPass(
         colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachmentInfo.clearValue =
             renderPass->output.colorOperations[a] == RenderPassOperation::Enum::kClear
-                ? m_Clears[0]
+                ? m_ClearValues[a]
                 : VkClearValue{};
       }
 
@@ -238,8 +238,9 @@ void CommandBuffer::bindPass(
         depth_attachment_info.loadOp = depth_op;
         depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depth_attachment_info.clearValue =
-            renderPass->output.depthOperation == RenderPassOperation::Enum::kClear ? m_Clears[1]
-                                                                                   : VkClearValue{};
+            renderPass->output.depthOperation == RenderPassOperation::Enum::kClear
+                ? m_ClearValues[kDepthStencilClearIndex]
+                : VkClearValue{};
       }
 
       VkRenderingInfoKHR renderingInfo{VK_STRUCTURE_TYPE_RENDERING_INFO_KHR};
@@ -267,27 +268,18 @@ void CommandBuffer::bindPass(
       renderPassBegin.renderArea.offset = {0, 0};
       renderPassBegin.renderArea.extent = {framebuffer->width, framebuffer->height};
 
-      VkClearValue clearValues[kMaxImageOutputs + 1];
-
-      uint32_t clearValuesCount = 0;
-      for (uint32_t o = 0; o < renderPass->output.numColorFormats; ++o)
-      {
-        if (renderPass->output.colorOperations[o] == RenderPassOperation::Enum::kClear)
-        {
-          clearValues[clearValuesCount++] = m_Clears[0];
-        }
-      }
+      uint32_t clearValuesCount = renderPass->output.numColorFormats;
 
       if (renderPass->output.depthStencilFormat != VK_FORMAT_UNDEFINED)
       {
         if (renderPass->output.depthOperation == RenderPassOperation::Enum::kClear)
         {
-          clearValues[clearValuesCount++] = m_Clears[1];
+          m_ClearValues[clearValuesCount++] = m_ClearValues[kDepthStencilClearIndex];
         }
       }
 
       renderPassBegin.clearValueCount = clearValuesCount;
-      renderPassBegin.pClearValues = clearValues;
+      renderPassBegin.pClearValues = m_ClearValues;
 
       vkCmdBeginRenderPass(
           m_VulkanCmdBuffer,
@@ -327,6 +319,36 @@ void CommandBuffer::bindVertexBuffer(BufferHandle p_Handle, uint32_t p_Binding, 
   }
 
   vkCmdBindVertexBuffers(m_VulkanCmdBuffer, p_Binding, 1, &vkBuffer, offsets);
+}
+//---------------------------------------------------------------------------//
+void CommandBuffer::bindVertexBuffers(
+    BufferHandle* p_Handles, uint32_t p_FirstBinding, uint32_t p_BindingCount, uint32_t* p_Offsets)
+{
+  VkBuffer vkBuffers[8];
+  VkDeviceSize offsets[8];
+
+  for (uint32_t i = 0; i < p_BindingCount; ++i)
+  {
+    Buffer* buffer = (Buffer*)m_GpuDevice->m_Buffers.accessResource(p_Handles[i].index);
+
+    VkBuffer vkBuffer = buffer->vkBuffer;
+    // TODO: add global vertex buffer ?
+    if (buffer->parentBuffer.index != kInvalidIndex)
+    {
+      Buffer* parentBuffer =
+          (Buffer*)m_GpuDevice->m_Buffers.accessResource(buffer->parentBuffer.index);
+      vkBuffer = parentBuffer->vkBuffer;
+      offsets[i] = buffer->globalOffset;
+    }
+    else
+    {
+      offsets[i] = p_Offsets[i];
+    }
+
+    vkBuffers[i] = vkBuffer;
+  }
+
+  vkCmdBindVertexBuffers(m_VulkanCmdBuffer, p_FirstBinding, p_BindingCount, vkBuffers, offsets);
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::bindIndexBuffer(
