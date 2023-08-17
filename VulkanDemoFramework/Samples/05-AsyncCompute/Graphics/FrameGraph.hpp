@@ -117,6 +117,7 @@ struct FrameGraphNodeCreation
   bool enabled;
 
   const char* name;
+  bool compute;
 };
 
 struct FrameGraphRenderPass

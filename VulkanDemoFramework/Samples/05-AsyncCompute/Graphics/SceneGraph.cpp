@@ -8,11 +8,14 @@ void SceneGraph::init(Framework::Allocator* residentAllocator, uint32_t numNodes
   nodesHierarchy.init(residentAllocator, numNodes, numNodes);
   localMatrices.init(residentAllocator, numNodes, numNodes);
   worldMatrices.init(residentAllocator, numNodes, numNodes);
+  nodesDebugData.init(residentAllocator, numNodes, numNodes);
+
   updatedNodes.init(residentAllocator, numNodes);
 }
 //---------------------------------------------------------------------------//
 void SceneGraph::shutdown()
 {
+  nodesDebugData.shutdown();
   nodesHierarchy.shutdown();
   localMatrices.shutdown();
   worldMatrices.shutdown();
@@ -24,6 +27,7 @@ void SceneGraph::resize(uint32_t numNodes)
   nodesHierarchy.setSize(numNodes);
   localMatrices.setSize(numNodes);
   worldMatrices.setSize(numNodes);
+  nodesDebugData.setSize(numNodes);
 
   updatedNodes.resize(numNodes);
 
@@ -96,6 +100,11 @@ void SceneGraph::setLocalMatrix(uint32_t p_NodeIndex, const mat4s& p_LocalMatrix
   // Mark node as updated
   updatedNodes.setBit(p_NodeIndex);
   localMatrices[p_NodeIndex] = p_LocalMatrix;
+}
+//---------------------------------------------------------------------------//
+void SceneGraph::setDebugData(uint32_t nodeIndex, const char* name)
+{
+  nodesDebugData[nodeIndex].name = name;
 }
 //---------------------------------------------------------------------------//
 } // namespace Graphics

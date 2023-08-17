@@ -70,7 +70,7 @@ struct GpuTechniquePass
 struct GpuTechnique : public Framework::Resource
 {
   Framework::Array<GpuTechniquePass> passes;
-  FlatHashMap<uint64_t, uint16_t> nameHashToIndex;
+  Framework::FlatHashMap<uint64_t, uint16_t> nameHashToIndex;
 
   uint32_t m_PoolIndex;
 
@@ -178,10 +178,11 @@ struct Renderer : public Framework::Service
   void* mapBuffer(BufferResource* p_Buffer, uint32_t p_Offset = 0, uint32_t p_Size = 0);
   void unmapBuffer(BufferResource* p_Buffer);
 
-  CommandBuffer* getCommandBuffer(uint32_t p_ThreadIndex, bool p_Begin)
+  CommandBuffer*
+  getCommandBuffer(uint32_t p_ThreadIndex, uint32_t p_CurrentFrameIndex, bool p_Begin)
   {
     // TODO: use queue type
-    return m_GpuDevice->getCommandBuffer(p_ThreadIndex, p_Begin);
+    return m_GpuDevice->getCommandBuffer(p_ThreadIndex, p_CurrentFrameIndex, p_Begin);
   }
   void queueCommandBuffer(Graphics::CommandBuffer* p_CommandBuffer)
   {

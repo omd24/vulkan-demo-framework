@@ -45,105 +45,118 @@ static FrameGraphResourceType stringToResourceType(const char* p_InputType)
 //---------------------------------------------------------------------------//
 static void createFramebuffer(FrameGraph* frameGraph, FrameGraphNode* p_Node)
 {
-  FramebufferCreation framebufferCreation{};
-  framebufferCreation.renderPass = p_Node->renderPass;
-  framebufferCreation.setName(p_Node->name);
-
-  uint32_t width = 0;
-  uint32_t height = 0;
-
-  for (uint32_t r = 0; r < p_Node->outputs.m_Size; ++r)
+  for (unsigned f = 0; f < kMaxFrames; ++f)
   {
-    FrameGraphResource* resource = frameGraph->accessResource(p_Node->outputs[r]);
+    FramebufferCreation framebufferCreation{};
+    framebufferCreation.renderPass = p_Node->renderPass;
+    framebufferCreation.setName(p_Node->name);
 
-    FrameGraphResourceInfo& info = resource->resourceInfo;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    float scaleWidth = 0.f;
+    float scaleHeight = 0.f;
 
-    if (resource->type == kFrameGraphResourceTypeBuffer ||
-        resource->type == kFrameGraphResourceTypeReference)
+    for (uint32_t r = 0; r < p_Node->outputs.m_Size; ++r)
     {
-      continue;
+      FrameGraphResource* resource = frameGraph->accessResource(p_Node->outputs[r]);
+
+      FrameGraphResourceInfo& info = resource->resourceInfo;
+
+      if (resource->type == kFrameGraphResourceTypeBuffer ||
+          resource->type == kFrameGraphResourceTypeReference)
+      {
+        continue;
+      }
+
+      if (width == 0)
+      {
+        width = info.texture.width;
+        scaleWidth = info.texture.scaleWidth > 0.f ? info.texture.scaleWidth : 1.f;
+      }
+      else
+      {
+        assert(width == info.texture.width);
+      }
+
+      if (height == 0)
+      {
+        height = info.texture.height;
+        scaleHeight = info.texture.scaleHeight > 0.f ? info.texture.scaleHeight : 1.f;
+      }
+      else
+      {
+        assert(height == info.texture.height);
+      }
+
+      if (TextureFormat::hasDepth(info.texture.format))
+      {
+        framebufferCreation.setDepthStencilTexture(info.texture.handle[f]);
+      }
+      else
+      {
+        framebufferCreation.addRenderTexture(info.texture.handle[f]);
+      }
     }
 
-    if (width == 0)
+    for (uint32_t r = 0; r < p_Node->inputs.m_Size; ++r)
     {
-      width = info.texture.width;
-    }
-    else
-    {
-      assert(width == info.texture.width);
+      FrameGraphResource* inputResource = frameGraph->accessResource(p_Node->inputs[r]);
+
+      if (inputResource->type == kFrameGraphResourceTypeBuffer ||
+          inputResource->type == kFrameGraphResourceTypeReference)
+      {
+        continue;
+      }
+
+      FrameGraphResource* resource = frameGraph->getResource(inputResource->m_Name);
+
+      FrameGraphResourceInfo& info = resource->resourceInfo;
+
+      inputResource->resourceInfo.texture.handle[f] = info.texture.handle[f];
+
+      if (width == 0)
+      {
+        width = info.texture.width;
+        scaleWidth = info.texture.scaleWidth > 0.f ? info.texture.scaleWidth : 1.f;
+      }
+      else
+      {
+        assert(width == info.texture.width);
+      }
+
+      if (height == 0)
+      {
+        height = info.texture.height;
+        scaleHeight = info.texture.scaleHeight > 0.f ? info.texture.scaleHeight : 1.f;
+      }
+      else
+      {
+        assert(height == info.texture.height);
+      }
+
+      if (inputResource->type == kFrameGraphResourceTypeTexture)
+      {
+        continue;
+      }
+
+      if (TextureFormat::hasDepth(info.texture.format))
+      {
+        framebufferCreation.setDepthStencilTexture(info.texture.handle[f]);
+      }
+      else
+      {
+        framebufferCreation.addRenderTexture(info.texture.handle[f]);
+      }
     }
 
-    if (height == 0)
-    {
-      height = info.texture.height;
-    }
-    else
-    {
-      assert(height == info.texture.height);
-    }
+    framebufferCreation.width = width;
+    framebufferCreation.height = height;
+    framebufferCreation.setScaling(scaleWidth, scaleHeight, 1);
+    p_Node->framebuffer[0] = frameGraph->builder->device->createFramebuffer(framebufferCreation);
 
-    if (info.texture.format == VK_FORMAT_D32_SFLOAT)
-    {
-      framebufferCreation.setDepthStencilTexture(info.texture.texture);
-    }
-    else
-    {
-      framebufferCreation.addRenderTexture(info.texture.texture);
-    }
+    p_Node->resolutionScaleWidth = scaleWidth;
+    p_Node->resolutionScaleHeight = scaleHeight;
   }
-
-  for (uint32_t r = 0; r < p_Node->inputs.m_Size; ++r)
-  {
-    FrameGraphResource* inputResource = frameGraph->accessResource(p_Node->inputs[r]);
-
-    if (inputResource->type == kFrameGraphResourceTypeBuffer ||
-        inputResource->type == kFrameGraphResourceTypeReference)
-    {
-      continue;
-    }
-
-    FrameGraphResource* resource = frameGraph->getResource(inputResource->m_Name);
-
-    FrameGraphResourceInfo& info = resource->resourceInfo;
-
-    inputResource->resourceInfo.texture.texture = info.texture.texture;
-
-    if (width == 0)
-    {
-      width = info.texture.width;
-    }
-    else
-    {
-      assert(width == info.texture.width);
-    }
-
-    if (height == 0)
-    {
-      height = info.texture.height;
-    }
-    else
-    {
-      assert(height == info.texture.height);
-    }
-
-    if (inputResource->type == kFrameGraphResourceTypeTexture)
-    {
-      continue;
-    }
-
-    if (info.texture.format == VK_FORMAT_D32_SFLOAT)
-    {
-      framebufferCreation.setDepthStencilTexture(info.texture.texture);
-    }
-    else
-    {
-      framebufferCreation.addRenderTexture(info.texture.texture);
-    }
-  }
-
-  framebufferCreation.width = width;
-  framebufferCreation.height = height;
-  p_Node->framebuffer = frameGraph->builder->device->createFramebuffer(framebufferCreation);
 }
 //---------------------------------------------------------------------------//
 static void createRenderPass(FrameGraph* p_FrameGraph, FrameGraphNode* p_Node)
@@ -225,8 +238,8 @@ static void computeEdges(FrameGraph* p_FrameGraph, FrameGraphNode* p_Node, uint3
 
     FrameGraphNode* parentNode = p_FrameGraph->accessNode(resource->producer);
 
-    // printf( "Adding edge from %s [%d] to %s [%d]\n", parentNode->name, resource->producer.index,
-    // p_Node->name, p_NodeIndex )
+    // printf( "Adding edge from %s [%d] to %s [%d]\n", parentNode->name,
+    // resource->producer.index, p_Node->name, p_NodeIndex )
 
     parentNode->edges.push(p_FrameGraph->nodes[p_NodeIndex]);
   }
@@ -275,18 +288,21 @@ void FrameGraphResourceCache::shutdown()
     uint32_t resourceIndex = resourceMap.get(it);
     FrameGraphResource* resource = resources.get(resourceIndex);
 
-    if (resource->type == kFrameGraphResourceTypeTexture ||
-        resource->type == kFrameGraphResourceTypeAttachment)
+    for (unsigned f = 0; f < kMaxFrames; ++f)
     {
-      Texture* texture =
-          (Texture*)device->m_Textures.accessResource(resource->resourceInfo.texture.texture.index);
-      device->destroyTexture(texture->handle);
-    }
-    else if (resource->type == kFrameGraphResourceTypeBuffer)
-    {
-      Buffer* buffer =
-          (Buffer*)device->m_Buffers.accessResource(resource->resourceInfo.buffer.buffer.index);
-      device->destroyBuffer(buffer->handle);
+      if (resource->type == kFrameGraphResourceTypeTexture ||
+          resource->type == kFrameGraphResourceTypeAttachment)
+      {
+        Texture* texture = (Texture*)device->m_Textures.accessResource(
+            resource->resourceInfo.texture.handle[f].index);
+        device->destroyTexture(texture->handle);
+      }
+      else if (resource->type == kFrameGraphResourceTypeBuffer)
+      {
+        Buffer* buffer = (Buffer*)device->m_Buffers.accessResource(
+            resource->resourceInfo.buffer.handle[f].index);
+        device->destroyBuffer(buffer->handle);
+      }
     }
 
     resourceMap.iteratorAdvance(it);
@@ -419,10 +435,14 @@ FrameGraphNodeHandle FrameGraphBuilder::createNode(const FrameGraphNodeCreation&
   FrameGraphNode* node = (FrameGraphNode*)nodeCache.nodes.accessResource(nodeHandle.index);
   node->name = p_Creation.name;
   node->enabled = p_Creation.enabled;
+  node->compute = p_Creation.compute;
   node->inputs.init(allocator, p_Creation.inputs.m_Size);
   node->outputs.init(allocator, p_Creation.outputs.m_Size);
   node->edges.init(allocator, p_Creation.outputs.m_Size);
-  node->framebuffer = kInvalidFramebuffer;
+
+  for (unsigned f = 0; f < kMaxFrames; ++f)
+    node->framebuffer[f] = kInvalidFramebuffer;
+
   node->renderPass = {kInvalidIndex};
 
   nodeCache.nodeMap.insert(
@@ -512,13 +532,16 @@ void FrameGraph::shutdown()
     FrameGraphNode* node = builder->accessNode(handle);
 
     builder->device->destroyRenderPass(node->renderPass);
-    builder->device->destroyFramebuffer(node->framebuffer);
+
+    for (unsigned f = 0; f < kMaxFrames; ++f)
+      builder->device->destroyFramebuffer(node->framebuffer[f]);
 
     node->inputs.shutdown();
     node->outputs.shutdown();
     node->edges.shutdown();
   }
 
+  allNodes.shutdown();
   nodes.shutdown();
 
   localAllocator.shutdown();
@@ -817,34 +840,50 @@ void FrameGraph::compile()
         {
           FrameGraphResourceInfo& info = resource->resourceInfo;
 
-          if (freeList.m_Size > 0)
+          // Resolve texture size if needed
+          if (info.texture.width == 0 || info.texture.height == 0)
           {
-            // TODO: find best fit
-            TextureHandle aliasTexture = freeList.back();
-            freeList.pop();
-
-            TextureCreation textureCreation{};
-            textureCreation.setData(nullptr)
-                .setAlias(aliasTexture)
-                .setName(resource->m_Name)
-                .setFormatType(info.texture.format, TextureType::Enum::kTexture2D)
-                .setSize(info.texture.width, info.texture.height, info.texture.depth)
-                .setFlags(1, TextureFlags::kRenderTargetMask);
-            TextureHandle handle = builder->device->createTexture(textureCreation);
-
-            info.texture.texture = handle;
+            info.texture.width = builder->device->m_SwapchainWidth * info.texture.scaleWidth;
+            info.texture.height = builder->device->m_SwapchainHeight * info.texture.scaleHeight;
           }
-          else
-          {
-            TextureCreation textureCreation{};
-            textureCreation.setData(nullptr)
-                .setName(resource->m_Name)
-                .setFormatType(info.texture.format, TextureType::Enum::kTexture2D)
-                .setSize(info.texture.width, info.texture.height, info.texture.depth)
-                .setFlags(1, TextureFlags::kRenderTargetMask);
-            TextureHandle handle = builder->device->createTexture(textureCreation);
 
-            info.texture.texture = handle;
+          TextureFlags::Mask textureCreationFlags =
+              info.texture.compute
+                  ? (TextureFlags::Mask)(
+                        TextureFlags::kRenderTargetMask | TextureFlags::kComputeMask)
+                  : TextureFlags::kRenderTargetMask;
+
+          for (unsigned f = 0; f < kMaxFrames; ++f)
+          {
+            if (freeList.m_Size > 0)
+            {
+              // TODO: find best fit
+              TextureHandle aliasTexture = freeList.back();
+              freeList.pop();
+
+              TextureCreation textureCreation{};
+              textureCreation.setData(nullptr)
+                  .setAlias(aliasTexture)
+                  .setName(resource->m_Name)
+                  .setFormatType(info.texture.format, TextureType::Enum::kTexture2D)
+                  .setSize(info.texture.width, info.texture.height, info.texture.depth)
+                  .setFlags(1, textureCreationFlags);
+              TextureHandle handle = builder->device->createTexture(textureCreation);
+
+              info.texture.handle[f] = handle;
+            }
+            else
+            {
+              TextureCreation textureCreation{};
+              textureCreation.setData(nullptr)
+                  .setName(resource->m_Name)
+                  .setFormatType(info.texture.format, TextureType::Enum::kTexture2D)
+                  .setSize(info.texture.width, info.texture.height, info.texture.depth)
+                  .setFlags(1, textureCreationFlags);
+              TextureHandle handle = builder->device->createTexture(textureCreation);
+
+              info.texture.handle[f] = handle;
+            }
           }
         }
 
@@ -866,10 +905,13 @@ void FrameGraph::compile()
         assert(deallocations[resourceIndex].index == kInvalidIndex);
         deallocations[resourceIndex] = nodes[i];
 
-        if (resource->type == kFrameGraphResourceTypeAttachment ||
-            resource->type == kFrameGraphResourceTypeTexture)
+        for (unsigned f = 0; f < kMaxFrames; ++f)
         {
-          freeList.push(resource->resourceInfo.texture.texture);
+          if (resource->type == kFrameGraphResourceTypeAttachment ||
+              resource->type == kFrameGraphResourceTypeTexture)
+          {
+            freeList.push(resource->resourceInfo.texture.handle[f]);
+          }
         }
 
         printf("Output %s deallocated on node %d\n", resource->m_Name, nodes[i].index);
@@ -894,7 +936,7 @@ void FrameGraph::compile()
       createRenderPass(this, node);
     }
 
-    if (node->framebuffer.index == kInvalidIndex)
+    if (node->framebuffer[0].index == kInvalidIndex)
     {
       createFramebuffer(this, node);
     }
@@ -918,61 +960,59 @@ void FrameGraph::addUi()
 void FrameGraph::render(
     uint32_t currentFrameIndex, CommandBuffer* p_GpuCommands, RenderScene* p_RenderScene)
 {
-  for (u32 n = 0; n < nodes.size; ++n)
+  for (uint32_t n = 0; n < nodes.m_Size; ++n)
   {
-    FrameGraphNode* node = builder->access_node(nodes[n]);
+    FrameGraphNode* node = builder->accessNode(nodes[n]);
     assert(node->enabled);
 
     if (node->compute)
     {
-      gpu_commands->push_marker(node->name);
-
-      for (u32 i = 0; i < node->inputs.size; ++i)
+      for (uint32_t i = 0; i < node->inputs.m_Size; ++i)
       {
-        FrameGraphResource* resource = builder->access_resource(node->inputs[i]);
+        FrameGraphResource* resource = builder->accessResource(node->inputs[i]);
 
-        if (resource->type == FrameGraphResourceType_Texture)
+        if (resource->type == kFrameGraphResourceTypeTexture)
         {
-          Texture* texture = gpu_commands->device->access_texture(
-              resource->resource_info.texture.handle[current_frame_index]);
+          Texture* texture = (Texture*)p_GpuCommands->m_GpuDevice->m_Textures.accessResource(
+              resource->resourceInfo.texture.handle[currentFrameIndex].index);
 
-          util_add_image_barrier(
-              gpu_commands->device,
-              gpu_commands->vk_command_buffer,
+          utilAddImageBarrier(
+              p_GpuCommands->m_GpuDevice,
+              p_GpuCommands->m_VulkanCmdBuffer,
               texture,
               RESOURCE_STATE_SHADER_RESOURCE,
               0,
               1,
-              TextureFormat::has_depth(texture->vk_format));
+              TextureFormat::hasDepth(texture->vkFormat));
         }
-        else if (resource->type == FrameGraphResourceType_Attachment)
+        else if (resource->type == kFrameGraphResourceTypeAttachment)
         {
           // TODO: what to do with attachments ?
-          Texture* texture = gpu_commands->device->access_texture(
-              resource->resource_info.texture.handle[current_frame_index]);
+          Texture* texture = (Texture*)p_GpuCommands->m_GpuDevice->m_Textures.accessResource(
+              resource->resourceInfo.texture.handle[currentFrameIndex].index);
           texture = texture;
         }
       }
 
-      for (u32 o = 0; o < node->outputs.size; ++o)
+      for (uint32_t o = 0; o < node->outputs.m_Size; ++o)
       {
-        FrameGraphResource* resource = builder->access_resource(node->outputs[o]);
+        FrameGraphResource* resource = builder->accessResource(node->outputs[o]);
 
-        if (resource->type == FrameGraphResourceType_Attachment)
+        if (resource->type == kFrameGraphResourceTypeAttachment)
         {
-          Texture* texture = gpu_commands->device->access_texture(
-              resource->resource_info.texture.handle[current_frame_index]);
+          Texture* texture = (Texture*)p_GpuCommands->m_GpuDevice->m_Textures.accessResource(
+              resource->resourceInfo.texture.handle[currentFrameIndex].index);
 
-          if (TextureFormat::has_depth(texture->vk_format))
+          if (TextureFormat::hasDepth(texture->vkFormat))
           {
             // Is this supported even ?
             assert(false);
           }
           else
           {
-            util_add_image_barrier(
-                gpu_commands->device,
-                gpu_commands->vk_command_buffer,
+            utilAddImageBarrier(
+                p_GpuCommands->m_GpuDevice,
+                p_GpuCommands->m_VulkanCmdBuffer,
                 texture,
                 RESOURCE_STATE_UNORDERED_ACCESS,
                 0,
@@ -982,50 +1022,46 @@ void FrameGraph::render(
         }
       }
 
-      node->graph_render_pass->pre_render(current_frame_index, gpu_commands, this);
-      node->graph_render_pass->render(gpu_commands, render_scene);
-
-      gpu_commands->pop_marker();
+      node->graphRenderPass->preRender(currentFrameIndex, p_GpuCommands, this);
+      node->graphRenderPass->render(p_GpuCommands, p_RenderScene);
     }
     else
     {
-      gpu_commands->push_marker(node->name);
+      uint32_t width = 0;
+      uint32_t height = 0;
 
-      u32 width = 0;
-      u32 height = 0;
-
-      for (u32 i = 0; i < node->inputs.size; ++i)
+      for (uint32_t i = 0; i < node->inputs.m_Size; ++i)
       {
-        FrameGraphResource* resource = builder->access_resource(node->inputs[i]);
+        FrameGraphResource* resource = builder->accessResource(node->inputs[i]);
 
-        if (resource->type == FrameGraphResourceType_Texture)
+        if (resource->type == kFrameGraphResourceTypeTexture)
         {
-          Texture* texture = gpu_commands->device->access_texture(
-              resource->resource_info.texture.handle[current_frame_index]);
+          Texture* texture = (Texture*)p_GpuCommands->m_GpuDevice->m_Textures.accessResource(
+              resource->resourceInfo.texture.handle[currentFrameIndex].index);
 
-          util_add_image_barrier(
-              gpu_commands->device,
-              gpu_commands->vk_command_buffer,
+          utilAddImageBarrier(
+              p_GpuCommands->m_GpuDevice,
+              p_GpuCommands->m_VulkanCmdBuffer,
               texture,
               RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
               0,
               1,
-              TextureFormat::has_depth(texture->vk_format));
+              TextureFormat::hasDepth(texture->vkFormat));
         }
-        else if (resource->type == FrameGraphResourceType_Attachment)
+        else if (resource->type == kFrameGraphResourceTypeAttachment)
         {
-          Texture* texture = gpu_commands->device->access_texture(
-              resource->resource_info.texture.handle[current_frame_index]);
+          Texture* texture = (Texture*)p_GpuCommands->m_GpuDevice->m_Textures.accessResource(
+              resource->resourceInfo.texture.handle[currentFrameIndex].index);
 
           width = texture->width;
           height = texture->height;
 
           // For textures that are read-write check if a transition is needed.
-          if (!TextureFormat::has_depth_or_stencil(texture->vk_format))
+          if (!TextureFormat::hasDepthOrStencil(texture->vkFormat))
           {
-            util_add_image_barrier(
-                gpu_commands->device,
-                gpu_commands->vk_command_buffer,
+            utilAddImageBarrier(
+                p_GpuCommands->m_GpuDevice,
+                p_GpuCommands->m_VulkanCmdBuffer,
                 texture,
                 RESOURCE_STATE_RENDER_TARGET,
                 0,
@@ -1034,9 +1070,9 @@ void FrameGraph::render(
           }
           else
           {
-            util_add_image_barrier(
-                gpu_commands->device,
-                gpu_commands->vk_command_buffer,
+            utilAddImageBarrier(
+                p_GpuCommands->m_GpuDevice,
+                p_GpuCommands->m_VulkanCmdBuffer,
                 texture,
                 RESOURCE_STATE_DEPTH_WRITE,
                 0,
@@ -1046,67 +1082,66 @@ void FrameGraph::render(
         }
       }
 
-      for (u32 o = 0; o < node->outputs.size; ++o)
+      for (uint32_t o = 0; o < node->outputs.m_Size; ++o)
       {
-        FrameGraphResource* resource = builder->access_resource(node->outputs[o]);
+        FrameGraphResource* resource = builder->accessResource(node->outputs[o]);
 
-        if (resource->type == FrameGraphResourceType_Attachment)
+        if (resource->type == kFrameGraphResourceTypeAttachment)
         {
-          Texture* texture = gpu_commands->device->access_texture(
-              resource->resource_info.texture.handle[current_frame_index]);
+          Texture* texture = (Texture*)p_GpuCommands->m_GpuDevice->m_Textures.accessResource(
+              resource->resourceInfo.texture.handle[currentFrameIndex].index);
 
           width = texture->width;
           height = texture->height;
 
-          if (TextureFormat::has_depth(texture->vk_format))
+          if (TextureFormat::hasDepth(texture->vkFormat))
           {
-            util_add_image_barrier(
-                gpu_commands->device,
-                gpu_commands->vk_command_buffer,
+            utilAddImageBarrier(
+                p_GpuCommands->m_GpuDevice,
+                p_GpuCommands->m_VulkanCmdBuffer,
                 texture,
                 RESOURCE_STATE_DEPTH_WRITE,
                 0,
                 1,
                 true);
 
-            f32* clear_color = resource->resource_info.texture.clear_values;
-            gpu_commands->clear_depth_stencil(clear_color[0], (u8)clear_color[1]);
+            float* clearColor = resource->resourceInfo.texture.clearValues;
+            p_GpuCommands->clearDepthStencil(clearColor[0], (uint8_t)clearColor[1]);
           }
           else
           {
-            util_add_image_barrier(
-                gpu_commands->device,
-                gpu_commands->vk_command_buffer,
+            utilAddImageBarrier(
+                p_GpuCommands->m_GpuDevice,
+                p_GpuCommands->m_VulkanCmdBuffer,
                 texture,
                 RESOURCE_STATE_RENDER_TARGET,
                 0,
                 1,
                 false);
 
-            f32* clear_color = resource->resource_info.texture.clear_values;
-            gpu_commands->clear(clear_color[0], clear_color[1], clear_color[2], clear_color[3], o);
+            float* clearColor = resource->resourceInfo.texture.clearValues;
+            p_GpuCommands->clear(clearColor[0], clearColor[1], clearColor[2], clearColor[3], o);
           }
         }
       }
 
-      Rect2DInt scissor{0, 0, (u16)width, (u16)height};
-      gpu_commands->set_scissor(&scissor);
+      Rect2DInt scissor{0, 0, (uint16_t)width, (uint16_t)height};
+      p_GpuCommands->setScissor(&scissor);
 
       Viewport viewport{};
-      viewport.rect = {0, 0, (u16)width, (u16)height};
-      viewport.min_depth = 0.0f;
-      viewport.max_depth = 1.0f;
+      viewport.rect = {0, 0, (uint16_t)width, (uint16_t)height};
+      viewport.minDepth = 0.0f;
+      viewport.maxDepth = 1.0f;
 
-      gpu_commands->set_viewport(&viewport);
+      p_GpuCommands->setViewport(&viewport);
 
-      node->graph_render_pass->pre_render(current_frame_index, gpu_commands, this);
+      node->graphRenderPass->preRender(currentFrameIndex, p_GpuCommands, this);
 
-      gpu_commands->bind_pass(node->render_pass, node->framebuffer[current_frame_index], false);
+      p_GpuCommands->bindPass(node->renderPass, node->framebuffer[currentFrameIndex], false);
 
-      node->graph_render_pass->render(gpu_commands, render_scene);
+      node->graphRenderPass->render(p_GpuCommands, p_RenderScene);
 
-      gpu_commands->end_current_render_pass();
-      gpu_commands->pop_marker();
+      p_GpuCommands->endCurrentRenderPass();
     }
   }
 }
@@ -1124,7 +1159,10 @@ void FrameGraph::onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight)
 
     node->graphRenderPass->onResize(gpu, newWidth, newHeight);
 
-    gpu.resizeOutputTextures(node->framebuffer, newWidth, newHeight);
+    for (unsigned f = 0; f < kMaxFrames; ++f)
+    {
+      gpu.resizeOutputTextures(node->framebuffer[f], newWidth, newHeight);
+    }
   }
 }
 //---------------------------------------------------------------------------//

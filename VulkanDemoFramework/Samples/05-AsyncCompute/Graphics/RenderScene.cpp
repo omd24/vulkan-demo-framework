@@ -1275,7 +1275,7 @@ void DrawTask::ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_)
 {
   using namespace Graphics;
 
-  thread_id = threadnum_;
+  threadId = threadnum_;
 
   // printf( "Executing draw task from thread %u\n", threadnum_ );
   // TODO: improve getting a command buffer/pool

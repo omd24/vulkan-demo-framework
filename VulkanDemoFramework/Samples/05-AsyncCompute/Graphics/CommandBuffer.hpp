@@ -44,13 +44,13 @@ struct CommandBuffer
 
   void clear(float p_Red, float p_Green, float p_Blue, float p_Alpha, uint32_t p_AttachmentIndex)
   {
-    m_Clears[p_AttachmentIndex].color = {p_Red, p_Green, p_Blue, p_Alpha};
+    m_ClearValues[p_AttachmentIndex].color = {p_Red, p_Green, p_Blue, p_Alpha};
   }
 
   void clearDepthStencil(float p_Depth, uint8_t p_Value)
   {
-    m_Clears[kDepthStencilClearIndex].depthStencil.depth = p_Depth;
-    m_Clears[kDepthStencilClearIndex].depthStencil.stencil = p_Value;
+    m_ClearValues[kDepthStencilClearIndex].depthStencil.depth = p_Depth;
+    m_ClearValues[kDepthStencilClearIndex].depthStencil.stencil = p_Value;
   }
 
   // Draw methods:

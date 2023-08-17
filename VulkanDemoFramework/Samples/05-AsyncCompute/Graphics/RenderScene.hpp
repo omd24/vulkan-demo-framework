@@ -554,7 +554,7 @@ struct RenderScene
       Framework::Allocator* residentAllocator,
       Framework::StackAllocator* tempAllocator,
       AsynchronousLoader* asyncLoader){};
-  virtual void shutdown(Renderer* renderer){};
+  virtual void shutdown(RendererUtil::Renderer* renderer){};
 
   virtual void prepareDraws(
       RendererUtil::Renderer* renderer,
@@ -642,7 +642,7 @@ struct DrawTask : public enki::ITaskSet
   ImguiUtil::ImguiService* imgui = nullptr;
   RenderScene* scene = nullptr;
   FrameRenderer* frameRenderer = nullptr;
-  uint32_t thread_id = 0;
+  uint32_t threadId = 0;
   // NOTE: gpu state might change between init and execute!
   uint32_t currentFrameIndex = 0;
   Graphics::FramebufferHandle currentFramebuffer = {kInvalidIndex};

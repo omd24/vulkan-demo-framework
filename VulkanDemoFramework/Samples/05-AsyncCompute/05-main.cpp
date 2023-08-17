@@ -272,7 +272,7 @@ int main(int argc, char** argv)
 
   Graphics::FrameRenderer frameRenderer;
   frameRenderer.init(allocator, &renderer, &frameGraph, &sceneGraph, scene);
-  frameRenderer.prepare_draws(&scratchAllocator);
+  frameRenderer.prepareDraws(&scratchAllocator);
 
   // Start multithreading IO
   // Create IO threads at the end
@@ -302,15 +302,15 @@ int main(int argc, char** argv)
   bool resetSimulation = false;
   vec3s windDirection{-5.0f, 0.0f, 0.0f};
 
-  while (!window.requested_exit)
+  while (!window.m_RequestedExit)
   {
     // New frame
-    if (!window.minimized)
+    if (!window.m_Minimized)
     {
       gpu.newFrame();
 
       static bool checksz = true;
-      if (asyncLoader.fileLoadRequests.size == 0 && checksz)
+      if (asyncLoader.fileLoadRequests.m_Size == 0 && checksz)
       {
         checksz = false;
         printf(
@@ -324,11 +324,11 @@ int main(int argc, char** argv)
 
     if (window.m_Resized)
     {
-      renderer.resizeSwapchain(window.width, window.height);
+      renderer.resizeSwapchain(window.m_Width, window.m_Height);
       window.m_Resized = false;
-      frameGraph.onResize(gpu, window.width, window.height);
+      frameGraph.onResize(gpu, window.m_Width, window.m_Height);
 
-      gameCamera.camera.setAspectRatio(window.width * 1.f / window.height);
+      gameCamera.camera.setAspectRatio(window.m_Width * 1.f / window.m_Height);
     }
     // This MUST be AFTER os messages!
     imgui->newFrame();
@@ -338,7 +338,7 @@ int main(int argc, char** argv)
     beginFrameTick = currentTick;
 
     input.update(deltaTime);
-    gameCamera.update(&input, window.width, window.height, deltaTime);
+    gameCamera.update(&input, window.m_Width, window.m_Height, deltaTime);
     window.centerMouse(gameCamera.mouseDragging);
 
     static float animationSpeedMultiplier = 0.05f;
@@ -359,8 +359,9 @@ int main(int argc, char** argv)
         ImGui::InputFloat("Spring damping", &springDamping);
         ImGui::Checkbox("Reset simulation", &resetSimulation);
         ImGui::Separator();
-        ImGui::Checkbox("Dynamically recreate descriptor sets", &g_RecreatePerThreadDescriptors);
-        ImGui::Checkbox("Use secondary command buffers", &g_UseSecondaryCommandBuffers);
+        ImGui::Checkbox(
+            "Dynamically recreate descriptor sets", &Graphics::g_RecreatePerThreadDescriptors);
+        ImGui::Checkbox("Use secondary command buffers", &Graphics::g_UseSecondaryCommandBuffers);
 
         ImGui::SliderFloat("Animation Speed Multiplier", &animationSpeedMultiplier, 0.0f, 10.0f);
 
@@ -390,7 +391,7 @@ int main(int argc, char** argv)
         static uint32_t selectedNode = UINT32_MAX;
 
         ImGui::Text("Selected node %u", selectedNode);
-        if (selectedNode < sceneGraph.nodesHierarchy.size)
+        if (selectedNode < sceneGraph.nodesHierarchy.m_Size)
         {
 
           mat4s& localTransform = sceneGraph.localMatrices[selectedNode];
@@ -407,9 +408,9 @@ int main(int argc, char** argv)
           ImGui::Separator();
         }
 
-        for (uint32_t n = 0; n < sceneGraph.nodesHierarchy.size; ++n)
+        for (uint32_t n = 0; n < sceneGraph.nodesHierarchy.m_Size; ++n)
         {
-          const Graphics::SceneGraphNodeDebugData& node_debug_data = sceneGraph.nodes_debug_data[n];
+          const Graphics::SceneGraphNodeDebugData& node_debug_data = sceneGraph.nodesDebugData[n];
           if (ImGui::Selectable(
                   node_debug_data.name ? node_debug_data.name : "-", n == selectedNode))
           {
@@ -426,23 +427,23 @@ int main(int argc, char** argv)
       ImGui::End();
     }
     {
-      scene->update_animations(deltaTime * animationSpeedMultiplier);
+      scene->updateAnimations(deltaTime * animationSpeedMultiplier);
     }
     {
       sceneGraph.updateMatrices();
     }
     {
-      scene->update_joints();
+      scene->updateJoints();
     }
 
     {
       // Update scene constant buffer
       Graphics::MapBufferParameters sceneCbMap = {scene->sceneCb, 0, 0};
-      GpuSceneData* gpuSceneData = (GpuSceneData*)gpu.mapBuffer(sceneCbMap);
+      Graphics::GpuSceneData* gpuSceneData = (Graphics::GpuSceneData*)gpu.mapBuffer(sceneCbMap);
       if (gpuSceneData)
       {
-        gpuSceneData->viewProj = gameCamera.camera.viewProjection;
-        gpuSceneData->inverse_view_projection = glms_mat4_inv(gameCamera.camera.viewProjection);
+        gpuSceneData->viewProjection = gameCamera.camera.viewProjection;
+        gpuSceneData->inverseViewProjection = glms_mat4_inv(gameCamera.camera.viewProjection);
         gpuSceneData->eye = vec4s{
             gameCamera.camera.position.x,
             gameCamera.camera.position.y,
@@ -457,18 +458,18 @@ int main(int argc, char** argv)
         gpu.unmapBuffer(sceneCbMap);
       }
 
-      frameRenderer.upload_gpu_data();
+      frameRenderer.uploadGpuData();
     }
 
     if (!window.m_Minimized)
     {
       Graphics::DrawTask drawTask;
-      drawTask.init(renderer.gpu, &frameGraph, &renderer, imgui, scene, &frameRenderer);
+      drawTask.init(renderer.m_GpuDevice, &frameGraph, &renderer, imgui, scene, &frameRenderer);
       taskScheduler.AddTaskSetToPipe(&drawTask);
 
       Graphics::CommandBuffer* async_compute_command_buffer = nullptr;
       {
-        async_compute_command_buffer = scene->update_physics(
+        async_compute_command_buffer = scene->updatePhysics(
             deltaTime, airDensity, springStiffness, springDamping, windDirection, resetSimulation);
         resetSimulation = false;
       }
@@ -511,7 +512,7 @@ int main(int argc, char** argv)
   delete scene;
 
   input.shutdown();
-  window.unregisterOSMessagesCallback(inputOSMessagesCallback());
+  window.unregisterOSMessagesCallback(inputOSMessagesCallback);
   window.shutdown();
 
   scratchAllocator.shutdown();

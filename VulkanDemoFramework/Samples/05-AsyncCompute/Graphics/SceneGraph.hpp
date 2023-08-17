@@ -14,6 +14,11 @@ struct Hierarchy
   int level : 8;
 }; // struct Hierarchy
 //---------------------------------------------------------------------------//
+struct SceneGraphNodeDebugData
+{
+  const char* name;
+}; // struct SceneGraphNodeDebugData
+//---------------------------------------------------------------------------//
 struct SceneGraph
 {
 
@@ -25,10 +30,12 @@ struct SceneGraph
 
   void setHierarchy(uint32_t nodeIndex, uint32_t parentIndex, uint32_t level);
   void setLocalMatrix(uint32_t nodeIndex, const mat4s& localMatrix);
+  void setDebugData(uint32_t nodeIndex, const char* name);
 
   Framework::Array<mat4s> localMatrices;
   Framework::Array<mat4s> worldMatrices;
   Framework::Array<Hierarchy> nodesHierarchy;
+  Framework::Array<SceneGraphNodeDebugData> nodesDebugData;
 
   Framework::BitSet updatedNodes;
 
