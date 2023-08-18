@@ -139,9 +139,6 @@ struct Renderer : public Framework::Service
 
   void setLoaders(Framework::ResourceManager* p_Manager);
 
-  void beginFrame();
-  void endFrame();
-
   void imguiDraw();
 
   void setPresentationMode(PresentMode::Enum value);
@@ -189,6 +186,7 @@ struct Renderer : public Framework::Service
     m_GpuDevice->queueCommandBuffer(p_CommandBuffer);
   }
 
+  // Multithread friendly update to textures
   void addTextureToUpdate(Graphics::TextureHandle p_Texture);
   void addTextureUpdateCommands(uint32_t p_ThreadId);
   std::mutex m_TextureUpdateMutex;

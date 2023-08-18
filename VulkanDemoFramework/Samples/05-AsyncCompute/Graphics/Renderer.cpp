@@ -164,6 +164,7 @@ static void generateMipmaps(
   if (p_Texture->mipmaps > 1)
   {
     utilAddImageBarrier(
+        p_CmdBuf->m_GpuDevice,
         p_CmdBuf->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         p_FromTransferQueue ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_SOURCE,
@@ -179,6 +180,7 @@ static void generateMipmaps(
   for (int mipIndex = 1; mipIndex < p_Texture->mipmaps; ++mipIndex)
   {
     utilAddImageBarrier(
+        p_CmdBuf->m_GpuDevice,
         p_CmdBuf->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         RESOURCE_STATE_UNDEFINED,
@@ -219,6 +221,7 @@ static void generateMipmaps(
 
     // Prepare current mip for next level
     utilAddImageBarrier(
+        p_CmdBuf->m_GpuDevice,
         p_CmdBuf->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         RESOURCE_STATE_COPY_DEST,
@@ -232,6 +235,7 @@ static void generateMipmaps(
   if (p_FromTransferQueue && false)
   {
     utilAddImageBarrier(
+        p_CmdBuf->m_GpuDevice,
         p_CmdBuf->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         (p_Texture->mipmaps > 1) ? RESOURCE_STATE_COPY_SOURCE : RESOURCE_STATE_COPY_DEST,
@@ -243,6 +247,7 @@ static void generateMipmaps(
   else
   {
     utilAddImageBarrier(
+        p_CmdBuf->m_GpuDevice,
         p_CmdBuf->m_VulkanCmdBuffer,
         p_Texture->vkImage,
         RESOURCE_STATE_UNDEFINED,
@@ -251,8 +256,6 @@ static void generateMipmaps(
         p_Texture->mipmaps,
         false);
   }
-
-  p_Texture->vkImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 //---------------------------------------------------------------------------//
 // Renderer:
@@ -310,18 +313,6 @@ void Renderer::shutdown()
 void Renderer::setLoaders(Framework::ResourceManager* p_Manager)
 {
   // Moved loaders to resources loader!
-}
-//---------------------------------------------------------------------------//
-void Renderer::beginFrame()
-{
-  // TODO:
-  m_GpuDevice->newFrame();
-}
-//---------------------------------------------------------------------------//
-void Renderer::endFrame()
-{
-  // Present
-  m_GpuDevice->present();
 }
 //---------------------------------------------------------------------------//
 void Renderer::imguiDraw()
@@ -646,7 +637,8 @@ void Renderer::addTextureUpdateCommands(uint32_t p_ThreadId)
     return;
   }
 
-  CommandBuffer* cmdBuf = m_GpuDevice->getCommandBuffer(p_ThreadId, false);
+  CommandBuffer* cmdBuf =
+      m_GpuDevice->getCommandBuffer(p_ThreadId, m_GpuDevice->m_CurrentFrameIndex, false);
   cmdBuf->begin();
 
   for (uint32_t i = 0; i < m_NumTexturesToUpdate; ++i)
@@ -655,7 +647,8 @@ void Renderer::addTextureUpdateCommands(uint32_t p_ThreadId)
     Texture* texture =
         (Texture*)m_GpuDevice->m_Textures.accessResource(m_TexturesToUpdate[i].index);
 
-    texture->vkImageLayout = addImageBarrier2(
+    utilAddImageBarrierExt(
+        cmdBuf->m_GpuDevice,
         cmdBuf->m_VulkanCmdBuffer,
         texture->vkImage,
         RESOURCE_STATE_COPY_DEST,
@@ -664,7 +657,9 @@ void Renderer::addTextureUpdateCommands(uint32_t p_ThreadId)
         1,
         false,
         m_GpuDevice->m_VulkanTransferQueueFamily,
-        m_GpuDevice->m_VulkanMainQueueFamily);
+        m_GpuDevice->m_VulkanMainQueueFamily,
+        QueueType::kCopyTransfer,
+        QueueType::kGraphics);
 
     generateMipmaps(texture, cmdBuf, true);
   }

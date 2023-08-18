@@ -7,7 +7,7 @@ namespace Graphics
 //---------------------------------------------------------------------------//
 struct CommandBuffer
 {
-  void init(Graphics::GpuDevice* p_GpuDevice);
+  void init(GpuDevice* p_GpuDevice);
   void shutdown();
   void reset();
 

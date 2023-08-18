@@ -540,7 +540,7 @@ static void uploadTextureData(Texture* p_Texture, void* p_UploadData, GpuDevice&
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
   // TODO: threading
-  CommandBuffer* commandBuffer = p_Gpu.getCommandBuffer(false, 0);
+  CommandBuffer* commandBuffer = p_Gpu.getCommandBuffer(false, p_Gpu.m_CurrentFrameIndex, 0);
   vkBeginCommandBuffer(commandBuffer->m_VulkanCmdBuffer, &beginInfo);
 
   VkBufferImageCopy region = {};
@@ -1234,28 +1234,20 @@ void GpuDevice::init(const DeviceCreation& p_Creation)
     deviceCi.ppEnabledExtensionNames = deviceExtensions.m_Data;
     deviceCi.pNext = &physicalFeatures2;
 
-    // We also add the bindless needed feature on the device creation.
-    if (m_BindlessSupported)
-    {
-      indexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
-      indexingFeatures.runtimeDescriptorArray = VK_TRUE;
-
-      // TODO: more generic chaining
-      if (m_DynamicRenderingExtensionPresent)
-      {
-        dynamicRenderingFeatures.pNext = &indexingFeatures;
-      }
-      else
-      {
-        physicalFeatures2.pNext = &indexingFeatures;
-      }
-    }
-
     VkResult result =
         vkCreateDevice(m_VulkanPhysicalDevice, &deviceCi, m_VulkanAllocCallbacks, &m_VulkanDevice);
     CHECKRES(result);
 
-    deviceExtensions.shutdown();
+    //  Get the function pointers to Debug Utils functions.
+    if (m_DebugUtilsExtensionPresent)
+    {
+      pfnSetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetDeviceProcAddr(
+          m_VulkanDevice, "vkSetDebugUtilsObjectNameEXT");
+      pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+          m_VulkanDevice, "vkCmdBeginDebugUtilsLabelEXT");
+      pfnCmdEndDebugUtilsLabelEXT = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+          m_VulkanDevice, "vkCmdEndDebugUtilsLabelEXT");
+    }
 
     if (m_DynamicRenderingExtensionPresent)
     {
@@ -3622,7 +3614,7 @@ void GpuDevice::createSwapchain()
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  CommandBuffer* cmd = getCommandBuffer(0, false);
+  CommandBuffer* cmd = getCommandBuffer(0, m_CurrentFrameIndex, false);
   vkBeginCommandBuffer(cmd->m_VulkanCmdBuffer, &beginInfo);
 
   for (size_t iv = 0; iv < m_VulkanSwapchainImageCount; iv++)
