@@ -390,8 +390,8 @@ void CommandBuffer::bindDescriptorSet(
       if (rb.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
       {
         // Search for the actual buffer offset
-        const uint32_t resourceIndex = descriptorSet->bindings[i];
-        ResourceHandle bufferHandle = descriptorSet->resources[resourceIndex];
+        // const uint32_t bindingPoint = descriptorSet->bindings[i];
+        ResourceHandle bufferHandle = descriptorSet->resources[i];
         Buffer* buffer = (Buffer*)m_GpuDevice->m_Buffers.accessResource(bufferHandle);
 
         offsetsCache[p_NumOffsets++] = buffer->globalOffset;
@@ -515,7 +515,13 @@ void CommandBuffer::drawIndexed(
 void CommandBuffer::drawIndirect(
     BufferHandle p_Handle, uint32_t p_DrawCount, uint32_t p_Offset, uint32_t p_Stride)
 {
-  assert(false && "Not implemented");
+  Buffer* buffer = (Buffer*)m_GpuDevice->m_Buffers.accessResource(p_Handle.index);
+
+  VkBuffer vkBuffer = buffer->vkBuffer;
+  VkDeviceSize vkOffset = p_Offset;
+
+  vkCmdDrawIndirect(
+      m_VulkanCmdBuffer, vkBuffer, vkOffset, p_DrawCount, sizeof(VkDrawIndirectCommand));
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::drawIndexedIndirect(BufferHandle p_Handle, uint32_t p_Offset, uint32_t p_Stride)
@@ -525,7 +531,7 @@ void CommandBuffer::drawIndexedIndirect(BufferHandle p_Handle, uint32_t p_Offset
 //---------------------------------------------------------------------------//
 void CommandBuffer::dispatch(uint32_t p_GroupX, uint32_t p_GroupY, uint32_t p_GroupZ)
 {
-  assert(false && "Not implemented");
+  vkCmdDispatch(m_VulkanCmdBuffer, p_GroupX, p_GroupY, p_GroupZ);
 }
 //---------------------------------------------------------------------------//
 void CommandBuffer::dispatchIndirect(BufferHandle p_Handle, uint32_t p_Offset)
