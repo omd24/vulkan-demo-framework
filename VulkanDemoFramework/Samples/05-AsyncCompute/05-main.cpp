@@ -47,6 +47,7 @@
 #include "Graphics/ImguiHelper.hpp"
 #include "Graphics/RenderScene.hpp"
 #include "Graphics/GltfScene.hpp"
+#include "Graphics/ObjScene.hpp"
 #include "Graphics/FrameGraph.hpp"
 #include "Graphics/AsynchronousLoader.hpp"
 #include "Graphics/SceneGraph.hpp"
@@ -262,11 +263,9 @@ int main(int argc, char** argv)
 
   scratchAllocator.freeMarker(scratchMarker);
 
-  Graphics::RenderScene* scene = nullptr;
+  Graphics::RenderScene* scene = new Graphics::ObjScene;
 
   char* fileExtension = fileExtensionFromPath(fileName);
-
-  assert(strcmp(fileExtension, "gltf") == 0);
 
   scene->init(fileName, fileBasePath, allocator, &scratchAllocator, &asyncLoader);
 

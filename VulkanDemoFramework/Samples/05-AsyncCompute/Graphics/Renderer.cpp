@@ -271,6 +271,8 @@ void Renderer::init(const RendererCreation& p_Creation)
   OutputDebugStringA("Renderer init\n");
 
   m_GpuDevice = p_Creation.gpu;
+  m_ResidentAllocator = p_Creation.alloc;
+  m_TemporaryAllocator.init(FRAMEWORK_KILO(10));
 
   m_Width = m_GpuDevice->m_SwapchainWidth;
   m_Height = m_GpuDevice->m_SwapchainHeight;
@@ -296,6 +298,8 @@ void Renderer::init(const RendererCreation& p_Creation)
 //---------------------------------------------------------------------------//
 void Renderer::shutdown()
 {
+  m_TemporaryAllocator.shutdown();
+
   m_ResourceCache.shutdown(this);
   m_GpuHeapBudgets.shutdown();
 
@@ -429,11 +433,14 @@ GpuTechnique* Renderer::createTechnique(const GpuTechniqueCreation& creation)
   GpuTechnique* technique = m_Techniques.obtain();
   if (technique)
   {
-    technique->passes.init(m_GpuDevice->m_Allocator, creation.numCreations, creation.numCreations);
+    technique->passes.init(m_ResidentAllocator, creation.numCreations, creation.numCreations);
+    technique->nameHashToIndex.init(m_ResidentAllocator, creation.numCreations);
     technique->m_Name = creation.name;
 
+    m_TemporaryAllocator.clear();
+
     Framework::StringBuffer pipelineCachePath;
-    pipelineCachePath.init(2048, m_GpuDevice->m_Allocator);
+    pipelineCachePath.init(2048, &m_TemporaryAllocator);
 
     for (uint32_t i = 0; i < creation.numCreations; ++i)
     {
@@ -452,7 +459,7 @@ GpuTechnique* Renderer::createTechnique(const GpuTechniqueCreation& creation)
       }
     }
 
-    pipelineCachePath.shutdown();
+    m_TemporaryAllocator.clear();
 
     if (creation.name != nullptr)
     {

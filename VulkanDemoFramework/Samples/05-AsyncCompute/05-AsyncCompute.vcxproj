@@ -150,6 +150,7 @@
     <ClCompile Include="Graphics\GpuDevice.cpp" />
     <ClCompile Include="Graphics\GpuResources.cpp" />
     <ClCompile Include="Graphics\ImguiHelper.cpp" />
+    <ClCompile Include="Graphics\ObjScene.cpp" />
     <ClCompile Include="Graphics\Renderer.cpp" />
     <ClCompile Include="Graphics\RenderResourcesLoader.cpp" />
     <ClCompile Include="Graphics\RenderScene.cpp" />
@@ -165,6 +166,7 @@
     <ClInclude Include="Graphics\GpuEnum.hpp" />
     <ClInclude Include="Graphics\GpuResources.hpp" />
     <ClInclude Include="Graphics\ImguiHelper.hpp" />
+    <ClInclude Include="Graphics\ObjScene.hpp" />
     <ClInclude Include="Graphics\Renderer.hpp" />
     <ClInclude Include="Graphics\RenderResourcesLoader.hpp" />
     <ClInclude Include="Graphics\RenderScene.hpp" />

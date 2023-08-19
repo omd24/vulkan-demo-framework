@@ -39,6 +39,9 @@
     <ClCompile Include="Graphics\RenderScene.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="Graphics\ObjScene.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Graphics">
@@ -83,6 +86,9 @@
       <Filter>Graphics</Filter>
     </ClInclude>
     <ClInclude Include="Graphics\RenderScene.hpp">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\ObjScene.hpp">
       <Filter>Graphics</Filter>
     </ClInclude>
   </ItemGroup>

@@ -59,8 +59,13 @@ BlendState& BlendStateCreation::addBlendState() { return blendStates[activeState
 /// BufferCreation
 BufferCreation& BufferCreation::reset()
 {
+  typeFlags = 0;
+  usage = ResourceUsageType::kImmutable;
   size = 0;
   initialData = nullptr;
+  persistent = 0;
+  deviceOnly = 0;
+  name = nullptr;
 
   return *this;
 }

@@ -569,11 +569,14 @@ void DebugPass::prepareDraws(
 
   size_t marker = scratchAllocator->getMarker();
 
-  StringBuffer mesh_name;
-  mesh_name.init(1024, scratchAllocator);
-  cstring filename = mesh_name.appendUseFormatted("%s/sphere.obj", DATA_FOLDER);
+  Directory cwd{};
+  Framework::directoryCurrent(&cwd);
 
-  const aiScene* sphere_mesh = aiImportFile(
+  StringBuffer meshName;
+  meshName.init(1024, scratchAllocator);
+  const char* filename = meshName.appendUseFormatted("%s%ssphere.obj", cwd, DATA_FOLDER);
+
+  const aiScene* sphereMesh = aiImportFile(
       filename,
       aiProcess_CalcTangentSpace | aiProcess_GenNormals | aiProcess_Triangulate |
           aiProcess_JoinIdenticalVertices | aiProcess_SortByPType);
@@ -588,9 +591,9 @@ void DebugPass::prepareDraws(
 
   sphereIndexCount = 0;
 
-  for (uint32_t meshIndex = 0; meshIndex < sphere_mesh->mNumMeshes; ++meshIndex)
+  for (uint32_t meshIndex = 0; meshIndex < sphereMesh->mNumMeshes; ++meshIndex)
   {
-    aiMesh* mesh = sphere_mesh->mMeshes[meshIndex];
+    aiMesh* mesh = sphereMesh->mMeshes[meshIndex];
 
     assert((mesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) != 0);
 

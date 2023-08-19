@@ -202,6 +202,8 @@ struct Renderer : public Framework::Service
   ResourceCache m_ResourceCache;
 
   Graphics::GpuDevice* m_GpuDevice;
+  Framework::Allocator* m_ResidentAllocator;
+  Framework::StackAllocator m_TemporaryAllocator;
 
   Framework::Array<VmaBudget> m_GpuHeapBudgets;
 

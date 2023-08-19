@@ -2175,10 +2175,14 @@ BufferHandle GpuDevice::createBuffer(const BufferCreation& p_Creation)
   }
 
   VkBufferCreateInfo bufferCi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-  bufferCi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | p_Creation.typeFlags;
+  bufferCi.usage =
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | p_Creation.typeFlags;
   bufferCi.size = p_Creation.size > 0 ? p_Creation.size : 1; // 0 sized creations are not permitted.
 
-  // NOTE! Don't allow rebar
+  // NOTE: technically we could map a buffer if the device exposes a heap
+  // with MEMORY_PROPERTY_DEVICE_LOCAL_BIT and MEMORY_PROPERTY_HOST_VISIBLE_BIT
+  // but that's usually very small (256MB) unless resizable bar is enabled.
+  // We simply don't allow it for now.
   assert(!(p_Creation.persistent && p_Creation.deviceOnly));
 
   VmaAllocationCreateInfo memoryCi{};
