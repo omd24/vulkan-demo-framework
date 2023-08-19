@@ -433,7 +433,7 @@ GpuTechnique* Renderer::createTechnique(const GpuTechniqueCreation& creation)
     technique->m_Name = creation.name;
 
     Framework::StringBuffer pipelineCachePath;
-    pipelineCachePath.init(1024, m_GpuDevice->m_Allocator);
+    pipelineCachePath.init(2048, m_GpuDevice->m_Allocator);
 
     for (uint32_t i = 0; i < creation.numCreations; ++i)
     {
@@ -442,7 +442,7 @@ GpuTechnique* Renderer::createTechnique(const GpuTechniqueCreation& creation)
       if (passCreation.name != nullptr)
       {
         char* cachePath = pipelineCachePath.appendUseFormatted(
-            "%s%s%s.cache", m_GpuDevice->m_Cwd.path, SHADER_FOLDER, passCreation);
+            "%s%s%s.cache", m_GpuDevice->m_Cwd.path, SHADER_FOLDER, passCreation.name);
 
         pass.pipeline = m_GpuDevice->createPipeline(passCreation, cachePath);
       }

@@ -206,6 +206,18 @@ ShaderStateCreation& ShaderStateCreation::setName(const char* name_)
 ShaderStateCreation&
 ShaderStateCreation::addStage(const char* code, uint32_t codeSize, VkShaderStageFlagBits type)
 {
+  for (uint32_t s = 0; s < stagesCount; ++s)
+  {
+    ShaderStage& stage = stages[s];
+
+    if (stage.type == type)
+    {
+      stage.code = code;
+      stage.codeSize = (uint32_t)codeSize;
+      return *this;
+    }
+  }
+
   stages[stagesCount].code = code;
   stages[stagesCount].codeSize = codeSize;
   stages[stagesCount].type = type;
