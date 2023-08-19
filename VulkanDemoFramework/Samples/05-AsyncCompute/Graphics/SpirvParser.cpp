@@ -5,6 +5,8 @@
 
 #include <string.h>
 
+#include <cstdlib> // qsort
+
 namespace Graphics
 {
 //---------------------------------------------------------------------------//
@@ -455,11 +457,40 @@ void parseBinary(
       switch (id.storageClass)
       {
       case SpvStorageClassStorageBuffer: {
-        // printf( "Storage!\n" );
+        // get actual type
+        Id& uniformType = ids[ids[id.typeIndex].typeIndex];
+
+        DescriptorSetLayoutCreation& setLayout = p_ParseResult->sets[id.set];
+        setLayout.setSetIndex(id.set);
+
+        DescriptorSetLayoutCreation::Binding binding{};
+        binding.index = id.binding;
+        binding.count = 1;
+
+        switch (uniformType.op)
+        {
+        case (SpvOpTypeStruct): {
+          binding.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+          binding.name = uniformType.name.m_Text;
+          break;
+        }
+
+        default: {
+          printf("Error reading op %u %s\n", uniformType.op, uniformType.name.m_Text);
+          break;
+        }
+        }
+
+        // printf( "Adding binding %u %s, set %u. Total %u\n", binding.index, binding.name, id.set,
+        // setLayout.num_bindings );
+        addBindingIfUnique(setLayout, binding);
+
+        p_ParseResult->setCount = _max(p_ParseResult->setCount, (id.set + 1));
         break;
       }
       case SpvStorageClassImage: {
         // printf( "Image!\n" );
+        assert(false);
         break;
       }
       case (SpvStorageClassUniform):
@@ -472,7 +503,7 @@ void parseBinary(
         }
 
         // NOTE: get actual type
-        Id& uniform_type = ids[ids[id.typeIndex].typeIndex];
+        Id& uniformType = ids[ids[id.typeIndex].typeIndex];
 
         DescriptorSetLayoutCreation& setLayout = p_ParseResult->sets[id.set];
         setLayout.setSetIndex(id.set);
@@ -481,12 +512,12 @@ void parseBinary(
         binding.index = id.binding;
         binding.count = 1;
 
-        switch (uniform_type.op)
+        switch (uniformType.op)
         {
         case (SpvOpTypeStruct): {
-          binding.type = uniform_type.structuredBuffer ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
-                                                       : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-          binding.name = uniform_type.name.m_Text;
+          binding.type = uniformType.structuredBuffer ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                                      : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+          binding.name = uniformType.name.m_Text;
           break;
         }
 
@@ -503,7 +534,7 @@ void parseBinary(
         }
 
         default: {
-          printf("Error reading op %u %s\n", uniform_type.op, uniform_type.name.m_Text);
+          printf("Error reading op %u %s\n", uniformType.op, uniformType.name.m_Text);
           break;
         }
         }
@@ -523,6 +554,42 @@ void parseBinary(
   }
 
   ids.shutdown();
+
+  // Sort layout based on binding point
+  for (size_t i = 0; i < p_ParseResult->setCount; i++)
+  {
+    DescriptorSetLayoutCreation& layoutCreation = p_ParseResult->sets[i];
+    // Sort only for 2 or more elements
+    if (layoutCreation.numBindings <= 1)
+    {
+      continue;
+    }
+
+    auto sortingFunc = [](const void* a, const void* b) -> int {
+      const DescriptorSetLayoutCreation::Binding* b0 =
+          (const DescriptorSetLayoutCreation::Binding*)a;
+      const DescriptorSetLayoutCreation::Binding* b1 =
+          (const DescriptorSetLayoutCreation::Binding*)b;
+
+      if (b0->index > b1->index)
+      {
+        return 1;
+      }
+
+      if (b0->index < b1->index)
+      {
+        return -1;
+      }
+
+      return 0;
+    };
+
+    std::qsort(
+        layoutCreation.bindings,
+        layoutCreation.numBindings,
+        sizeof(DescriptorSetLayoutCreation::Binding),
+        sortingFunc);
+  }
 }
 //---------------------------------------------------------------------------//
 } // namespace Spirv

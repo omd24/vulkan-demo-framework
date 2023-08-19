@@ -354,6 +354,32 @@ static void parseGpuPipeline(
     {
       p_PipelineCreation.rasterization.cullMode = VK_CULL_MODE_BACK_BIT;
     }
+    else if (name == "front")
+    {
+      p_PipelineCreation.rasterization.cullMode = VK_CULL_MODE_FRONT_BIT;
+    }
+    else
+    {
+      assert(false);
+    }
+  }
+
+  p_PipelineCreation.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+  json topology = p_Pipeline["topology"];
+  if (topology.is_string())
+  {
+    std::string name;
+    topology.get_to(name);
+
+    if (name == "triangle_list")
+    {
+      p_PipelineCreation.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    }
+    else if (name == "line_list")
+    {
+      p_PipelineCreation.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    }
     else
     {
       assert(false);

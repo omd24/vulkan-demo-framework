@@ -456,6 +456,8 @@ struct PipelineCreation
   VertexInputCreation vertexInput;
   ShaderStateCreation shaders;
 
+  VkPrimitiveTopology topology;
+
   RenderPassOutput renderPass;
   DescriptorSetLayoutHandle descriptorSetLayouts[kMaxDescriptorSetLayouts];
   const ViewportState* viewport = nullptr;

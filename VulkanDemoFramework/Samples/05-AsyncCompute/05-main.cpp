@@ -176,10 +176,13 @@ int main(int argc, char** argv)
   //#define WORKING_FOLDER ""
   //#define DATA_FOLDER ""
 
+  Directory cwd{};
+  Framework::directoryCurrent(&cwd);
+
   // Load frame graph and parse gpu techniques
   {
     cstring frameGraphPath =
-        temporaryNameBuffer.appendUseFormatted("%s%s", WORKING_FOLDER, "graph.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, WORKING_FOLDER, "graph.json");
 
     frameGraph.parse(frameGraphPath, &scratchAllocator);
     frameGraph.compile();
@@ -190,39 +193,39 @@ int main(int argc, char** argv)
     // Add utility textures (dithering, ...)
     temporaryNameBuffer.clear();
     cstring ditherTexturePath =
-        temporaryNameBuffer.appendUseFormatted("%sBayerDither4x4.png", DATA_FOLDER);
+        temporaryNameBuffer.appendUseFormatted("%s%sBayerDither4x4.png", cwd, DATA_FOLDER);
     ditherTexture = renderResourcesLoader.loadTexture(ditherTexturePath, false);
 
     // Parse techniques
     Graphics::RendererUtil::GpuTechniqueCreation gtc;
     temporaryNameBuffer.clear();
     cstring fullScreenPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, "fullscreen.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, SHADER_FOLDER, "fullscreen.json");
     renderResourcesLoader.loadGpuTechnique(fullScreenPipelinePath);
 
     temporaryNameBuffer.clear();
     cstring mainPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, "main.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, SHADER_FOLDER, "main.json");
     renderResourcesLoader.loadGpuTechnique(mainPipelinePath);
 
     temporaryNameBuffer.clear();
     cstring pbrPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, "pbr_lighting.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, SHADER_FOLDER, "pbr_lighting.json");
     renderResourcesLoader.loadGpuTechnique(pbrPipelinePath);
 
     temporaryNameBuffer.clear();
     cstring dofPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, "dof.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, SHADER_FOLDER, "dof.json");
     renderResourcesLoader.loadGpuTechnique(dofPipelinePath);
 
     temporaryNameBuffer.clear();
     cstring clothPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, "cloth.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, SHADER_FOLDER, "cloth.json");
     renderResourcesLoader.loadGpuTechnique(clothPipelinePath);
 
     temporaryNameBuffer.clear();
     cstring debugPipelinePath =
-        temporaryNameBuffer.appendUseFormatted("%s%s", SHADER_FOLDER, "debug.json");
+        temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, SHADER_FOLDER, "debug.json");
     renderResourcesLoader.loadGpuTechnique(debugPipelinePath);
   }
 
@@ -233,8 +236,8 @@ int main(int argc, char** argv)
   Graphics::AsynchronousLoader asyncLoader;
   asyncLoader.init(&renderer, &taskScheduler, allocator);
 
-  Directory cwd{};
-  directoryCurrent(&cwd);
+  // Directory cwd{};
+  // directoryCurrent(&cwd);
 
   temporaryNameBuffer.clear();
   cstring scenePath = nullptr;
@@ -244,7 +247,7 @@ int main(int argc, char** argv)
   }
   else
   {
-    scenePath = temporaryNameBuffer.appendUseFormatted("%s%s", DATA_FOLDER, "plane.obj");
+    scenePath = temporaryNameBuffer.appendUseFormatted("%s%s%s", cwd, DATA_FOLDER, "plane.obj");
   }
 
   char fileBasePath[512]{};

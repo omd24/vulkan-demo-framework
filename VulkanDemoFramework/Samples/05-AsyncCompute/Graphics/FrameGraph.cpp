@@ -241,17 +241,17 @@ static void computeEdges(FrameGraph* p_FrameGraph, FrameGraphNode* p_Node, uint3
     // printf( "Adding edge from %s [%d] to %s [%d]\n", parentNode->name,
     // resource->producer.index, p_Node->name, p_NodeIndex )
 
-    parentNode->edges.push(p_FrameGraph->nodes[p_NodeIndex]);
+    parentNode->edges.push(p_FrameGraph->allNodes[p_NodeIndex]);
   }
 }
 //---------------------------------------------------------------------------//
 RenderPassOperation::Enum stringToRenderPassOperation(const char* p_OP)
 {
-  if (strcmp(p_OP, "VK_ATTACHMENT_LOAD_OP_CLEAR") == 0)
+  if (strcmp(p_OP, "clear") == 0)
   {
     return RenderPassOperation::kClear;
   }
-  else if (strcmp(p_OP, "VK_ATTACHMENT_LOAD_OP_LOAD") == 0)
+  else if (strcmp(p_OP, "load") == 0)
   {
     return RenderPassOperation::kLoad;
   }
@@ -522,13 +522,14 @@ void FrameGraph::init(FrameGraphBuilder* p_Builder)
   builder = p_Builder;
 
   nodes.init(allocator, FrameGraphBuilder::kMaxNodesCount);
+  allNodes.init(allocator, FrameGraphBuilder::kMaxNodesCount);
 }
 //---------------------------------------------------------------------------//
 void FrameGraph::shutdown()
 {
-  for (uint32_t i = 0; i < nodes.m_Size; ++i)
+  for (uint32_t i = 0; i < allNodes.m_Size; ++i)
   {
-    FrameGraphNodeHandle handle = nodes[i];
+    FrameGraphNodeHandle handle = allNodes[i];
     FrameGraphNode* node = builder->accessNode(handle);
 
     builder->device->destroyRenderPass(node->renderPass);
@@ -626,16 +627,76 @@ void FrameGraph::parse(const char* p_FilePath, Framework::StackAllocator* p_Temp
 
         outputCreation.resourceInfo.texture.format = utilStringToVkFormat(format.c_str());
 
-        std::string loadOp = passOutput.value("op", "");
+        std::string loadOp = passOutput.value("load_operation", "");
         assert(!loadOp.empty());
 
         outputCreation.resourceInfo.texture.loadOp = stringToRenderPassOperation(loadOp.c_str());
 
         json resolution = passOutput["resolution"];
+        json scaling = passOutput["resolution_scale"];
 
-        outputCreation.resourceInfo.texture.width = resolution[0];
-        outputCreation.resourceInfo.texture.height = resolution[1];
-        outputCreation.resourceInfo.texture.depth = 1;
+        if (resolution.is_array())
+        {
+          outputCreation.resourceInfo.texture.width = resolution[0];
+          outputCreation.resourceInfo.texture.height = resolution[1];
+          outputCreation.resourceInfo.texture.depth = 1;
+          outputCreation.resourceInfo.texture.scaleWidth = 0.f;
+          outputCreation.resourceInfo.texture.scaleHeight = 0.f;
+        }
+        else if (scaling.is_array())
+        {
+          outputCreation.resourceInfo.texture.width = 0;
+          outputCreation.resourceInfo.texture.height = 0;
+          outputCreation.resourceInfo.texture.depth = 1;
+          outputCreation.resourceInfo.texture.scaleWidth = scaling[0];
+          outputCreation.resourceInfo.texture.scaleHeight = scaling[1];
+        }
+        else
+        {
+          // Defaults
+          outputCreation.resourceInfo.texture.width = 0;
+          outputCreation.resourceInfo.texture.height = 0;
+          outputCreation.resourceInfo.texture.depth = 1;
+          outputCreation.resourceInfo.texture.scaleWidth = 1.f;
+          outputCreation.resourceInfo.texture.scaleHeight = 1.f;
+        }
+
+        outputCreation.resourceInfo.texture.compute = nodeCreation.compute;
+
+        // Parse depth/stencil values
+        if (TextureFormat::hasDepth(outputCreation.resourceInfo.texture.format))
+        {
+          outputCreation.resourceInfo.texture.clearValues[0] =
+              passOutput.value("clear_depth", 1.0f);
+          outputCreation.resourceInfo.texture.clearValues[1] =
+              passOutput.value("clear_stencil", 0.0f);
+        }
+        else
+        {
+          // Parse color array
+          json clear_color_array = passOutput["clear_color"];
+          if (clear_color_array.is_array())
+          {
+            for (uint32_t c = 0; c < clear_color_array.size(); ++c)
+            {
+              outputCreation.resourceInfo.texture.clearValues[c] = clear_color_array[c];
+            }
+          }
+          else
+          {
+            if (outputCreation.resourceInfo.texture.loadOp == RenderPassOperation::kClear)
+            {
+              printf(
+                  "Error parsing output texture %s: load operation is clear, but clear color not "
+                  "specified. Defaulting to 0,0,0,0.\n",
+                  outputCreation.name);
+            }
+            outputCreation.resourceInfo.texture.clearValues[0] = 0.0f;
+            outputCreation.resourceInfo.texture.clearValues[1] = 0.0f;
+            outputCreation.resourceInfo.texture.clearValues[2] = 0.0f;
+            outputCreation.resourceInfo.texture.clearValues[3] = 0.0f;
+          }
+        }
       }
       break;
       case kFrameGraphResourceTypeBuffer: {
@@ -657,7 +718,7 @@ void FrameGraph::parse(const char* p_FilePath, Framework::StackAllocator* p_Temp
     nodeCreation.enabled = enabled;
 
     FrameGraphNodeHandle nodeHandle = builder->createNode(nodeCreation);
-    nodes.push(nodeHandle);
+    allNodes.push(nodeHandle);
   }
 
   p_TempAllocator->freeMarker(currentAllocatorMarker);
@@ -680,9 +741,9 @@ void FrameGraph::compile()
   // - check that input has been produced by a different node
   // - cull inactive nodes
 
-  for (uint32_t i = 0; i < nodes.m_Size; ++i)
+  for (uint32_t i = 0; i < allNodes.m_Size; ++i)
   {
-    FrameGraphNode* node = builder->accessNode(nodes[i]);
+    FrameGraphNode* node = builder->accessNode(allNodes[i]);
 
     // NOTE: we want to clear all edges first, then populate them. If we clear them inside
     // the loop below we risk clearing the list after it has already been used by one of the child
@@ -690,9 +751,9 @@ void FrameGraph::compile()
     node->edges.clear();
   }
 
-  for (uint32_t i = 0; i < nodes.m_Size; ++i)
+  for (uint32_t i = 0; i < allNodes.m_Size; ++i)
   {
-    FrameGraphNode* node = builder->accessNode(nodes[i]);
+    FrameGraphNode* node = builder->accessNode(allNodes[i]);
     if (!node->enabled)
     {
       continue;
@@ -702,25 +763,25 @@ void FrameGraph::compile()
   }
 
   Framework::Array<FrameGraphNodeHandle> sortedNodes;
-  sortedNodes.init(&localAllocator, nodes.m_Size);
+  sortedNodes.init(&localAllocator, allNodes.m_Size);
 
   Framework::Array<uint8_t> visited;
-  visited.init(&localAllocator, nodes.m_Size, nodes.m_Size);
-  memset(visited.m_Data, 0, sizeof(bool) * nodes.m_Size);
+  visited.init(&localAllocator, allNodes.m_Size, allNodes.m_Size);
+  memset(visited.m_Data, 0, sizeof(bool) * allNodes.m_Size);
 
   Framework::Array<FrameGraphNodeHandle> stack;
   stack.init(&localAllocator, nodes.m_Size);
 
   // Topological sorting
-  for (uint32_t n = 0; n < nodes.m_Size; ++n)
+  for (uint32_t n = 0; n < allNodes.m_Size; ++n)
   {
-    FrameGraphNode* node = builder->accessNode(nodes[n]);
+    FrameGraphNode* node = builder->accessNode(allNodes[n]);
     if (!node->enabled)
     {
       continue;
     }
 
-    stack.push(nodes[n]);
+    stack.push(allNodes[n]);
 
     while (stack.m_Size > 0)
     {
@@ -765,8 +826,6 @@ void FrameGraph::compile()
       }
     }
   }
-
-  assert(sortedNodes.m_Size == nodes.m_Size);
 
   nodes.clear();
 

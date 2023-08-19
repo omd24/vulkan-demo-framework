@@ -117,6 +117,8 @@ void ImguiService::init(void* p_Configuration)
   pipelineCreation.vertexInput.addVertexStream({0, 20, VertexInputRate::kPerVertex});
   pipelineCreation.renderPass = m_GpuDevice->m_SwapchainOutput;
 
+  pipelineCreation.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
   DescriptorSetLayoutCreation descriptorSetLayoutCreation{};
   if (m_GpuDevice->m_BindlessSupported)
   {

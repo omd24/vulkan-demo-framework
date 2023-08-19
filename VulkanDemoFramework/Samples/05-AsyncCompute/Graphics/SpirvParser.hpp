@@ -18,7 +18,7 @@ namespace Graphics
 namespace Spirv
 {
 
-static const uint32_t kMaxSetCount = 32;
+static const uint32_t kMaxSetCount = 8;
 
 struct ParseResult
 {

@@ -2413,7 +2413,7 @@ GpuDevice::createPipeline(const PipelineCreation& p_Creation, const char* p_Cach
     //// Input Assembly
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{
         VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.topology = p_Creation.topology;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     pipelineCi.pInputAssemblyState = &inputAssembly;
