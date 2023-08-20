@@ -457,6 +457,9 @@ GpuTechnique* Renderer::createTechnique(const GpuTechniqueCreation& creation)
       {
         pass.pipeline = m_GpuDevice->createPipeline(passCreation);
       }
+
+      assert(passCreation.name);
+      technique->nameHashToIndex.insert(Framework::hashCalculate(passCreation.name), (uint32_t)i);
     }
 
     m_TemporaryAllocator.clear();
