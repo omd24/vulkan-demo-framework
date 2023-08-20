@@ -567,7 +567,11 @@ void Renderer::destroySampler(SamplerResource* p_Sampler)
     return;
   }
 
-  m_ResourceCache.m_Samplers.remove(Framework::hashCalculate(p_Sampler->m_Desc.name));
+  if (p_Sampler->m_Desc.name)
+  {
+    m_ResourceCache.m_Samplers.remove(Framework::hashCalculate(p_Sampler->m_Desc.name));
+  }
+
   m_GpuDevice->destroySampler(p_Sampler->m_Handle);
   m_Samplers.release(p_Sampler);
 }
