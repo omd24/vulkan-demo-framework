@@ -2121,6 +2121,9 @@ void GpuDevice::present(CommandBuffer* p_AsyncComputeCommandBuffer)
     return;
   }
 
+  // This is called inside resize_swapchain as well to correctly work.
+  frameCountersAdvance();
+
   // Resource deletion using reverse iteration and swap with last element.
   if (m_ResourceDeletionQueue.m_Size > 0)
   {
@@ -3897,8 +3900,10 @@ VkShaderModuleCreateInfo GpuDevice::compileShader(
 //---------------------------------------------------------------------------//
 void GpuDevice::frameCountersAdvance()
 {
-  // TODO:
-  assert(false && "Not implemented");
+  m_PreviousFrameIndex = m_CurrentFrameIndex;
+  m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % kMaxFrames;
+
+  ++m_AbsoluteFrameIndex;
 }
 //---------------------------------------------------------------------------//
 void GpuDevice::querySampler(SamplerHandle p_Sampler, SamplerDescription& p_OutDescription)
