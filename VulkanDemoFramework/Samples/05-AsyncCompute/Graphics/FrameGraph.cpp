@@ -1026,6 +1026,7 @@ void FrameGraph::render(
 
     if (node->compute)
     {
+      p_GpuCommands->pushMarker(node->name);
       for (uint32_t i = 0; i < node->inputs.m_Size; ++i)
       {
         FrameGraphResource* resource = builder->accessResource(node->inputs[i]);
@@ -1083,9 +1084,13 @@ void FrameGraph::render(
 
       node->graphRenderPass->preRender(currentFrameIndex, p_GpuCommands, this);
       node->graphRenderPass->render(p_GpuCommands, p_RenderScene);
+
+      p_GpuCommands->popMarker();
     }
     else
     {
+      p_GpuCommands->pushMarker(node->name);
+
       uint32_t width = 0;
       uint32_t height = 0;
 
@@ -1201,6 +1206,7 @@ void FrameGraph::render(
       node->graphRenderPass->render(p_GpuCommands, p_RenderScene);
 
       p_GpuCommands->endCurrentRenderPass();
+      p_GpuCommands->popMarker();
     }
   }
 }

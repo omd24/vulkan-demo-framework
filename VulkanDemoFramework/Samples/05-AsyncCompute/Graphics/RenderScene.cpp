@@ -1016,6 +1016,9 @@ CommandBuffer* RenderScene::updatePhysics(
       {
         cb = gpu.getCommandBuffer(0, gpu.m_CurrentFrameIndex, true, true /*compute*/);
 
+        cb->pushMarker("Frame");
+        cb->pushMarker("async");
+
         const uint64_t clothHashedName = hashCalculate("cloth");
         RendererUtil::GpuTechnique* clothTechnique =
             renderer->m_ResourceCache.m_Techniques.get(clothHashedName);
@@ -1032,6 +1035,9 @@ CommandBuffer* RenderScene::updatePhysics(
 
   if (cb != nullptr)
   {
+    cb->popMarker();
+    cb->popMarker();
+
     // Graphics queries not available in compute only queues.
 
     cb->end();
@@ -1283,9 +1289,11 @@ void DrawTask::ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_)
   // printf( "Executing draw task from thread %u\n", threadnum_ );
   // TODO: improve getting a command buffer/pool
   CommandBuffer* gpuCommands = gpu->getCommandBuffer(threadnum_, currentFrameIndex, true);
+  gpuCommands->pushMarker("Frame");
 
   frameGraph->render(currentFrameIndex, gpuCommands, scene);
 
+  gpuCommands->pushMarker("Fullscreen");
   gpuCommands->clear(0.3f, 0.3f, 0.3f, 1.f, 0);
   gpuCommands->clearDepthStencil(1.0f, 0);
   gpuCommands->bindPass(gpu->m_SwapchainRenderPass, currentFramebuffer, false);
@@ -1306,6 +1314,9 @@ void DrawTask::ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_)
       1);
 
   imgui->render(*gpuCommands, false);
+
+  gpuCommands->popMarker();
+  gpuCommands->popMarker();
 
   // Send commands to GPU
   gpu->queueCommandBuffer(gpuCommands);

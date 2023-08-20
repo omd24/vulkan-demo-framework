@@ -121,8 +121,11 @@ struct GpuDevice : public Framework::Service
   // Compute
   void submitComputeLoad(CommandBuffer* p_CommandBuffer);
 
-  // Other utility
+  // Name utility
   void setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const char* p_Name);
+  void pushMarker(VkCommandBuffer commandBuffer, const char* name);
+  void popMarker(VkCommandBuffer commandBuffer);
+
   VkRenderPass getVulkanRenderPass(const RenderPassOutput& p_Output, const char* p_Name);
   VkShaderModuleCreateInfo compileShader(
       const char* p_Code, uint32_t p_CodeSize, VkShaderStageFlagBits p_Stage, const char* p_Name);

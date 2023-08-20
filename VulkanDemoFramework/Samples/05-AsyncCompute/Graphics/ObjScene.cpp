@@ -566,7 +566,7 @@ void ObjScene::init(
     creation.reset()
         .set(flags, ResourceUsageType::kImmutable, bufferSize)
         .setDeviceOnly(true)
-        .setName("positionAttributeBuffer");
+        .setName("position_attribute_buffer");
 
     RendererUtil::BufferResource* gpuBuffer = renderer->createBuffer(creation);
     gpuBuffers.push(*gpuBuffer);
@@ -589,7 +589,7 @@ void ObjScene::init(
     creation.reset()
         .set(flags, ResourceUsageType::kImmutable, bufferSize)
         .setDeviceOnly(true)
-        .setName("tangentAttributeBuffer");
+        .setName("tangent_attribute_buffer");
 
     RendererUtil::BufferResource* gpuBuffer = renderer->createBuffer(creation);
     gpuBuffers.push(*gpuBuffer);
@@ -611,7 +611,7 @@ void ObjScene::init(
     creation.reset()
         .set(flags, ResourceUsageType::kImmutable, bufferSize)
         .setDeviceOnly(true)
-        .setName("normalAttributeBuffer");
+        .setName("normal_attribute_buffer");
 
     RendererUtil::BufferResource* gpuBuffer = renderer->createBuffer(creation);
     gpuBuffers.push(*gpuBuffer);
@@ -625,14 +625,14 @@ void ObjScene::init(
     size_t bufferSize = uvCoords.m_Size * sizeof(vec2s);
     creation.set(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, ResourceUsageType::kImmutable, bufferSize)
         .setData(uvCoords.m_Data)
-        .setName("obj_texCoords");
+        .setName("obj_tex_coords");
 
     BufferHandle cpuBuffer = renderer->m_GpuDevice->createBuffer(creation);
 
     creation.reset()
         .set(flags, ResourceUsageType::kImmutable, bufferSize)
         .setDeviceOnly(true)
-        .setName("texcoordsAttributeBuffer");
+        .setName("texcoords_attribute_buffer");
 
     RendererUtil::BufferResource* gpuBuffer = renderer->createBuffer(creation);
     gpuBuffers.push(*gpuBuffer);
@@ -654,7 +654,7 @@ void ObjScene::init(
     creation.reset()
         .set(flags, ResourceUsageType::kImmutable, bufferSize)
         .setDeviceOnly(true)
-        .setName("indexBuffer");
+        .setName("index_buffer");
 
     RendererUtil::BufferResource* gpuBuffer = renderer->createBuffer(creation);
     gpuBuffers.push(*gpuBuffer);

@@ -3781,6 +3781,22 @@ void GpuDevice::setResourceName(VkObjectType p_ObjType, uint64_t p_Handle, const
   pfnSetDebugUtilsObjectNameEXT(m_VulkanDevice, &nameInfo);
 }
 //---------------------------------------------------------------------------//
+void GpuDevice::pushMarker(VkCommandBuffer commandBuffer, const char* name)
+{
+  VkDebugUtilsLabelEXT label = {VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT};
+  label.pLabelName = name;
+  label.color[0] = 1.0f;
+  label.color[1] = 1.0f;
+  label.color[2] = 1.0f;
+  label.color[3] = 1.0f;
+  pfnCmdBeginDebugUtilsLabelEXT(commandBuffer, &label);
+}
+//---------------------------------------------------------------------------//
+void GpuDevice::popMarker(VkCommandBuffer commandBuffer)
+{
+  pfnCmdEndDebugUtilsLabelEXT(commandBuffer);
+}
+//---------------------------------------------------------------------------//
 CommandBuffer* GpuDevice::getCommandBuffer(
     uint32_t p_ThreadIndex, uint32_t p_FrameIndex, bool p_Begin, bool p_Compute)
 {

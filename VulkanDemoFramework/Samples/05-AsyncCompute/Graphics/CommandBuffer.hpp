@@ -79,6 +79,9 @@ struct CommandBuffer
 
   void fillBuffer(BufferHandle p_Buffer, uint32_t p_Offset, uint32_t p_Size, uint32_t p_Data);
 
+  void pushMarker(const char* name);
+  void popMarker();
+
   // Non-drawing methods
   void uploadTextureData(
       TextureHandle p_Texture,

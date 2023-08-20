@@ -37,7 +37,8 @@
 // 1. Fix uniforms not getting updated
 // 2. Double check DOF pass doesn't get disabled
 // 3. fix memory leak reported on shutdown
-// 4. Fix artifacts on Sponza curtains
+// 4. fix validation issues on shutdown
+// 5. Fix artifacts on Sponza curtains
 
 //---------------------------------------------------------------------------//
 // Graphics includes:

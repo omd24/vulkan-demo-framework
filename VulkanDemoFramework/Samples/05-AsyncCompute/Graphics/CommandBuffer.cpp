@@ -828,6 +828,22 @@ void CommandBuffer::fillBuffer(
       p_Data);
 }
 //---------------------------------------------------------------------------//
+void CommandBuffer::pushMarker(const char* name)
+{
+  if (!m_GpuDevice->m_DebugUtilsExtensionPresent)
+    return;
+
+  m_GpuDevice->pushMarker(m_VulkanCmdBuffer, name);
+}
+//---------------------------------------------------------------------------//
+void CommandBuffer::popMarker()
+{
+  if (!m_GpuDevice->m_DebugUtilsExtensionPresent)
+    return;
+
+  m_GpuDevice->popMarker(m_VulkanCmdBuffer);
+}
+//---------------------------------------------------------------------------//
 DescriptorSetHandle CommandBuffer::createDescriptorSet(const DescriptorSetCreation& creation)
 {
   DescriptorSetHandle handle = {m_DescriptorSets.obtainResource()};
