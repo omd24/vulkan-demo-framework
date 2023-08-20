@@ -282,6 +282,8 @@ void ImguiService::render(CommandBuffer& p_Commands, bool p_UseSecondary)
   }
 
   // todo: key
+  p_Commands.pushMarker("ImGUI");
+
   p_Commands.bindPass(
       m_GpuDevice->m_SwapchainRenderPass, m_GpuDevice->getCurrentFramebuffer(), p_UseSecondary);
   p_Commands.bindPipeline(g_ImguiPipeline);
@@ -418,6 +420,7 @@ void ImguiService::render(CommandBuffer& p_Commands, bool p_UseSecondary)
     indexBufferOffset += cmdList->IdxBuffer.Size;
     vtxBufferOffset += cmdList->VtxBuffer.Size;
   }
+  p_Commands.popMarker();
 }
 //---------------------------------------------------------------------------//
 void ImguiService::removeCachedTexture(TextureHandle& p_Texture)
