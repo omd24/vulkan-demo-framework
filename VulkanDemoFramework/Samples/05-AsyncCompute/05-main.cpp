@@ -291,8 +291,8 @@ int main(int argc, char** argv)
   asyncLoadTask.m_AsyncLoader = &asyncLoader;
   taskScheduler.AddPinnedTask(&asyncLoadTask);
 
-  int16_t beginFrameTick = Time::getCurrentTime();
-  int16_t absoluteBeginFrameTick = beginFrameTick;
+  int64_t beginFrameTick = Time::getCurrentTime();
+  int64_t absoluteBeginFrameTick = beginFrameTick;
 
   vec3s lightPosition = vec3s{0.0f, 4.0f, 0.0f};
 
@@ -336,7 +336,7 @@ int main(int argc, char** argv)
     // This MUST be AFTER os messages!
     imgui->newFrame();
 
-    const int16_t currentTick = Time::getCurrentTime();
+    const int64_t currentTick = Time::getCurrentTime();
     float deltaTime = (float)Time::deltaSeconds(beginFrameTick, currentTick);
     beginFrameTick = currentTick;
 
