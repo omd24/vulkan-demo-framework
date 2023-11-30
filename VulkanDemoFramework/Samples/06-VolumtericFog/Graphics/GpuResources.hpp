@@ -80,6 +80,10 @@ struct FramebufferHandle
 {
   ResourceHandle index;
 };
+struct PagePoolHandle
+{
+  ResourceHandle index;
+}; // struct FramebufferHandle
 //---------------------------------------------------------------------------//
 /// Invalid handles:
 static BufferHandle kInvalidBuffer{kInvalidIndex};
@@ -91,6 +95,7 @@ static DescriptorSetHandle kInvalidSet{kInvalidIndex};
 static PipelineHandle kInvalidPipeline{kInvalidIndex};
 static RenderPassHandle kInvalidPass{kInvalidIndex};
 static FramebufferHandle kInvalidFramebuffer{kInvalidIndex};
+static PagePoolHandle k_invalid_page_pool{kInvalidIndex};
 //---------------------------------------------------------------------------//
 /// Consts:
 // Maximum number of Images/RenderTargets/FBO attachments usable.
@@ -251,7 +256,7 @@ struct TextureCreation
   const char* name = nullptr;
 
   TextureCreation& setSize(uint16_t width, uint16_t height, uint16_t depth);
-  TextureCreation& setFlags(uint8_t mipmaps, uint8_t flags);
+  TextureCreation& setFlags(uint8_t flags);
   TextureCreation& setFormatType(VkFormat format, TextureType::Enum type);
   TextureCreation& setName(const char* name);
   TextureCreation& setData(void* data);
@@ -432,6 +437,8 @@ struct RenderPassCreation
 
   VkFormat depthStencilFormat = VK_FORMAT_UNDEFINED;
   VkImageLayout depthStencilFinalLayout;
+
+  uint32_t shading_rate_image_index = kInvalidIndex;
 
   RenderPassOperation::Enum depthOperation = RenderPassOperation::kDontCare;
   RenderPassOperation::Enum stencilOperation = RenderPassOperation::kDontCare;
@@ -672,8 +679,8 @@ struct ResourceUpdate
 //---------------------------------------------------------------------------//
 // Device Resources:
 //---------------------------------------------------------------------------//
-static const uint32_t kMaxSwapchainImages = 3;
-static const uint32_t kMaxFrames = 1;
+static const uint32_t k_max_swapchain_images = 3;
+static const uint32_t k_max_frames = 1;
 
 struct DeviceStateVulkan;
 

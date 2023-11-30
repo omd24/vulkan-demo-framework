@@ -37,7 +37,9 @@ enum FrameGraphResourceType
   kFrameGraphResourceTypeBuffer = 0,
   kFrameGraphResourceTypeTexture = 1,
   kFrameGraphResourceTypeAttachment = 2,
-  kFrameGraphResourceTypeReference = 3
+  kFrameGraphResourceTypeReference = 3,
+
+  FrameGraphResourceType_ShadingRate = 4
 };
 
 struct FrameGraphResourceInfo
@@ -51,7 +53,7 @@ struct FrameGraphResourceInfo
       size_t size;
       VkBufferUsageFlags flags;
 
-      BufferHandle handle[kMaxFrames];
+      BufferHandle handle;
     } buffer;
 
     struct
@@ -59,20 +61,37 @@ struct FrameGraphResourceInfo
       uint32_t width;
       uint32_t height;
       uint32_t depth;
-      float scaleWidth;
-      float scaleHeight;
+      float scale_width;
+      float scale_height;
 
       VkFormat format;
       VkImageUsageFlags flags;
 
-      RenderPassOperation::Enum loadOp;
+      RenderPassOperation::Enum load_op;
 
-      TextureHandle handle[kMaxFrames];
-      float clearValues[4]; // Reused between color or depth/stencil.
+      TextureHandle handle;
+      float clear_values[4]; // Reused between color or depth/stencil.
 
       bool compute;
     } texture;
   };
+
+  FrameGraphResourceInfo& set_external(bool value);
+  FrameGraphResourceInfo& set_buffer(size_t size, VkBufferUsageFlags flags, BufferHandle handle);
+
+  FrameGraphResourceInfo& set_external_texture_2d(
+      uint32_t width,
+      uint32_t height,
+      VkFormat format,
+      VkImageUsageFlags flags,
+      TextureHandle handle);
+  FrameGraphResourceInfo& set_external_texture_3d(
+      uint32_t width,
+      uint32_t height,
+      uint32_t depth,
+      VkFormat format,
+      VkImageUsageFlags flags,
+      TextureHandle handle);
 };
 
 // NOTE: an input could be used as a texture or as an attachment.
@@ -118,38 +137,72 @@ struct FrameGraphNodeCreation
 
   const char* name;
   bool compute;
+  bool ray_tracing;
 };
 
 struct FrameGraphRenderPass
 {
-  virtual void addUi() {}
-  virtual void
-  preRender(uint32_t currentFrameIndex, CommandBuffer* gpuCommands, FrameGraph* renderScene)
+  virtual void add_ui() {}
+  virtual void pre_render(
+      uint32_t current_frame_index,
+      CommandBuffer* gpu_commands,
+      FrameGraph* frame_graph,
+      RenderScene* render_scene)
   {
   }
-  virtual void render(CommandBuffer* gpuCommands, RenderScene* renderScene) {}
-  virtual void onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight) {}
+  virtual void
+  render(uint32_t current_frame_index, CommandBuffer* gpu_commands, RenderScene* render_scene)
+  {
+  }
+  virtual void post_render(
+      uint32_t current_frame_index,
+      CommandBuffer* gpu_commands,
+      FrameGraph* frame_graph,
+      RenderScene* render_scene)
+  {
+  }
+
+  virtual void prepare_draws(
+      RenderScene& scene,
+      FrameGraph* frame_graph,
+      Allocator* resident_allocator,
+      StackAllocator* scratch_allocator)
+  {
+  }
+  virtual void free_gpu_resources(GpuDevice& gpu) {}
+
+  virtual void upload_gpu_data(RenderScene& scene) {}
+  virtual void
+  on_resize(GpuDevice& gpu, FrameGraph* frame_graph, uint32_t new_width, uint32_t new_height)
+  {
+  }
+  virtual void
+  update_dependent_resources(GpuDevice& gpu, FrameGraph* frame_graph, RenderScene* render_scene)
+  {
+  }
+
+  bool enabled = true;
 };
 
 struct FrameGraphNode
 {
-  int refCount = 0;
+  int ref_count = 0;
 
-  RenderPassHandle renderPass;
-  FramebufferHandle framebuffer[kMaxFrames];
+  RenderPassHandle render_pass;
+  FramebufferHandle framebuffer;
 
-  FrameGraphRenderPass* graphRenderPass;
+  FrameGraphRenderPass* graph_render_pass;
 
-  Framework::Array<FrameGraphResourceHandle> inputs;
-  Framework::Array<FrameGraphResourceHandle> outputs;
+  Array<FrameGraphResourceHandle> inputs;
+  Array<FrameGraphResourceHandle> outputs;
 
-  Framework::Array<FrameGraphNodeHandle> edges;
+  Array<FrameGraphNodeHandle> edges;
 
-  float resolutionScaleWidth = 0.f;
-  float resolutionScaleHeight = 0.f;
+  float resolution_scale_width = 0.f;
+  float resolution_scale_height = 0.f;
 
   bool compute = false;
-  bool rayTracing = false;
+  bool ray_tracing = false;
   bool enabled = true;
 
   const char* name = nullptr;
@@ -160,7 +213,7 @@ struct FrameGraphRenderPassCache
   void init(Framework::Allocator* allocator);
   void shutdown();
 
-  Framework::FlatHashMap<uint64_t, FrameGraphRenderPass*> renderPassMap;
+  FlatHashMap<uint64_t, FrameGraphRenderPass*> render_pass_map;
 };
 
 struct FrameGraphResourceCache
@@ -170,8 +223,8 @@ struct FrameGraphResourceCache
 
   GpuDevice* device;
 
-  Framework::FlatHashMap<uint64_t, uint32_t> resourceMap;
-  Framework::ResourcePoolTyped<FrameGraphResource> resources;
+  FlatHashMap<uint64_t, uint32_t> resource_map;
+  ResourcePoolTyped<FrameGraphResource> resources;
 };
 
 struct FrameGraphNodeCache
@@ -181,43 +234,45 @@ struct FrameGraphNodeCache
 
   GpuDevice* device;
 
-  Framework::FlatHashMap<uint64_t, uint32_t> nodeMap;
-  Framework::ResourcePool nodes;
+  FlatHashMap<uint64_t, uint32_t> node_map;
+  ResourcePool nodes;
 };
 
 //
 //
-struct FrameGraphBuilder : public Framework::Service
+struct FrameGraphBuilder : public Service
 {
   void init(GpuDevice* device);
   void shutdown();
 
-  void registerRenderPass(const char* name, FrameGraphRenderPass* renderPass);
+  void register_render_pass(cstring name, FrameGraphRenderPass* render_pass);
 
-  FrameGraphResourceHandle
-  createNodeOutput(const FrameGraphResourceOutputCreation& creation, FrameGraphNodeHandle producer);
-  FrameGraphResourceHandle createNodeInput(const FrameGraphResourceInputCreation& creation);
-  FrameGraphNodeHandle createNode(const FrameGraphNodeCreation& creation);
+  FrameGraphResourceHandle create_node_output(
+      const FrameGraphResourceOutputCreation& creation, FrameGraphNodeHandle producer);
+  FrameGraphResourceHandle create_node_input(const FrameGraphResourceInputCreation& creation);
+  FrameGraphNodeHandle create_node(const FrameGraphNodeCreation& creation);
 
-  FrameGraphNode* getNode(const char* name);
-  FrameGraphNode* accessNode(FrameGraphNodeHandle handle);
+  FrameGraphNode* get_node(cstring name);
+  FrameGraphNode* access_node(FrameGraphNodeHandle handle);
 
-  FrameGraphResource* getResource(const char* name);
-  FrameGraphResource* accessResource(FrameGraphResourceHandle handle);
+  void
+  add_resource(cstring name, FrameGraphResourceType type, FrameGraphResourceInfo resource_info);
+  FrameGraphResource* get_resource(cstring name);
+  FrameGraphResource* access_resource(FrameGraphResourceHandle handle);
 
-  FrameGraphResourceCache resourceCache;
-  FrameGraphNodeCache nodeCache;
-  FrameGraphRenderPassCache renderPassCache;
+  FrameGraphResourceCache resource_cache;
+  FrameGraphNodeCache node_cache;
+  FrameGraphRenderPassCache render_pass_cache;
 
   Framework::Allocator* allocator;
 
   GpuDevice* device;
 
-  static constexpr uint32_t kMaxRenderPassCount = 256;
-  static constexpr uint32_t kMaxResourcesCount = 1024;
-  static constexpr uint32_t kMaxNodesCount = 1024;
+  static constexpr uint32_t k_max_render_pass_count = 256;
+  static constexpr uint32_t k_max_resources_count = 1024;
+  static constexpr uint32_t k_max_nodes_count = 1024;
 
-  static constexpr const char* kName = "frame_graph_builder_service";
+  static constexpr cstring k_name = "raptor_frame_graph_builder_service";
 };
 
 //
@@ -227,35 +282,37 @@ struct FrameGraph
   void init(FrameGraphBuilder* builder);
   void shutdown();
 
-  void parse(const char* filePath, Framework::StackAllocator* tempAllocator);
+  void parse(cstring file_path, Framework::StackAllocator* temp_allocator);
 
   // NOTE: each frame we rebuild the graph so that we can enable only
   // the nodes we are interested in
   void reset();
-  void enableRenderPass(const char* renderPassName);
-  void disableRenderPass(const char* renderPassName);
+  void enable_render_pass(cstring render_pass_name);
+  void disable_render_pass(cstring render_pass_name);
   void compile();
-  void addUi();
-  void render(uint32_t currentFrameIndex, CommandBuffer* gpuCommands, RenderScene* renderScene);
-  void onResize(GpuDevice& gpu, uint32_t newWidth, uint32_t newHeight);
+  void add_ui();
+  void render(uint32_t current_frame_index, CommandBuffer* gpu_commands, RenderScene* render_scene);
+  void on_resize(GpuDevice& gpu, uint32_t new_width, uint32_t new_height);
 
-  FrameGraphNode* getNode(const char* name);
-  FrameGraphNode* accessNode(FrameGraphNodeHandle handle);
+  void debug_ui();
 
-  FrameGraphResource* getResource(const char* name);
-  FrameGraphResource* accessResource(FrameGraphResourceHandle handle);
+  void add_node(FrameGraphNodeCreation& creation);
+  FrameGraphNode* get_node(cstring name);
+  FrameGraphNode* access_node(FrameGraphNodeHandle handle);
 
-  // TODO: in case we want to add a pass in code
-  void addNode(FrameGraphNodeCreation& node);
+  void
+  add_resource(cstring name, FrameGraphResourceType type, FrameGraphResourceInfo resource_info);
+  FrameGraphResource* get_resource(cstring name);
+  FrameGraphResource* access_resource(FrameGraphResourceHandle handle);
 
   // NOTE: nodes sorted in topological order
-  Framework::Array<FrameGraphNodeHandle> nodes;
-  Framework::Array<FrameGraphNodeHandle> allNodes;
+  Array<FrameGraphNodeHandle> nodes;
+  Array<FrameGraphNodeHandle> all_nodes;
 
   FrameGraphBuilder* builder;
   Framework::Allocator* allocator;
 
-  Framework::LinearAllocator localAllocator;
+  LinearAllocator local_allocator;
 
   const char* name = nullptr;
 };

@@ -117,9 +117,8 @@ TextureCreation& TextureCreation::setSize(uint16_t p_Width, uint16_t p_Height, u
   return *this;
 }
 
-TextureCreation& TextureCreation::setFlags(uint8_t p_Mipmaps, uint8_t p_Flags)
+TextureCreation& TextureCreation::setFlags(uint8_t p_Flags)
 {
-  mipmaps = p_Mipmaps;
   flags = p_Flags;
 
   return *this;
